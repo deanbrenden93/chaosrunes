@@ -1,0 +1,3382 @@
+/* ============================================================
+   CHAOS GLYPHS — Combat: "The Glyph Forge"  (the heart)
+   Draw a hand, click glyphs into sockets in a chosen order,
+   then Detonate to resolve the whole turn as one animated chain.
+   Targeting is always rule-based — never by clicking an enemy.
+   ============================================================ */
+(function (root) {
+  'use strict';
+
+  const { GLYPHS } = root.CG.DATA;
+  const SFX = root.CG.Audio.SFX;
+  const Scale = root.CG.Scale;
+
+  let stage;
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, html) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  // Cards are individuals: a pool entry may carry an instance suffix
+  // ("strike#i7" or a clone's "strike#clone3"). baseOf strips it back to the
+  // glyph-definition key so counts, switch cases and effects still match.
+  function baseOf(id) { const i = id.indexOf('#'); return i < 0 ? id : id.slice(0, i); }
+  // glyph lookup that resolves transient Clone instances, then the base definition
+  function glyph(id) { return (B && B.tempGlyphs && B.tempGlyphs[id]) || GLYPHS[baseOf(id)]; }
+
+  // slot-type presentation (label + icon shown on the socket)
+  const SLOT_META = {
+    normal:   null,
+    loopback: { icon: '↻', label: 'Loop', tip: 'Holds no glyph. When the chain reaches it, every glyph already played this turn resolves <b>again</b>, then the chain continues.' },
+    repeat:   { icon: '×2', label: 'Repeat', tip: 'The glyph placed here resolves <b>twice</b>.' },
+    hold:     { icon: '⏸', label: 'Hold', tip: 'The glyph placed here is <b>not discarded</b> — it returns next turn as a bonus card that doesn\'t reduce your draw.' },
+    catalyst: { icon: '✦', label: 'Catalyst', tip: 'Infuses the <b>next</b> glyph by the color placed here — Red: 3 damage to all · Blue: 3 block · Green: heal 6.' },
+    devil:    { icon: '😈', label: 'Devil', tip: 'The glyph resolves, then is <b>devoured</b> — that copy is gone from your deck for the run — granting a permanent boon by color (Red: +1 Strength · Blue: +1 turn shield · Green: +3 max HP) <b>and</b> spitting back a permanent <b>Maw-Eaten Scrap</b> (basic damage, wild combo) into your deck and next hand. Feed a Scrap back here and it tears away <b>30%</b> of your current HP.' },
+    clone:    { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
+    empower:  { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' }
+  };
+  function slotType(i) { return (B.slotTypes && B.slotTypes[i]) || 'normal'; }
+
+  // ---- live battle state ----
+  let B = null;
+  let onWinCb = null, onLoseCb = null;
+
+  // ============================================================
+  // START
+  // ============================================================
+  function start(opts) {
+    stage = $('stage');
+    onWinCb = opts.onWin; onLoseCb = opts.onLose;
+    const G = root.CG.Game;
+    const monster = G.state.monsters[G.firstAlive()];
+    G.state.activeIndex = G.firstAlive();
+
+    const depth = opts.depth || 0;
+    const scaledEnemies = opts.enemies.map(e => scaleEnemyDef(e, depth));
+
+    B = {
+      monster: monster,
+      depthScale: depth,
+      playerShield: 0,
+      strength: monster.runStrength || 0,   // seeded by Devil(red) run buffs
+      turnStrength: 0,    // temporary strength that only lasts the current turn
+      resilience: monster.runResilience || 0,   // boosts your shield gains; seeded by run buffs
+      carryShield: 0,     // shield that survives into next turn (Bastion)
+      redThisTurn: 0,     // red glyphs played this turn (for Gravetide)
+      blueThisTurn: 0,    // blue glyphs played this turn (for Aftershock)
+      slotTypes: [],      // per-socket behavior: normal/loopback/repeat/hold/catalyst/devil/clone
+      tempGlyphs: {},     // transient glyph instances (Clone copies)
+      extras: [],         // bonus cards for next hand (Hold + Clone) — do NOT reduce the draw
+      spanHead: [],       // for multi-socket glyphs: continuation slot -> head slot index
+      fireOrigins: null,  // stage positions a resolving glyph fires from (multi-socket = many)
+      lastTurnPlays: [],  // genuine glyph ids placed last turn (for all-Mirror replay)
+      resolveCount: {},   // times a glyph (by base id) resolved this battle (Everflame ramp)
+      cloneSeq: 0,        // unique id counter for clones
+      enemies: scaledEnemies.map((e, i) => ({
+        base: e, id: e.id + '#' + i, name: e.name, emoji: e.emoji, img: e.img,
+        maxHp: e.maxHp, hp: e.maxHp, shield: 0,
+        weak: 0, burn: 0, leech: 0, scare: 0, scareTurns: 0, empower: 0,
+        strength: 0, strengthTurns: 0,
+        intentIndex: 0, intent: null, alive: true,
+        dom: null
+      })),
+      isBoss: !!opts.isBoss,
+      turn: 0,
+      sockets: [],
+      slotFx: [],         // per-socket { disabled, cursed, caster }
+      hand: [],
+      draw: [],           // the draw pile (shuffled snapshot of the run deck)
+      discard: [],        // cards spent/dropped this battle; reshuffles into draw when empty
+      drawnThisTurn: [],  // real deck cards in hand this turn -> routed to discard at end
+      stuck: [],          // sticky glyph ids that cling to your hand (Dead Weight)
+      injected: [],       // junk forced into your NEXT hand (cleared once drawn)
+      playerWeak: 0,      // turns: your damage is reduced
+      playerFrail: 0,     // turns: your shield gains are reduced
+      playerBurn: 0,      // Burn DoT on you (e.g. a burn glyph played into a cursed slot)
+      recallUsed: false,
+      resolving: false,
+      socketIntro: true,   // first socket render of the battle plays the "runes appear" reveal
+      ended: false
+    };
+    B.slotFx = Array.from({ length: monster.sockets }, () => ({ disabled: 0, cursed: 0, caster: null }));
+    B.slotTypes = Array.from({ length: monster.sockets }, (_, i) => (monster.slotTypes && monster.slotTypes[i]) || 'normal');
+    B.draw = shuffle(root.CG.Game.state.pool.slice());   // the run deck, shuffled into a draw pile
+    B.discard = [];
+    B.enemies.forEach(en => { en.intent = prepareIntent(en); });
+
+    // battle-start passive
+    if (monster.passive === 'startShield') B.playerShield = monster.passiveVal;
+    // War Banner blessing — begin each battle with bonus Strength
+    if (G.state.blessings.warbanner) B.strength += 2;
+
+    buildDOM();
+    root.CG.Game.show('screen-battle');
+    banner((B.isBoss ? '⚔ ' + B.enemies[0].name + ' ⚔' : 'Battle'), 1100);
+    setTimeout(() => beginTurn(), 700);
+  }
+
+  // ============================================================
+  // DOM BUILD
+  // ============================================================
+  function paintSprite(c, en) {
+    const spr = c.querySelector('.c-sprite');
+    if (!spr) return;
+    if (en.img) {
+      spr.classList.add('has-img');
+      spr.innerHTML = '<img src="' + en.img + '" alt="">';
+    } else {
+      spr.classList.remove('has-img');
+      spr.textContent = en.emoji;
+    }
+    // tougher foes loom larger on the stage — elite gets a bump, floor/final
+    // bosses more so, to feel imposing (feet stay anchored, so they grow upward)
+    const b = en.base || {};
+    c.classList.remove('tier-elite', 'tier-floorboss', 'tier-boss');
+    if (b.boss) c.classList.add('tier-boss');
+    else if (b.floorBoss) c.classList.add('tier-floorboss');
+    else if (b.elite) c.classList.add('tier-elite');
+  }
+
+  function combatantHTML(name, isPlayer) {
+    return `
+      <div class="c-sprite"></div>
+      <div class="intent"></div>
+      <div class="c-name">${name}</div>
+      <div class="bars">
+        <div class="bar hp"><div class="fill"></div><div class="label"></div></div>
+      </div>
+      <div class="shield-pip"><span>◆</span><span class="sv"></span></div>
+      <div class="statuses"></div>`;
+  }
+
+  function buildDOM() {
+    // wipe last battle's leftovers so nothing stale flashes during the intro banner
+    $('socket-row').innerHTML = '';
+    $('hand-row').innerHTML = '';
+    hideComboMeter(true);
+    const ez = $('enemy-zone');
+    ez.innerHTML = '';
+    B.enemies.forEach(en => {
+      const c = el('div', 'combatant enemy');
+      c.innerHTML = combatantHTML(en.name, false);
+      paintSprite(c, en);
+      ez.appendChild(c);
+      en.dom = c;
+      attachIntentTip(en);
+    });
+    renderPlayer();
+    wirePiles();
+    updatePiles();
+    refreshAll();
+  }
+
+  // ---- draw / discard pile viewer ----
+  // neutral preview env for a pile tile: folds in permanent empower, the per-battle
+  // ramp (Everflame) and red-glyph ember so the numbers read true at a glance.
+  function pileEnv(id) {
+    return {
+      gather: 0, comboBonus: 0, strength: 0, weak: false, shield: 0,
+      resilience: 0, frail: false, chainPos: 0,
+      cloneEmpower: (glyph(id).cloneEmpower || 0) + empowerOf(id),
+      ramp: rampOf(id), ember: emberBonusAmt()
+    };
+  }
+  function pileTileHTML(grp) {
+    const g = grp.def;
+    const art = g.img
+      ? '<img class="g-img" src="' + g.img + '" alt="" draggable="false">'
+      : '<div class="g-hex"><span class="g-rune">' + g.rune + '</span></div>';
+    const badges =
+      (grp.empower > 0 ? '<span class="pv-up pv-up-power">✦+' + grp.empower + '</span>' : '') +
+      (grp.combo ? '<span class="pv-up pv-up-combo">▲▲</span>' : '');
+    const tip = '<b>' + g.name + '</b>' + upgradeTipSuffix(grp.repId)
+      + '<br>' + fmtDesc(grp.repId, pileEnv(grp.repId));
+    return '<div class="pv-tile" style="--g-color:var(--' + g.color + ')" data-tip="' + escAttr(tip) + '">'
+      + badges
+      + '<div class="pv-art">' + art + '</div>'
+      + '<div class="pv-name">' + g.name + '</div>'
+      + (grp.count > 1 ? '<div class="pv-count">×' + grp.count + '</div>' : '')
+      + '</div>';
+  }
+  function escAttr(s) { return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+  // a single floating tooltip lives in the overlay (not the scrolling panel),
+  // so it can never be clipped by the modal edges; we clamp it into the stage.
+  function showPileTip(tile) {
+    const tip = $('pv-float-tip'), Scale = root.CG.Scale;
+    if (!tip || !Scale) return;
+    tip.innerHTML = tile.getAttribute('data-tip') || '';
+    tip.style.visibility = 'hidden'; tip.style.opacity = '0'; tip.classList.add('show');
+    const r = tile.getBoundingClientRect();
+    const topPt = Scale.toStage(r.left + r.width / 2, r.top);
+    const botPt = Scale.toStage(r.left + r.width / 2, r.bottom);
+    const W = Scale.REF_W, halfW = tip.offsetWidth / 2, th = tip.offsetHeight, m = 16;
+    let x = Math.min(Math.max(topPt.x, m + halfW), W - m - halfW);
+    let y, anchor;
+    if (topPt.y - 12 - th >= m) { y = topPt.y - 12; anchor = 'translate(-50%, -100%)'; }
+    else { y = botPt.y + 12; anchor = 'translate(-50%, 0)'; }
+    tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.style.transform = anchor;
+    tip.style.visibility = 'visible'; tip.style.opacity = '1';
+  }
+  function hidePileTip() { const tip = $('pv-float-tip'); if (tip) { tip.classList.remove('show'); tip.style.opacity = '0'; tip.style.visibility = 'hidden'; } }
+  // group a pile's instance ids by glyph + forge signature (so an upgraded copy
+  // reads as its own tile with the right numbers)
+  function pileGroups(ids) {
+    const map = {}, order = [];
+    ids.forEach(id => {
+      const key = baseOf(id) + '|' + empowerOf(id) + '|' + (comboAdv(id) > 1 ? 1 : 0);
+      if (!map[key]) { map[key] = { def: glyph(id), repId: id, empower: empowerOf(id), combo: comboAdv(id) > 1, count: 0 }; order.push(key); }
+      map[key].count++;
+    });
+    return order.map(k => map[k]).sort((a, b) => a.def.name.localeCompare(b.def.name));
+  }
+  function renderPileViewer() {
+    if (!B.pileOpen) return;
+    const which = B.pileOpen;
+    const ids = which === 'deck' ? B.draw : B.discard;
+    $('pile-viewer-title').textContent = (which === 'deck' ? 'Draw Pile' : 'Discard Pile') + ' (' + ids.length + ')';
+    const grid = $('pile-viewer-grid');
+    const groups = pileGroups(ids);
+    grid.innerHTML = groups.length
+      ? groups.map(pileTileHTML).join('')
+      : '<div class="pile-viewer-empty">' + (which === 'deck' ? 'The draw pile is empty.' : 'Nothing discarded yet.') + '</div>';
+    hidePileTip();
+    grid.querySelectorAll('.pv-tile').forEach(t => {
+      t.addEventListener('mouseenter', () => showPileTip(t));
+      t.addEventListener('mouseleave', hidePileTip);
+    });
+  }
+  function openPileViewer(which) {
+    B.pileOpen = which;
+    renderPileViewer();
+    $('pile-viewer').classList.remove('hidden');
+    SFX.click();
+  }
+  function closePileViewer() { B.pileOpen = null; hidePileTip(); $('pile-viewer').classList.add('hidden'); }
+  function wirePiles() {
+    const deck = $('pile-deck'), disc = $('pile-discard'), close = $('pile-viewer-close'), vw = $('pile-viewer'), grid = $('pile-viewer-grid');
+    if (deck) deck.onclick = () => openPileViewer('deck');
+    if (disc) disc.onclick = () => openPileViewer('discard');
+    if (close) close.onclick = closePileViewer;
+    if (vw) vw.onclick = e => { if (e.target === vw) closePileViewer(); };
+    if (grid) grid.addEventListener('scroll', hidePileTip);
+  }
+
+  function renderPlayer() {
+    const m = B.monster;
+    const pz = $('player-monster');
+    pz.className = 'player-combat';
+    pz.style.setProperty('--pc-color', m.color || 'var(--gold)');
+    const face = m.img
+      ? `<img class="c-sprite" src="${m.img}" alt="">`
+      : `<span class="c-sprite">${m.emoji}</span>`;
+    // split "Stonehide: reduce all incoming damage…" into a badge name + tooltip
+    const passiveFull = m.passiveText || '';
+    const ci = passiveFull.indexOf(':');
+    const passiveName = ci > 0 ? passiveFull.slice(0, ci).trim() : (m.passive || '');
+    const passiveDesc = ci > 0 ? passiveFull.slice(ci + 1).trim() : passiveFull;
+    const passiveHTML = passiveName
+      ? `<div class="pc-passive-badge" tabindex="0">
+           <span class="pcb-icon">✦</span><span class="pcb-name">${passiveName}</span>
+           <span class="hud-tip"><b>${passiveName}</b> ${passiveDesc}</span>
+         </div>`
+      : '';
+    pz.innerHTML = `
+      <div class="pc-disc-wrap">
+        <div class="pc-disc">
+          <svg class="pc-hp-ring" viewBox="0 0 160 160" aria-hidden="true">
+            <circle class="hp-track" cx="80" cy="80" r="66"></circle>
+            <circle class="hp-arc" cx="80" cy="80" r="66"></circle>
+          </svg>
+          <div class="pc-gear"></div>
+          <div class="pc-rune"></div>
+          <div class="pc-portrait">${face}</div>
+          <div class="shield-pip"><span class="sp-ico">◆</span><span class="sv"></span></div>
+          <div class="pc-hp-num"></div>
+        </div>
+      </div>
+      <div class="pc-name">${m.name}</div>
+      <div class="pc-role">${m.role}</div>
+      ${passiveHTML}
+      <div class="statuses"></div>`;
+    // seed the radial HP gauge geometry
+    const arc = pz.querySelector('.hp-arc');
+    if (arc) { const C = 2 * Math.PI * 66; arc.style.strokeDasharray = C; arc.dataset.c = C; arc.style.strokeDashoffset = 0; }
+    const spr = pz.querySelector('.c-sprite');
+    if (spr && !m.img) spr.style.color = m.color;
+  }
+
+  // the global HUD is owned by Game; battle just asks it to refresh
+  function updateTopbar() { root.CG.Game.updateTopbar(); }
+
+  // ============================================================
+  // RENDER: bars / intents / statuses
+  // ============================================================
+  function setBar(dom, hp, maxHp) {
+    const ratio = Math.max(0, Math.min(1, hp / maxHp));
+    // the player's HP is a radial gauge around the portrait; enemies keep the bar
+    const arc = dom.querySelector('.hp-arc');
+    if (arc) {
+      const C = parseFloat(arc.dataset.c) || (2 * Math.PI * 66);
+      arc.style.strokeDashoffset = (1 - ratio) * C;
+      arc.classList.toggle('low', ratio <= 0.3);
+      const num = dom.querySelector('.pc-hp-num');
+      if (num) num.textContent = Math.max(0, Math.round(hp)) + ' / ' + maxHp;
+      return;
+    }
+    const fill = dom.querySelector('.bar.hp .fill');
+    if (!fill) return;
+    fill.style.transform = 'scaleX(' + ratio + ')';
+    const lbl = dom.querySelector('.bar.hp .label');
+    if (lbl) lbl.textContent = Math.max(0, Math.round(hp)) + ' / ' + maxHp;
+  }
+  function setShieldPip(dom, val) {
+    const pip = dom.querySelector('.shield-pip');
+    pip.classList.toggle('on', val > 0);
+    pip.querySelector('.sv').textContent = val;
+  }
+
+  function intentText(intent) {
+    switch (intent.type) {
+      case 'attack': {
+        const hits = intent.hits || 1;
+        return { cls: 'attack', icon: '⚔', txt: intent.value + (hits > 1 ? ' ×' + hits : '') + (intent.big ? '  ⚠' : '') };
+      }
+      case 'defend': return { cls: 'defend', icon: '🛡', txt: 'Guard ' + intent.value };
+      case 'buff':   return { cls: 'buff', icon: '✦', txt: intent.turns ? 'Strength +' + (intent.value || 3) : 'Empower' };
+      case 'rally':  return { cls: 'buff', icon: '🚩', txt: 'Rally +' + (intent.value || 4) };
+      case 'curse':  return { cls: 'hex', icon: '☠', txt: 'Curse Slot ' + (clampSlot(intent.slot) + 1) };
+      case 'sunder': return { cls: 'hex', icon: '⛔', txt: 'Seal Slot ' + (clampSlot(intent.slot) + 1) };
+      case 'trash':  return { cls: 'hex', icon: '◼', txt: 'Bury ' + (intent.count || 1) };
+      case 'clog':   return { cls: 'hex', icon: '⛓', txt: 'Dead Weight' };
+      case 'debuff': return { cls: 'hex', icon: '👁', txt: intent.stat === 'frail' ? 'Frail' : 'Weaken' };
+      case 'summon': return { cls: 'buff', icon: '💀', txt: 'Summon' };
+      case 'regen':  return { cls: 'mend', icon: '✚', txt: 'Mend ' + (intent.value || 6) };
+      case 'siphon': return { cls: 'hex', icon: '🩸', txt: intent.stat === 'strength' ? 'Siphon Might' : 'Siphon Block' };
+      default:       return { cls: 'buff', icon: '✦', txt: '?' };
+    }
+  }
+
+  // build the inner DOM for an enemy's telegraph — a single action, or two
+  // chained actions shown side-by-side for elites/bosses
+  function intentBadgeHTML(intent) {
+    const it = intentText(intent);
+    return `<span class="i-icon">${it.icon}</span><span>${it.txt}</span>`;
+  }
+  function intentInnerHTML(intent) {
+    if (intent.type === 'multi') {
+      const body = intent.actions.map(a => `<span class="i-part i-${intentText(a).cls}">${intentBadgeHTML(a)}</span>`)
+        .join('<span class="i-amp">+</span>');
+      const tip = intent.actions.map(a => intentDetail(a)).join('<br><span class="tip-then">then…</span> ');
+      return { cls: 'multi', html: body + `<div class="intent-tip">${tip}</div>` };
+    }
+    return { cls: intentText(intent).cls, html: intentBadgeHTML(intent) + `<div class="intent-tip">${intentDetail(intent)}</div>` };
+  }
+
+  // plain-language explanation of an enemy's telegraphed action (hover/click tip)
+  function intentDetail(intent) {
+    switch (intent.type) {
+      case 'attack': {
+        const hits = intent.hits || 1;
+        return hits > 1
+          ? 'Attacks <b>' + hits + '</b> times for <b>' + intent.value + '</b> (<b>' + (intent.value * hits) + '</b> total).'
+          : 'Attacks for <b>' + intent.value + '</b> damage' + (intent.big ? ' — a heavy blow!' : '.');
+      }
+      case 'defend': return 'Raises <b>' + intent.value + '</b> shield, bracing against your strikes.';
+      case 'buff':   return intent.turns
+        ? 'Steels itself: <b>+' + (intent.value || 3) + '</b> Strength for <b>' + intent.turns + '</b> turns — every attack hits harder.'
+        : 'Empowers itself — its next attack hits harder.';
+      case 'rally':  return 'Empowers <b>all</b> allies by <b>+' + (intent.value || 4) + '</b> damage.';
+      case 'curse':  return 'Curses socket <b>' + (clampSlot(intent.slot) + 1) + '</b> for <b>' + (intent.value || 2) + '</b> turns: that slot\'s effect still lands normally, but is <b>also mirrored</b> — your shields & heals also feed the caster, and its damage & burns also recoil onto you.';
+      case 'sunder': return 'Seals socket <b>' + (clampSlot(intent.slot) + 1) + '</b> shut for <b>' + (intent.value || 2) + '</b> turns — you forge with one fewer slot.';
+      case 'trash':  return 'Buries <b>' + (intent.count || 1) + '</b> Rubble in your ' + (intent.where || 'deck') + ', clogging future draws until you socket it away.';
+      case 'clog':   return 'Jams a 2-socket <b>Dead Weight</b> into your hand. It never discards until you socket it.';
+      case 'debuff': return intent.stat === 'frail' ? 'Applies <b>Frail</b> — your shield gains are reduced.' : 'Applies <b>Weak</b> — your damage is reduced.';
+      case 'summon': return 'Summons a minion to join the fight.';
+      case 'regen':  return 'Knits its wounds, healing <b>' + (intent.value || 6) + '</b> HP. Burst it down before it recovers.';
+      case 'siphon': return intent.stat === 'strength'
+        ? 'Drains up to <b>' + (intent.value || 2) + '</b> of your <b>Strength</b> and claims it for itself.'
+        : 'Drains up to <b>' + (intent.value || 6) + '</b> of your <b>Block</b> and adds it to its own shield.';
+      default:       return 'Prepares an unknown action.';
+    }
+  }
+  // hover shows the tip; click pins it open (survives refreshAll via en.intentPinned)
+  function attachIntentTip(en) {
+    const intEl = en.dom && en.dom.querySelector('.intent');
+    if (!intEl) return;
+    intEl.addEventListener('click', e => {
+      e.stopPropagation();
+      en.intentPinned = !en.intentPinned;
+      intEl.classList.toggle('tip-open', en.intentPinned);
+    });
+  }
+
+  // status glossary — icon + name + tooltip text per status (keyed so the same
+  // condition can read differently for player vs enemy where the math differs)
+  const STATUS_META = {
+    strength:   { cls: 'str',   icon: '⚔', name: 'Strength',   desc: 'Adds {n} damage to each of your attacks.' },
+    resilience: { cls: 'res',   icon: '🛡', name: 'Resilience', desc: 'Adds {n} to every block you gain.' },
+    pweak:      { cls: 'weak',  icon: '▼', name: 'Weak',       desc: 'Your attacks deal 40% less damage. {n} turn(s) left.' },
+    frail:      { cls: 'leech', icon: '💔', name: 'Frail',      desc: 'You gain 50% less block. {n} turn(s) left.' },
+    pburn:      { cls: 'burn',  icon: '🔥', name: 'Burn',       desc: 'Take {n} damage at the start of your turn, then it drops by 1.' },
+    eweak:      { cls: 'weak',  icon: '▼', name: 'Weak',       desc: 'This enemy\'s attacks deal 45% less damage. {n} turn(s) left.' },
+    eburn:      { cls: 'burn',  icon: '🔥', name: 'Burn',       desc: 'Takes {n} damage at the start of its turn, then Burn drops by 1.' },
+    leech:      { cls: 'leech', icon: '🩸', name: 'Leech',      desc: 'Saps 10% of its HP each turn to heal your beast — and powers many Ghoul glyphs. {n} turn(s) left.' },
+    scare:      { cls: 'scare', icon: '☠', name: 'Scared',     desc: 'Takes +{n} damage from each of your attacks.' },
+    empower:    { cls: 'str',   icon: '⊕', name: 'Empower',    desc: 'Adds {n} damage to this enemy\'s next attack only.' },
+    estrength:  { cls: 'str',   icon: '⚔', name: 'Strength',   desc: 'Adds {n} damage to its attacks.' },
+    ward:       { cls: 'res',   icon: '🛡', name: 'Wardstone',  desc: 'While it lives, its allies take {n} less damage from your hits. Break it first.' },
+    warded:     { cls: 'res',   icon: '🜉', name: 'Warded',     desc: 'A Wardstone shields this foe — {n} less damage from your hits. Destroy the Wardstone to end it.' },
+    thorns:     { cls: 'scare', icon: '🜂', name: 'Thornmail',  desc: 'Each time you strike it, it lashes {n} damage back at you — avoid wasteful multi-hits.' },
+    enrage:     { cls: 'str',   icon: '🔺', name: 'Enrage',     desc: 'Gains +{n} Strength at the end of every turn. End the fight fast.' }
+  };
+  function shieldBadge(val) {
+    return '<span class="status-badge shield" tabindex="0">' +
+             '<span class="sb-icon">◆</span>' +
+             '<span class="sb-num">' + val + '</span>' +
+             '<span class="hud-tip"><b>Block</b> Absorbs ' + val + ' incoming damage this turn before HP is touched.</span>' +
+           '</span>';
+  }
+  function statusBadge(key, val) {
+    const m = STATUS_META[key];
+    if (!m) return '';
+    return '<span class="status-badge ' + m.cls + '" tabindex="0">' +
+             '<span class="sb-icon">' + m.icon + '</span>' +
+             '<span class="sb-num">' + val + '</span>' +
+             '<span class="hud-tip"><b>' + m.name + '</b> ' + m.desc.replace('{n}', val) + '</span>' +
+           '</span>';
+  }
+
+  function refreshAll() {
+    B.enemies.forEach(en => {
+      setBar(en.dom, en.hp, en.maxHp);
+      setShieldPip(en.dom, en.shield);
+      const intDom = en.dom.querySelector('.intent');
+      if (en.alive) {
+        const r = intentInnerHTML(en.intent);
+        intDom.className = 'intent ' + r.cls + (en.intentPinned ? ' tip-open' : '');
+        intDom.innerHTML = r.html;
+        intDom.style.display = 'flex';
+        en.dom.classList.remove('dead', 'dying');
+      } else {
+        intDom.style.display = 'none';
+        // play the death animation if it hasn't started (e.g. died to a status tick);
+        // killEnemyVisual collapses it once the animation ends
+        if (!en.dom.classList.contains('dying') && !en.dom.classList.contains('dead')) killEnemyVisual(en);
+      }
+      // statuses
+      const st = en.dom.querySelector('.statuses');
+      let s = '';
+      if (en.shield > 0) s += shieldBadge(en.shield);
+      if (en.weak > 0) s += statusBadge('eweak', en.weak);
+      if (en.burn > 0) s += statusBadge('eburn', en.burn);
+      if (en.leech > 0) s += statusBadge('leech', en.leech);
+      if (en.scare > 0) s += statusBadge('scare', en.scare);
+      if (en.empower > 0) s += statusBadge('empower', en.empower);
+      if (en.strength > 0) s += statusBadge('estrength', en.strength);
+      // passive gimmick badges (read off the def, active while it lives)
+      if (en.base) {
+        if (en.base.ward > 0) s += statusBadge('ward', en.base.ward);
+        else if (wardReductionFor(en) > 0) s += statusBadge('warded', wardReductionFor(en));
+        if (en.base.thorns > 0) s += statusBadge('thorns', en.base.thorns);
+        if (en.base.enrage > 0) s += statusBadge('enrage', en.base.enrage);
+      }
+      st.innerHTML = s;
+    });
+    const pd = $('player-monster');
+    setBar(pd, B.monster.hp, B.monster.maxHp);
+    setShieldPip(pd, B.playerShield);
+    const ps = pd.querySelector('.statuses');
+    if (ps) {
+      let s = '';
+      if (effStrength() > 0) s += statusBadge('strength', effStrength());
+      if (B.resilience > 0) s += statusBadge('resilience', B.resilience);
+      if (B.playerWeak > 0) s += statusBadge('pweak', B.playerWeak);
+      if (B.playerFrail > 0) s += statusBadge('frail', B.playerFrail);
+      if (B.playerBurn > 0) s += statusBadge('pburn', B.playerBurn);
+      ps.innerHTML = s;
+    }
+    updateTopbar();
+  }
+
+  // ============================================================
+  // TURN START
+  // ============================================================
+  function beginTurn() {
+    if (B.ended) return;
+    B.turn++;
+    $('turn-counter').textContent = B.turn;
+
+    // shield is a per-turn response to telegraphs
+    B.playerShield = 0;
+    if (B.monster.passive === 'turnShield') B.playerShield += B.monster.passiveVal;
+    if (B.monster.passive === 'startShield' && B.turn === 1) B.playerShield += B.monster.passiveVal;
+    B.playerShield += (B.monster.runTurnShield || 0);   // Devil(blue) run buff
+    if (B.carryShield > 0) { B.playerShield += B.carryShield; B.carryShield = 0; }   // Bastion carry-over
+
+    // start-of-turn blessing upkeep
+    const _bl = root.CG.Game.state.blessings;
+    if (_bl.aegis) B.playerShield += 3;
+    if (_bl.bastionheart) B.playerShield += 5;
+    if (_bl.lifebloom && B.monster.hp < B.monster.maxHp) {
+      B.monster.hp = Math.min(B.monster.maxHp, B.monster.hp + 2);
+      setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
+      floatText(offset(center(playerArt()), -10, -70), '+2', 'heal');
+    }
+
+    // Gravetide: each turn, the grave-tide rises with the dying — gain +1 Strength
+    // (rest of battle) for every enemy you keep Leeched. Ramp is gated by upkeep,
+    // so there's no turn-one spike.
+    if (B.monster.passive === 'gravetide') {
+      const leeched = B.enemies.filter(e => e.alive && e.leech > 0).length;
+      if (leeched > 0) {
+        B.strength += leeched;
+        floatText(offset(center(playerArt()), 60, -120), 'Gravetide +' + leeched + ' Str', 'status');
+        strengthFx(playerArt());
+      }
+    }
+
+    // sockets rebuild — keep slot timers in sync with current socket count
+    B.turnStrength = 0;
+    B.sockets = new Array(B.monster.sockets).fill(null);
+    B.spanHead = new Array(B.monster.sockets).fill(null);
+    while (B.slotFx.length < B.monster.sockets) B.slotFx.push({ disabled: 0, cursed: 0, caster: null });
+    while (B.slotTypes.length < B.monster.sockets) B.slotTypes.push('normal');
+    B.recallUsed = false;
+    drawHand();
+    renderSockets();
+    renderHand(true);
+    refreshAll();
+    updateRecallBtn();
+    updateActButton();
+    updatePiles();
+  }
+
+  // a slot can be filled if it accepts glyphs (Loopback never does), is empty
+  // (not already a glyph or a multi-socket continuation), and not sealed
+  function slotTakesGlyph(i) { return slotType(i) !== 'loopback'; }
+  function slotFillable(i) {
+    return B.sockets[i] == null && (B.spanHead[i] == null) && slotTakesGlyph(i) && !slotDisabled(i);
+  }
+  function freeSocketCount() {
+    let n = 0;
+    for (let i = 0; i < B.sockets.length; i++) if (slotFillable(i)) n++;
+    return n;
+  }
+  function firstFreeSocket() {
+    for (let i = 0; i < B.sockets.length; i++) if (slotFillable(i)) return i;
+    return -1;
+  }
+  // first index that starts a run of `span` consecutive fillable sockets
+  function firstFreeRun(span) {
+    if (span <= 1) return firstFreeSocket();
+    for (let i = 0; i + span - 1 < B.sockets.length; i++) {
+      let ok = true;
+      for (let k = 0; k < span; k++) if (!slotFillable(i + k)) { ok = false; break; }
+      if (ok) return i;
+    }
+    return -1;
+  }
+  function canPlaceGlyph(id) {
+    const span = glyph(id).slots || 1;
+    return firstFreeRun(span) !== -1;
+  }
+  function slotDisabled(i) { return B.slotFx[i] && B.slotFx[i].disabled > 0; }
+  function slotCursed(i) { return B.slotFx[i] && B.slotFx[i].cursed > 0; }
+
+  // ACT becomes SKIP (end turn) when nothing is socketed
+  function updateActButton() {
+    const btn = $('btn-detonate');
+    if (!btn) return;
+    const hasPlaced = B.sockets.some(s => s !== null);
+    btn.disabled = !!B.resolving;
+    btn.classList.toggle('is-skip', !hasPlaced);
+    const lab = btn.querySelector('.det-label');
+    const sub = btn.querySelector('.det-sub');
+    if (lab) lab.textContent = hasPlaced ? 'Act' : 'Skip';
+    if (sub) sub.textContent = hasPlaced ? 'resolve' : 'end turn';
+  }
+
+  // Fisher–Yates
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+  function removeOne(arr, id) { const i = arr.indexOf(id); if (i !== -1) arr.splice(i, 1); }
+  // pull `count` cards off the draw pile, reshuffling the discard back in when it runs dry
+  function drawFromPile(count) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      if (!B.draw.length) {
+        if (!B.discard.length) break;       // deck fully exhausted this turn
+        B.draw = shuffle(B.discard); B.discard = [];
+      }
+      out.push(B.draw.pop());
+    }
+    return out;
+  }
+
+  function drawHand() {
+    // Dead Weight (sticky) and freshly-forced junk both eat into your draw
+    const stuckCost = B.stuck.reduce((s, id) => s + (glyph(id).slots || 1), 0);
+    const injected = B.injected.slice();
+    B.injected = [];
+    // Held glyphs return as EXTRA cards — they do NOT reduce the normal draw
+    const extras = B.extras.slice();
+    B.extras = [];
+    // Target hand size: after clones/extras are counted, you always hold at least
+    // your socket count, but never fewer than 5. Held/cloned cards count toward
+    // this minimum; forced junk (stuck / injected) still eats into your real draw.
+    const target = Math.max(5, B.monster.sockets) + (root.CG.Game.state.blessings.overload ? 1 : 0);
+    let handSize = target - extras.length - stuckCost - injected.length;
+    handSize = Math.max(0, handSize);
+    const hand = drawFromPile(handSize);
+    B.hand = B.stuck.concat(injected, extras, hand);
+    // real deck cards (drawn + non-clone held returns) flow to the discard at end of turn;
+    // stuck / injected junk / temp clones stay outside the pile system
+    B.drawnThisTurn = hand.slice();
+    extras.forEach(id => { if (!glyph(id).cloneOf) B.drawnThisTurn.push(id); });
+    applyDrawHooks();
+  }
+
+  // "When drawn" effects fire each turn the card is in your hand.
+  // On-draw Strength is capped to once per glyph type per turn (so a hand full
+  // of Onslaughts doesn't snowball Strength).
+  function applyDrawHooks() {
+    const strSeen = {};
+    B.hand.forEach(id => {
+      const base = baseOf(glyph(id).cloneOf || id);   // cap is per glyph TYPE
+      const od = glyph(id).onDraw;
+      if (!od) return;
+      if (od.kind === 'strength') {
+        if (strSeen[base]) return;
+        strSeen[base] = 1;
+        B.turnStrength += od.value;
+      } else if (od.kind === 'heal') {
+        B.monster.hp = Math.min(B.monster.maxHp, B.monster.hp + od.value);
+      }
+    });
+  }
+
+  // ============================================================
+  // GLYPH TILES (use bespoke rune art where available)
+  // ============================================================
+  function glyphVisual(id) {
+    const g = glyph(id);
+    if (g.img) {
+      const i = el('img', 'g-img');
+      i.src = g.img; i.alt = g.name; i.draggable = false;
+      return i;
+    }
+    const hex = el('div', 'g-hex');
+    hex.innerHTML = '<span class="g-rune">' + g.rune + '</span>';
+    return hex;
+  }
+
+  // a multi-socket glyph reads as a diagonally stacked set of the same rune
+  // (two for a 2-slot glyph, a triad for 3) instead of one wide tile.
+  function glyphStack(id, n) {
+    if (!n || n <= 1) return glyphVisual(id);
+    const wrap = el('div', 'g-stack');
+    wrap.style.setProperty('--n', n);
+    for (let i = 0; i < n; i++) {
+      const layer = el('div', 'g-layer');
+      layer.style.setProperty('--i', i);
+      layer.appendChild(glyphVisual(id));
+      wrap.appendChild(layer);
+    }
+    return wrap;
+  }
+
+  // the A/B/C/Wild badge that drives alphabet combos
+  function letterChip(id) {
+    const l = glyph(id).letter;
+    if (!l) return null;
+    return el('div', 'letter-chip ' + (l === 'wild' ? 'wild' : 'l-' + l), l === 'wild' ? '✦' : l);
+  }
+
+  function glyphTile(id) {
+    const g = glyph(id);
+    const t = el('div', 'glyph');
+    if (g.junk) t.classList.add('junk');
+    if ((g.slots || 1) > 1) t.classList.add('wide');
+    if (g.sticky) t.classList.add('sticky');
+    if (g.cloneOf) t.classList.add('cloned');
+    t.style.setProperty('--g-color', 'var(--' + g.color + ')');
+    t.dataset.color = g.color;
+    const body = el('div', 'g-body');
+    body.appendChild(glyphStack(id, g.slots || 1));
+    // chip lives inside the body so it lifts/scales with the card on hover
+    const chip = letterChip(id);
+    if (chip) body.appendChild(chip);
+    t.appendChild(body);
+    t.appendChild(el('span', 'g-name', g.name));
+    // per-card upgrade markers (this specific copy, not the glyph type)
+    const emp = empowerOf(id);
+    if (emp > 0) t.appendChild(el('span', 'g-up g-up-power', '✦+' + emp));
+    if (comboAdv(id) > 1) t.appendChild(el('span', 'g-up g-up-combo', '▲▲'));
+    // on hover the on-card emblems fade out and re-collect inside the tooltip
+    let emblems = '';
+    const lc = glyph(id).letter;
+    if (lc) emblems += '<span class="te-chip ' + (lc === 'wild' ? 'wild' : 'l-' + lc) + '">' + (lc === 'wild' ? '✦' : lc) + '</span>';
+    if (emp > 0) emblems += '<span class="te-up te-up-power">✦+' + emp + '</span>';
+    if (comboAdv(id) > 1) emblems += '<span class="te-up te-up-combo">▲▲</span>';
+    const emblemRow = emblems ? '<div class="g-tip-emblems">' + emblems + '</div>' : '';
+    t.appendChild(el('div', 'g-tip', emblemRow + '<b>' + g.name + '</b>' + upgradeTipSuffix(id) + '<br>' + fmtDesc(id, handEnv(id))));
+    return t;
+  }
+
+  function renderHand(animate) {
+    const row = $('hand-row');
+    row.innerHTML = '';
+    // is a combo chain already going? (a lettered glyph is socketed)
+    const tail = placedComboTail();
+    B.hand.forEach((id, i) => {
+      const t = glyphTile(id);
+      // highlight cards that would continue the active alphabet chain
+      if (!B.resolving && tail.prev != null && comboLinks(tail.prev, comboLetter(id))) {
+        t.classList.add('combo-next');
+      }
+      // a glyph is playable only if its full socket span can fit somewhere
+      const playable = !B.resolving && canPlaceGlyph(id);
+      if (!playable) {
+        t.style.opacity = '0.45'; t.style.cursor = 'not-allowed';
+        if (!B.resolving && (glyph(id).slots || 1) > 1) t.classList.add('no-room');
+      } else {
+        t.addEventListener('mouseenter', () => { SFX.hover(); t.style.zIndex = 1000; });
+        t.addEventListener('mouseleave', () => { t.style.zIndex = t.dataset.baseZ || 0; });
+        t.addEventListener('click', () => placeGlyph(i, t));
+      }
+      row.appendChild(t);
+    });
+    layoutHand();
+    if (animate) animateDraw(Array.from(row.children));
+  }
+
+  // stage-space center of an element (1 stage unit == 1 logical px pre-scale)
+  function stageRectCenter(elm) {
+    const r = elm.getBoundingClientRect();
+    return root.CG.Scale.toStage(r.left + r.width / 2, r.top + r.height / 2);
+  }
+  function pulsePile(elm) {
+    if (!elm) return;
+    elm.classList.remove('pulse'); void elm.offsetWidth; elm.classList.add('pulse');
+  }
+  // deal: each card streaks out of the DECK pile into its slot in the hand
+  function animateDraw(cards) {
+    const deck = $('pile-deck');
+    if (!deck || !cards.length || typeof cards[0].animate !== 'function' || !root.CG.Scale) return;
+    const from = stageRectCenter(deck);
+    pulsePile(deck);
+    cards.forEach((c, i) => {
+      const cc = stageRectCenter(c);
+      const dx = from.x - cc.x, dy = from.y - cc.y;
+      c.animate([
+        { transform: `translate(${dx}px, ${dy}px) scale(.22) rotate(-28deg)`, opacity: 0 },
+        { opacity: 1, offset: 0.32 },
+        { transform: 'translate(0,0) scale(1) rotate(0)' }
+      ], { duration: 460, delay: i * 55, easing: 'cubic-bezier(.2,.85,.3,1)', fill: 'backwards' });
+    });
+  }
+  // discard: unplayed cards sweep off into the DISCARD pile
+  function animateDiscard(cards) {
+    const disc = $('pile-discard');
+    return new Promise(res => {
+      if (!disc || !cards.length || typeof cards[0].animate !== 'function' || !root.CG.Scale) { res(); return; }
+      const to = stageRectCenter(disc);
+      let done = 0; const total = cards.length;
+      cards.forEach((c, i) => {
+        const cc = stageRectCenter(c);
+        const dx = to.x - cc.x, dy = to.y - cc.y;
+        const a = c.animate([
+          { transform: 'translate(0,0) scale(1) rotate(0)', opacity: 1 },
+          { transform: `translate(${dx}px, ${dy}px) scale(.22) rotate(26deg)`, opacity: 0 }
+        ], { duration: 420, delay: i * 45, easing: 'cubic-bezier(.45,0,.7,1)', fill: 'forwards' });
+        const fin = () => { if (++done === total) { pulsePile(disc); res(); } };
+        a.onfinish = fin;
+      });
+      setTimeout(() => { if (done < total) res(); }, 420 + total * 45 + 250);
+    });
+  }
+
+  // Lay the hand out inside a "safe band" that clears the player panel
+  // (bottom-left) and the ACT button (bottom-right). The stage is a fixed 1920
+  // logical layout, so these bounds are constant. Cards keep their natural gap
+  // until they'd overflow the band, then overlap just enough to fit. A small
+  // hand stays centered on the stage; a big hand drifts only as far as needed
+  // to keep every card clear of the UI — so all cards remain clickable.
+  const HAND_GAP = 22;
+  const ZONE_L = 454;          // right edge of the player panel (+margin)
+  const ZONE_R = 1604;         // left edge of the ACT button (-margin)
+  const STAGE_MID = 960;
+  function layoutHand() {
+    const row = $('hand-row');
+    const cards = Array.from(row.children);
+    if (!cards.length) { row.style.transform = ''; return; }
+    const widths = cards.map(() => 150);   // multi-socket glyphs now share the normal footprint
+    const sumW = widths.reduce((a, b) => a + b, 0);
+    const n = cards.length;
+    const bandW = ZONE_R - ZONE_L;
+    const natural = sumW + HAND_GAP * (n - 1);
+    let step = HAND_GAP;
+    if (n > 1 && natural > bandW) step = (bandW - sumW) / (n - 1);   // negative => overlap
+    cards.forEach((c, i) => {
+      c.style.marginLeft = (i === 0 ? 0 : step) + 'px';
+      c.dataset.baseZ = i;        // later cards stack above earlier ones
+      c.style.zIndex = i;
+    });
+    // the row is centered on the stage by flexbox; nudge it only enough to keep
+    // its edges inside the safe band
+    const W = Math.min(natural, bandW);
+    const half = W / 2;
+    let centerX = STAGE_MID;
+    if (centerX - half < ZONE_L) centerX = ZONE_L + half;
+    if (centerX + half > ZONE_R) centerX = ZONE_R - half;
+    row.style.transform = 'translateX(' + (centerX - STAGE_MID) + 'px)';
+  }
+
+  // sockets are rebuilt from scratch on every turn-start/placement; anchoring a
+  // looping animation's phase to the wall clock keeps idle pulses (the "current
+  // socket" beckon, loopback bob) continuous across rebuilds instead of snapping
+  // back to frame 0 each time the hand is drawn.
+  function syncPulse(elm, periodMs) {
+    elm.style.animationDelay = (-(((root.performance || Date).now()) % periodMs)) + 'ms';
+  }
+  function renderSockets() {
+    const row = $('socket-row');
+    row.innerHTML = '';
+    const firstFree = firstFreeSocket();
+    B.sockets.forEach((id, i) => {
+      const type = slotType(i);
+      const s = el('div', 'socket slot-' + type);
+      s.innerHTML = '<img class="slot-img" src="assets/Base Rune.png" alt=""><span class="socket-num">' + (i + 1) + '</span>';
+      const meta = SLOT_META[type];
+      if (meta) {
+        const badge = el('div', 'slot-badge', meta.icon);
+        if (meta.tip) badge.appendChild(el('div', 'slot-tip', '<b class="st-name">' + meta.label + ' Socket</b><br>' + meta.tip));
+        s.appendChild(badge);
+        s.appendChild(el('div', 'slot-type-name', meta.label));
+      }
+      const fx = B.slotFx[i] || {};
+      const headIdx = B.spanHead[i];
+      if (headIdx != null) {
+        // continuation half of a multi-socket glyph — show the same glyph in it
+        const hid = B.sockets[headIdx];
+        const hg = glyph(hid);
+        s.classList.add('filled', 'span-cont', 'color-' + hg.color);
+        s.style.setProperty('--g-color', 'var(--' + hg.color + ')');
+        const gv = el('div', 'socket-glyph');
+        gv.appendChild(glyphVisual(hid));
+        s.appendChild(gv);
+        s.appendChild(el('div', 'span-link', '⟜'));
+        s.appendChild(el('div', 'g-tip', '<b>' + hg.name + '</b><br>' + fmtDesc(hid, socketEnv(headIdx))));
+        if (fx.cursed > 0) s.classList.add('cursed');   // a cursed half curses the whole glyph
+        if (recallReady()) {
+          s.classList.add('recallable');
+          s.addEventListener('click', () => recallGlyph(headIdx, $('socket-row').children[headIdx]));
+        }
+      } else if (type === 'loopback') {
+        s.classList.add('loopback');   // never holds a glyph
+        syncPulse(s, 2400);
+      } else if (id) {
+        const g = glyph(id);
+        const span = g.slots || 1;
+        s.classList.add('filled', 'color-' + g.color);
+        if (span > 1) s.classList.add('span-head');
+        s.style.setProperty('--g-color', 'var(--' + g.color + ')');
+        const gv = el('div', 'socket-glyph');
+        gv.appendChild(glyphVisual(id));
+        s.appendChild(gv);
+        const chip = letterChip(id);
+        if (chip) s.appendChild(chip);
+        const sEmp = empowerOf(id);
+        if (sEmp > 0) s.appendChild(el('span', 'g-up g-up-power', '✦+' + sEmp));
+        if (comboAdv(id) > 1) s.appendChild(el('span', 'g-up g-up-combo', '▲▲'));
+        s.appendChild(el('div', 'g-tip', '<b>' + g.name + '</b>' + upgradeTipSuffix(id) + '<br>' + fmtDesc(id, socketEnv(i))));
+        // cursed if this socket OR any continuation socket of this glyph is cursed
+        let spanCursed = fx.cursed > 0;
+        if (span > 1) {
+          for (let j = i + 1; j < B.sockets.length; j++) {
+            if (B.spanHead[j] === i && B.slotFx[j] && B.slotFx[j].cursed > 0) { spanCursed = true; break; }
+          }
+        }
+        if (spanCursed) s.classList.add('cursed');
+        if (recallReady()) {
+          s.classList.add('recallable');
+          s.addEventListener('click', () => recallGlyph(i, s));
+        }
+      } else if (fx.disabled > 0) {
+        s.classList.add('disabled');
+        const lb = el('div', 'slot-lock fx-badge', '⛔<span class="lock-turns">' + fx.disabled + '</span>');
+        lb.appendChild(el('div', 'slot-fx-tip',
+          '<b class="st-name">Sealed Socket</b>Shut tight by the enemy — you forge with <b>one fewer slot</b> until it reopens.' +
+          '<span class="sft-turns">' + fx.disabled + ' turn(s) remaining</span>'));
+        s.appendChild(lb);
+      } else {
+        s.classList.add('empty');
+        if (fx.cursed > 0) s.classList.add('cursed');
+        if (i === firstFree) { s.classList.add('next'); syncPulse(s, 1600); }
+      }
+      if (fx.cursed > 0) {
+        const cb = el('div', 'slot-curse fx-badge', '☠<span class="lock-turns">' + fx.cursed + '</span>');
+        cb.appendChild(el('div', 'slot-fx-tip',
+          '<b class="st-name">Cursed Socket</b>Its effect still resolves, but is <b>mirrored</b>: any block or heal you gain here <b>also feeds the caster</b>, and any damage or burn <b>also recoils onto you</b>.' +
+          '<span class="sft-turns">' + fx.cursed + ' turn(s) remaining</span>'));
+        // insert BEFORE the glyph tip so hovering the curse badge suppresses it
+        const gt = s.querySelector('.g-tip');
+        if (gt) s.insertBefore(cb, gt); else s.appendChild(cb);
+      }
+      row.appendChild(s);
+    });
+    // the runes are THE centerpiece — on the first build of a battle they
+    // materialize one by one instead of snapping in
+    if (B.socketIntro) { B.socketIntro = false; revealSockets(); }
+  }
+
+  // ============================================================
+  // PLACE / RECALL  (with fly + seat animations)
+  // ============================================================
+  function flyClone(fromRect, toEl, id, scaleTo, cb) {
+    const tr = toEl.getBoundingClientRect();
+    const a = Scale.toStage(fromRect.left + fromRect.width / 2, fromRect.top + fromRect.height / 2);
+    const b = Scale.toStage(tr.left + tr.width / 2, tr.top + tr.height / 2);
+    const clone = el('div', 'fly-clone');
+    clone.style.setProperty('--g-color', 'var(--' + glyph(id).color + ')');
+    const body = el('div', 'g-body');
+    body.appendChild(glyphVisual(id));
+    clone.appendChild(body);
+    clone.style.left = a.x + 'px'; clone.style.top = a.y + 'px';
+    clone.style.transform = 'translate(-50%,-50%) scale(1)';
+    stage.appendChild(clone);
+    requestAnimationFrame(() => {
+      clone.style.transition = 'left .26s cubic-bezier(.3,.7,.25,1), top .26s cubic-bezier(.3,.7,.25,1), transform .26s';
+      clone.style.left = b.x + 'px'; clone.style.top = b.y + 'px';
+      clone.style.transform = 'translate(-50%,-50%) scale(' + (scaleTo || 0.7) + ')';
+    });
+    setTimeout(() => { clone.remove(); if (cb) cb(); }, 270);
+  }
+
+  function placeGlyph(handIdx, handEl) {
+    if (B.resolving) return;
+    const id = B.hand[handIdx];
+    const span = glyph(id).slots || 1;
+    const empty = firstFreeRun(span);
+    if (empty === -1) return;
+    SFX.click();   // the satisfying "select" click the moment a glyph is played
+    const fromRect = (handEl.querySelector('.g-body') || handEl).getBoundingClientRect();
+    B.hand.splice(handIdx, 1);
+    // sticky junk (Dead Weight) is finally released once socketed
+    if (glyph(id).sticky) {
+      const si = B.stuck.indexOf(id);
+      if (si !== -1) B.stuck.splice(si, 1);
+    }
+    B.sockets[empty] = id;
+    for (let k = 1; k < span; k++) B.spanHead[empty + k] = empty;   // mark continuation slots
+    renderHand(false);
+    renderSockets();
+    // send one glyph flying into EACH socket the glyph occupies
+    for (let k = 0; k < span; k++) {
+      const slotIdx = empty + k;
+      const socketEl = $('socket-row').children[slotIdx];
+      if (!socketEl) continue;
+      const gv = socketEl.querySelector('.socket-glyph');
+      if (gv) gv.style.visibility = 'hidden';
+      flyClone(fromRect, socketEl, id, 0.74, () => {
+        if (gv) { gv.style.visibility = ''; gv.classList.add('seating'); }
+        SFX.place(slotIdx);
+      });
+    }
+    updateActButton();
+  }
+
+  function recallReady() {
+    return root.CG.Game.state.blessings.recall && !B.recallUsed && !B.resolving;
+  }
+  function recallGlyph(socketIdx, socketEl) {
+    if (!recallReady()) return;
+    const id = B.sockets[socketIdx];
+    if (!id) return;
+    const fromRect = socketEl.getBoundingClientRect();
+    B.sockets[socketIdx] = null;
+    // release any continuation slots this glyph spanned
+    for (let i = 0; i < B.spanHead.length; i++) if (B.spanHead[i] === socketIdx) B.spanHead[i] = null;
+    B.hand.push(id);
+    if (glyph(id).sticky && B.stuck.indexOf(id) === -1) B.stuck.push(id);
+    B.recallUsed = true;
+    SFX.recall();
+    renderSockets();
+    renderHand(false);
+    const handEls = $('hand-row').children;
+    const target = handEls[handEls.length - 1];
+    if (target) {
+      const toEl = target.querySelector('.g-body') || target;
+      target.style.visibility = 'hidden';
+      flyClone(fromRect, toEl, id, 1, () => {
+        target.style.visibility = '';
+        target.classList.add('returning');
+      });
+    }
+    updateRecallBtn();
+    updateActButton();
+  }
+  function updateRecallBtn() {
+    const btn = $('btn-recall');
+    if (!root.CG.Game.state.blessings.recall) { btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+    btn.disabled = true;
+    btn.title = 'Click an equipped glyph to return it to your hand (once per turn).';
+    btn.textContent = B.recallUsed ? '↺ Recall used' : '↺ Recall ready';
+  }
+
+  // ============================================================
+  // POSITION HELPERS (stage-space)
+  // ============================================================
+  function center(elem) {
+    const r = elem.getBoundingClientRect();
+    return Scale.toStage(r.left + r.width / 2, r.top + r.height / 2);
+  }
+  // classify a CSS color string into an elemental "move type" so each attack
+  // reads as a themed strike (fire/frost/venom/shadow/holy) instead of a generic orb
+  function boltKind(color) {
+    const c = (color || '').toLowerCase();
+    if (c.indexOf('red') >= 0) return 'k-fire';
+    if (c.indexOf('blue') >= 0) return 'k-frost';
+    if (c.indexOf('green') >= 0) return 'k-venom';
+    if (c.indexOf('purple') >= 0) return 'k-shadow';
+    if (c.indexOf('gold') >= 0) return 'k-holy';
+    return 'k-arc';
+  }
+
+  // The active beast's signature strike style. THIS — not the glyph's color —
+  // drives what a player attack looks like, so the Troll always swings a blade
+  // (never a fireball), the Ghoul always gnaws, the Kitsune always burns.
+  function playerStrikeStyle() {
+    const id = B.monster && B.monster.id;
+    // only the Kitsune THROWS something — its fireball flies across. The melee
+    // beasts strike directly over the foe (their slash / bite just appears there).
+    if (id === 'kitsune') return { kind: 'k-fire', color: '#ff7a2a', ranged: true };
+    if (id === 'ghoul') return { kind: 'k-gnaw', color: '#a6e86a', ranged: false };
+    return { kind: 'k-blade', color: '#dbe7f5', ranged: false };   // troll & default
+  }
+
+  // a directional energy strike: muzzle flash -> oriented comet streak -> impact
+  // burst. This replaces the old "thrown orb"; same signature + timing so every
+  // call site (hitTargets / boltAll / boltP / combo sparks) upgrades at once.
+  // Pass `kind` to force a style (used by player attacks, which are keyed to the
+  // monster); otherwise the visual is inferred from the color (self-buffs etc.).
+  function bolt(from, to, color, onHit, kind) {
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    kind = kind || boltKind(color);
+    // a quick charge flash where the strike launches
+    fxRing(from, color, 320, 'fx-ring-soft');
+    const proj = el('div', 'atk-proj ' + kind);
+    proj.style.setProperty('--atk-color', color);
+    proj.style.setProperty('--ang', ang + 'deg');
+    proj.style.left = from.x + 'px'; proj.style.top = from.y + 'px';
+    stage.appendChild(proj);
+    // force a synchronous layout so the START position is committed before we
+    // flip to the END — otherwise the browser can coalesce both writes and the
+    // projectile teleports straight onto the target instead of flying.
+    void proj.offsetWidth;
+    proj.style.transition = 'left .2s cubic-bezier(.5,.02,.65,1), top .2s cubic-bezier(.5,.02,.65,1)';
+    proj.style.left = to.x + 'px'; proj.style.top = to.y + 'px';
+    setTimeout(() => {
+      proj.remove();
+      boltImpact(to, color, kind);
+      if (onHit) onHit();
+    }, 255);
+  }
+
+  // the themed splash where a strike lands
+  function boltImpact(to, color, kind) {
+    fxRing(to, color, 520);
+    const core = fxSpawn(to, 'atk-impact ' + kind, '', 360);
+    core.style.setProperty('--atk-color', color);
+    if (kind === 'k-fire') fxMotes(to, 9, '#ff8a3a', 'fx-mote-spark', 84);
+    else if (kind === 'k-blade') fxMotes(to, 7, '#eaf4ff', 'fx-mote-spark', 70);
+    else if (kind === 'k-gnaw') fxMotes(to, 7, '#cdeeb0', 'fx-mote-spark', 64);
+    else if (kind === 'k-frost') fxMotes(to, 8, '#c7ecff', 'fx-mote-shard', 78);
+    else if (kind === 'k-venom') fxMotes(to, 8, '#9be86a', 'fx-mote-spark', 74);
+    else if (kind === 'k-shadow') fxMotes(to, 9, '#c98bff', 'fx-mote-spark', 80);
+    else if (kind === 'k-holy') fxMotes(to, 8, '#ffe9a8', 'fx-mote-spark', 84);
+    else fxMotes(to, 7, color, 'fx-mote-spark', 72);
+  }
+  function floatText(pos, text, kind) {
+    const f = el('div', 'float-text ' + kind, text);
+    f.style.top = pos.y + 'px';
+    stage.appendChild(f);
+    // the text is centered on pos.x (translateX(-50%)); clamp so wide strings
+    // near the edges (e.g. the bottom-left player) aren't cut off by the stage
+    const margin = 14;
+    const stageW = stage.offsetWidth || 1920;
+    const half = f.offsetWidth / 2;
+    const x = Math.max(half + margin, Math.min(stageW - half - margin, pos.x));
+    f.style.left = x + 'px';
+    setTimeout(() => f.remove(), 1100);
+  }
+  function shake(level) {
+    stage.classList.remove('stage-shake', 'stage-shake-2', 'stage-shake-3');
+    void stage.offsetWidth;
+    stage.classList.add(level >= 3 ? 'stage-shake-3' : level === 2 ? 'stage-shake-2' : 'stage-shake');
+  }
+  // a brief full-stage light flash for big, dramatic moments (boss deaths)
+  function deathFlash(maxA, dur, color) {
+    const f = el('div', 'death-flash');
+    if (color) f.style.background = 'radial-gradient(circle at 50% 46%, ' + color + ', transparent 72%)';
+    stage.appendChild(f);
+    f.animate(
+      [{ opacity: 0 }, { opacity: maxA, offset: 0.12 }, { opacity: 0 }],
+      { duration: dur, easing: 'cubic-bezier(.2,.6,.3,1)' }
+    ).onfinish = () => f.remove();
+  }
+
+  // ============================================================
+  // COMBAT FX — reusable, themed flourishes for every action
+  // ============================================================
+  function fxSpawn(pos, cls, html, life) {
+    const f = el('div', 'cfx ' + cls, html || '');
+    f.style.left = pos.x + 'px'; f.style.top = pos.y + 'px';
+    stage.appendChild(f);
+    setTimeout(() => f.remove(), life || 900);
+    return f;
+  }
+  function fxRing(pos, color, life, cls) {
+    const r = fxSpawn(pos, 'fx-ring ' + (cls || ''), '', life || 720);
+    if (color) r.style.setProperty('--fx-color', color);
+    return r;
+  }
+  // `area` (optional {w,h}) scatters each mote's ORIGIN across a box around `pos`
+  // instead of all of them erupting from a single point
+  function fxMotes(pos, n, color, cls, spread, area) {
+    spread = spread || 80;
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const dist = spread * (0.4 + Math.random() * 0.7);
+      const sp = area
+        ? { x: pos.x + (Math.random() - 0.5) * area.w, y: pos.y + (Math.random() - 0.5) * area.h }
+        : pos;
+      const m = fxSpawn(sp, 'fx-mote ' + (cls || ''), '', 950);
+      if (color) m.style.setProperty('--fx-color', color);
+      m.style.setProperty('--dx', Math.cos(ang) * dist + 'px');
+      m.style.setProperty('--dy', (Math.sin(ang) * dist - 24) + 'px');
+      m.style.animationDelay = (Math.random() * 180) + 'ms';
+    }
+  }
+  // measure an element's box in stage space (for scattering fx across it)
+  function stageBox(elm) {
+    const r = elm.getBoundingClientRect();
+    const tl = Scale.toStage(r.left, r.top), br = Scale.toStage(r.right, r.bottom);
+    return { w: br.x - tl.x, h: br.y - tl.y };
+  }
+  function flashEl(elm, cls, ms) {
+    if (!elm) return;
+    elm.classList.remove(cls); void elm.offsetWidth; elm.classList.add(cls);
+    setTimeout(() => elm.classList.remove(cls), ms || 500);
+  }
+  function topOf(elm, dy) { return offset(center(elm), 0, dy == null ? -34 : dy); }
+
+  // ---- normal attack: a per-character impact when the player deals damage ----
+  function playerLunge() {
+    const now = (root.performance || Date).now();
+    if (B._lastLunge && now - B._lastLunge < 240) return;   // don't jitter on AoE
+    B._lastLunge = now;
+    // lunge the WHOLE emblem toward the foe (up-right). We animate the outer
+    // container so the portrait's own centering transform is left intact.
+    const t = $('player-monster');
+    if (!t || typeof t.animate !== 'function') return;
+    t.animate([
+      { transform: 'translate(0,0) scale(1)' },
+      { transform: 'translate(34px,-24px) scale(1.05)', offset: 0.3 },
+      { transform: 'translate(0,0) scale(1)' }
+    ], { duration: 360, easing: 'cubic-bezier(.3,.8,.3,1)' });
+  }
+  // ---- taking a hit: the whole emblem recoils down-left, away from the foes ----
+  function playerHitReact() {
+    const t = $('player-monster');
+    if (!t || typeof t.animate !== 'function') return;
+    t.animate([
+      { transform: 'translate(0,0) rotate(0)' },
+      { transform: 'translate(-15px,7px) rotate(-2.6deg)', offset: 0.18 },
+      { transform: 'translate(9px,-2px) rotate(1.5deg)', offset: 0.46 },
+      { transform: 'translate(-5px,2px) rotate(-1deg)', offset: 0.72 },
+      { transform: 'translate(0,0) rotate(0)' }
+    ], { duration: 440, easing: 'cubic-bezier(.3,.7,.4,1)' });
+  }
+  function monsterStrikeFx(en) {
+    if (!en || !en.dom) return;
+    const p = center(en.dom);
+    playerLunge();
+    const id = B.monster && B.monster.id;
+    if (id === 'ghoul') {
+      // a snapping bite — two fang rows chomp shut over the foe
+      const bite = fxSpawn(p, 'fx-bite', '<i class="jaw top"></i><i class="jaw bot"></i><i class="chomp"></i>', 600);
+      bite.style.setProperty('--ang', (Math.random() * 24 - 12) + 'deg');
+      fxMotes(p, 6, '#cdeeb0', 'fx-mote-spark', 58);
+    } else if (id === 'kitsune') {
+      // clean, all-warm foxfire burst (no stray cool tones)
+      fxSpawn(p, 'fx-foxfire', '<i></i><i></i>', 600);
+      fxRing(p, '#ff7a2a', 500, 'fx-ring-soft');
+      fxMotes(p, 10, '#ffb347', 'fx-mote-spark', 80);
+    } else {
+      // troll & default: a katana-style blade slash trails across the foe
+      const slash = fxSpawn(p, 'fx-slash', '<i class="trail"></i><i class="edge"></i>', 460);
+      slash.style.setProperty('--ang', (-34 + (Math.random() * 20 - 10)) + 'deg');
+      fxMotes(p, 6, '#eaf4ff', 'fx-mote-spark', 60);
+    }
+  }
+
+  // a real-fire particle system: a dense cloud of soft, blurred embers that are
+  // born white-hot at the base and COOL as they rise (white→yellow→orange→red→
+  // ember→smoke), drifting on a little turbulence. Additive (screen) blending so
+  // overlapping particles bloom into a continuous flame body instead of distinct
+  // cartoon "tongues". Topped with fast sparks, a flickering heat-glow and smoke.
+  function flameBurst(p, opts) {
+    opts = opts || {};
+    const scale = opts.scale || 1;
+    const n = Math.round((opts.count || 22) * (opts.dense === false ? 1 : 1));
+    const spread = opts.spread || 26;
+
+    // low flickering heat-glow at the base
+    if (opts.glow !== false) {
+      const glow = fxSpawn(offset(p, 0, 6), 'fx-fglow', '', 760);
+      glow.style.setProperty('--gs', (62 * scale).toFixed(0) + 'px');
+    }
+
+    // the flame body — many soft cooling embers
+    for (let i = 0; i < n; i++) {
+      // bias emission toward the center (hotter core, thinner edges)
+      const t = Math.random();
+      const ox = (Math.random() * 2 - 1) * spread * (0.35 + t * 0.65);
+      const fp = fxSpawn(offset(p, ox, 6 + Math.random() * 12), 'fx-fp', '', 1500);
+      const sz = (9 + Math.random() * 22) * scale * (1 - Math.abs(ox) / (spread * 1.6) * 0.4);
+      fp.style.setProperty('--fs', sz.toFixed(1) + 'px');
+      fp.style.setProperty('--fb', Math.max(2, sz * 0.24).toFixed(1) + 'px');
+      fp.style.setProperty('--ry', (-(64 + Math.random() * 120) * scale).toFixed(0) + 'px');
+      fp.style.setProperty('--wx', ((Math.random() * 2 - 1) * 12).toFixed(0) + 'px');
+      fp.style.setProperty('--wx2', ((Math.random() * 2 - 1) * 24).toFixed(0) + 'px');
+      fp.style.setProperty('--fd', (0.62 + Math.random() * 0.6).toFixed(2) + 's');
+      fp.style.animationDelay = Math.round(Math.random() * 300) + 'ms';
+    }
+
+    // bright fast sparks shooting up out of the flame
+    const sparks = opts.sparks == null ? Math.round(6 * scale) : opts.sparks;
+    for (let s = 0; s < sparks; s++) {
+      const sp = fxSpawn(offset(p, (Math.random() * 2 - 1) * spread * 0.7, 4), 'fx-spark', '', 1200);
+      sp.style.setProperty('--ry', (-(120 + Math.random() * 130) * scale).toFixed(0) + 'px');
+      sp.style.setProperty('--wx', ((Math.random() * 2 - 1) * 34).toFixed(0) + 'px');
+      sp.style.setProperty('--fd', (0.55 + Math.random() * 0.5).toFixed(2) + 's');
+      sp.style.animationDelay = Math.round(Math.random() * 280) + 'ms';
+    }
+
+    // a curl of smoke lifting off the top
+    if (opts.smoke !== false) {
+      for (let k = 0; k < (opts.smoke || 2); k++) {
+        const sm = fxSpawn(offset(p, (Math.random() * 2 - 1) * spread * 0.5, -8), 'fx-smoke', '', 1500);
+        sm.style.setProperty('--sdx', ((Math.random() * 2 - 1) * 20).toFixed(0) + 'px');
+        sm.style.animationDelay = (220 + Math.random() * 280) + 'ms';
+      }
+    }
+  }
+
+  // ---- status applications & ticks ----
+  function burnApplyFx(elm) {
+    if (!elm) return;
+    flameBurst(offset(center(elm), 0, 12), { count: 30, scale: 1.15, spread: 28, sparks: 8, smoke: 2 });
+  }
+  function burnTickFx(elm) {
+    if (!elm) return;
+    flameBurst(offset(center(elm), 0, 14), { count: 16, scale: 0.82, spread: 22, sparks: 4, smoke: 1, glow: false });
+    flashEl(elm, 'fx-burnflash', 480);
+  }
+  function shieldGainFx(elm) { if (!elm) return; const p = center(elm); fxSpawn(p, 'fx-shield', '', 760); fxRing(p, '#5ab6ff', 700); }
+  function weakFx(elm) { if (!elm) return; fxSpawn(topOf(elm), 'fx-weak', '▼', 820); flashEl(elm, 'fx-weakflash', 640); }
+  function scareFx(elm) { if (!elm) return; const p = topOf(elm); fxSpawn(p, 'fx-scare', '☠', 840); fxRing(p, '#c77bff', 640, 'fx-ring-soft'); flashEl(elm, 'fx-scareflash', 520); }
+  function leechApplyFx(elm) { if (!elm) return; const p = topOf(elm, -20); fxSpawn(p, 'fx-leech', '🩸', 820); fxRing(p, '#d33a46', 640, 'fx-ring-soft'); }
+  function leechTickFx(fromEl, toEl) {
+    if (!fromEl) return;
+    if (toEl) bolt(center(fromEl), center(toEl), '#d33a46');
+    fxMotes(topOf(fromEl, -6), 5, '#d33a46', 'fx-mote-spark', 50);
+  }
+  function healFx(elm) { if (!elm) return; const p = center(elm); fxSpawn(p, 'fx-heal', '✚', 920); fxRing(p, '#7ee07a', 760, 'fx-ring-soft'); fxMotes(p, 9, '#8ef58a', 'fx-mote-rise', 72); }
+  function strengthFx(elm) { if (!elm) return; const p = topOf(elm, -52); fxSpawn(p, 'fx-strength', '⚔', 840); fxMotes(p, 6, '#ff6a4a', 'fx-mote-rise', 48); flashEl(elm, 'fx-strflash', 520); }
+  function resilienceFx(elm) { if (!elm) return; const p = topOf(elm, -52); fxSpawn(p, 'fx-resil', '🛡', 840); fxMotes(p, 6, '#7fd0ff', 'fx-mote-rise', 48); }
+
+  // ---- slot effects ----
+  function slotCurseFx(socketEl) { if (!socketEl) return; const p = center(socketEl); fxSpawn(p, 'fx-curse', '☠', 920); fxRing(p, '#c45cff', 800); flashEl(socketEl, 'fx-curseflash', 760); }
+  function slotBanishFx(socketEl) { if (!socketEl) return; const p = center(socketEl); fxSpawn(p, 'fx-banish', '⛔', 840); fxRing(p, '#9aa0aa', 720); flashEl(socketEl, 'fx-banishflash', 640); }
+  // a glyph kept by a Hold socket: it freezes, shimmers teal, and floats a tag
+  function holdFx(socketEl) {
+    if (!socketEl) return;
+    const p = center(socketEl);
+    floatText(offset(p, 0, -10), 'Held ⏸', 'shield');
+    fxRing(p, '#6fe0cf', 700);
+    fxMotes(p, 8, '#9ff0e0', 'fx-mote-rise', 52);
+    const gv = socketEl.querySelector('.socket-glyph');
+    if (gv && gv.animate) gv.animate([
+      { transform: 'scale(1)', filter: 'brightness(1)' },
+      { transform: 'scale(1.16)', filter: 'brightness(1.5) drop-shadow(0 0 14px #6fe0cf)', offset: 0.4 },
+      { transform: 'scale(1)', filter: 'brightness(1)' }
+    ], { duration: 640, easing: 'cubic-bezier(.3,1.4,.4,1)' });
+  }
+  // an Empower socket bolstering a neighbouring glyph (+N)
+  function empowerSpark(socketEl, n) {
+    if (!socketEl) return;
+    const p = center(socketEl);
+    floatText(offset(p, 0, -34), '⊕ +' + n, 'status');
+    fxRing(p, '#ffe6a8', 540);
+    fxMotes(p, 6, '#ffe6a8', 'fx-mote-rise', 46);
+  }
+  // a Repeat socket multiplying its glyph (×mult)
+  function repeatPop(socketEl, mult) {
+    if (!socketEl) return;
+    const p = center(socketEl);
+    floatText(offset(p, 0, -34), '×' + mult, 'status');
+    const gv = socketEl.querySelector('.socket-glyph');
+    if (gv && gv.animate) gv.animate([
+      { transform: 'scale(1)' },
+      { transform: 'scale(1.2) rotate(-4deg)', offset: 0.45 },
+      { transform: 'scale(1)' }
+    ], { duration: 460, easing: 'cubic-bezier(.3,1.5,.4,1)' });
+  }
+
+  // ---- runes: dissolve out after a chain; materialize at battle start ----
+  function clearSocketsExit() {
+    const row = $('socket-row');
+    if (!row) return Promise.resolve();
+    const glyphs = Array.from(row.querySelectorAll('.socket .socket-glyph'));
+    if (!glyphs.length) return Promise.resolve();
+    let any = false;
+    glyphs.forEach((gv, i) => {
+      if (!gv || gv.dataset.exiting) return;
+      gv.dataset.exiting = '1'; any = true;
+      gv.style.animationDelay = (i * 55) + 'ms';
+      gv.classList.add('rune-spend-out');
+      const socket = gv.closest('.socket');
+      if (socket) {
+        const p = center(socket);
+        const box = stageBox(socket);
+        const area = { w: box.w * 0.92, h: box.h * 0.92 };
+        setTimeout(() => fxMotes(p, 14, '#f5c969', 'fx-mote-rise', 48, area), i * 55);
+      }
+    });
+    if (any && SFX.recall) SFX.recall();
+    return wait(420 + glyphs.length * 55).then(() => {
+      // truly empty the runes so an enemy curse/seal mid-turn can't re-show spent glyphs
+      B.sockets = new Array(B.monster.sockets).fill(null);
+      B.spanHead = new Array(B.monster.sockets).fill(null);
+      renderSockets();
+    });
+  }
+  function revealSockets() {
+    const row = $('socket-row');
+    if (!row) return;
+    Array.from(row.children).forEach((s, i) => {
+      s.style.setProperty('--ri', i);
+      s.classList.remove('rune-appear'); void s.offsetWidth; s.classList.add('rune-appear');
+      setTimeout(() => s.classList.remove('rune-appear'), 1300 + i * 90);
+    });
+  }
+
+  // ---- Alphabet combo feedback: heard, seen, felt ----
+  function comboFlash(sEl, prevSEl, comboLen, bonus) {
+    if (!sEl) return;
+    const here = center(sEl);
+    SFX.combo(comboLen - 1);
+    // a spark leaps from the previous linked rune into this one
+    if (prevSEl) bolt(center(prevSEl), here, 'var(--gold)');
+    // the rune itself flares and snaps with the combo
+    sEl.classList.remove('combo-hit'); void sEl.offsetWidth; sEl.classList.add('combo-hit');
+    // escalating popup
+    const lvl = Math.min(comboLen, 6);
+    const pop = el('div', 'combo-pop lvl-' + lvl);
+    pop.innerHTML = '<span class="cp-x">×' + comboLen + '</span><span class="cp-b">+' + bonus + ' power</span>';
+    pop.style.left = here.x + 'px'; pop.style.top = (here.y - 96) + 'px';
+    stage.appendChild(pop);
+    setTimeout(() => pop.remove(), 900);
+    if (comboLen >= 3) shake();
+  }
+  function comboFinale(maxCombo) {
+    SFX.comboFinish(maxCombo);
+    shake();
+    const f = el('div', 'combo-finale');
+    f.innerHTML = '<span class="cf-label">COMBO</span><span class="cf-num">×' + maxCombo + '</span>';
+    stage.appendChild(f);
+    setTimeout(() => f.remove(), 1300);
+  }
+
+  // ---- live combo meter (right of the field, ticks up as the chain fires) ----
+  function comboMeterEl() {
+    let m = $('combo-meter');
+    if (!m) {
+      m = el('div', 'combo-meter');
+      m.id = 'combo-meter';
+      m.innerHTML =
+        '<div class="cm-flames"></div>' +
+        '<div class="cm-label">COMBO</div>' +
+        '<div class="cm-num"><span class="cm-x">×</span><span class="cm-val">1</span></div>' +
+        '<div class="cm-bonus">+0 power</div>';
+      $('screen-battle').appendChild(m);
+    }
+    return m;
+  }
+  function showComboMeter(len, bonus) {
+    const m = comboMeterEl();
+    const lvl = Math.min(len, 6);
+    m.className = 'combo-meter show lvl-' + lvl;
+    m.querySelector('.cm-val').textContent = len;
+    m.querySelector('.cm-bonus').textContent = '+' + bonus + ' power';
+    // a quick bump every time the counter ticks up
+    m.classList.remove('bump'); void m.offsetWidth; m.classList.add('bump');
+  }
+  function hideComboMeter(immediate) {
+    const m = $('combo-meter');
+    if (!m) return;
+    if (immediate) { m.className = 'combo-meter'; return; }
+    m.classList.add('fade');
+    setTimeout(() => { if (m.classList.contains('fade')) m.className = 'combo-meter'; }, 520);
+  }
+
+  // ============================================================
+  // TARGETING RULES (never player-chosen)
+  // ============================================================
+  function alive() { return B.enemies.filter(e => e.alive); }
+  function targetFirst() { const a = alive(); return a.length ? [a[0]] : []; }
+  function targetAll() { return alive(); }
+  function targetLowest() {
+    const a = alive();
+    if (!a.length) return [];
+    return [a.slice().sort((x, y) => x.hp - y.hp)[0]];
+  }
+  function targetHighest() {
+    const a = alive();
+    if (!a.length) return [];
+    return [a.slice().sort((x, y) => y.hp - x.hp)[0]];
+  }
+  function targetRandom() { const a = alive(); return a.length ? [a[Math.floor(Math.random() * a.length)]] : []; }
+  // center of the formation; if there's no exact middle, default to the last enemy
+  function targetCenter() {
+    const a = alive();
+    if (!a.length) return [];
+    return a.length % 2 === 1 ? [a[(a.length - 1) / 2]] : [a[a.length - 1]];
+  }
+
+  // ============================================================
+  // DETONATE — the hero moment
+  // ============================================================
+  async function detonate() {
+    if (B.resolving || B.ended) return;
+    const placed = B.sockets.filter(Boolean);
+
+    B.resolving = true;
+    updateActButton();
+    updateRecallBtn();
+    renderSockets();
+    renderHand(false);
+    // Act commits the chain — it should feel like an ignition, not a hit.
+    // The screenshake/impact is reserved for actual damage landing.
+    if (placed.length) SFX.act();
+    await wait(placed.length ? 250 : 60);
+
+    // expand the sockets into an ordered resolution sequence honoring slot types.
+    // Loopback replays the prior glyph steps; Repeat duplicates its glyph; Devil
+    // is a non-effect "devour" step. A multi-socket glyph triggers the effect of
+    // EVERY slot it covers (hold, clone, catalyst, repeat, devil).
+    const seq = [];          // { id, slot, covered, type, replay?, repeat2?, holdAny?, cloneAny?, catalystAny? }
+    const baseSteps = [];    // original glyph steps, for Loopback replay
+    for (let i = 0; i < B.sockets.length; i++) {
+      const type = slotType(i);
+      if (type === 'loopback') {
+        baseSteps.forEach(st => seq.push({ id: st.id, slot: st.slot, covered: st.covered, type: 'glyph', replay: true }));
+        continue;
+      }
+      const id = B.sockets[i];
+      if (!id) continue;   // empty slot, or a multi-socket continuation
+      // every socket this glyph occupies (head + continuations)
+      const covered = [i];
+      for (let j = i + 1; j < B.sockets.length; j++) if (B.spanHead[j] === i) covered.push(j);
+      const types = covered.map(slotType);
+      const step = {
+        id, slot: i, covered, type: 'glyph',
+        holdAny: types.indexOf('hold') !== -1,
+        cloneAny: types.indexOf('clone') !== -1,
+        catalystAny: types.indexOf('catalyst') !== -1,
+        devourAny: types.indexOf('devil') !== -1   // resolves in the chain, THEN is devoured
+      };
+      seq.push(step); baseSteps.push(step);
+      // Repeat slots stack: a glyph spanning N repeat slots resolves 2×N times
+      // (1 slot → 2×, 2 → 4×, 3 → 6×). We already pushed the genuine step once,
+      // so add (2×N − 1) extra copies; the extras carry repeat2 so slot
+      // side-effects only fire on the original placement.
+      const repeatCount = types.filter(t => t === 'repeat').length;
+      if (repeatCount > 0) {
+        const extra = 2 * repeatCount - 1;
+        for (let r = 0; r < extra; r++) {
+          const s2 = Object.assign({}, step, { repeat2: true });
+          seq.push(s2); baseSteps.push(s2);
+        }
+      }
+    }
+
+    // Mirror twist: if EVERY glyph played this turn is Mirror, the chain instead
+    // replays your previous turn's genuine actions.
+    const isMirror = s => baseOf(glyph(s.id).cloneOf || s.id) === 'mirror';
+    const allMirror = seq.length > 0 && seq.every(isMirror);
+    let runSeq = seq;
+    let recordPlays = true;
+    if (allMirror && B.lastTurnPlays.length) {
+      recordPlays = false;
+      banner('Hall of Mirrors', 900);
+      runSeq = B.lastTurnPlays.map((id, idx) => {
+        const host = baseSteps[Math.min(idx, baseSteps.length - 1)] || baseSteps[0];
+        return { id, slot: host ? host.slot : 0, type: 'normal', replay: true };
+      });
+    }
+
+    // every step drives count/order context (a devoured glyph still resolves in-chain)
+    const fxSteps = runSeq.slice();
+    const counts = {};
+    fxSteps.forEach(s => { const b = baseOf(s.id); counts[b] = (counts[b] || 0) + 1; });
+    const totalRed = fxSteps.filter(s => glyph(s.id).color === 'red').length;
+    B.redThisTurn = totalRed;
+    B.blueThisTurn = fxSteps.filter(s => glyph(s.id).color === 'blue').length;
+    if (recordPlays && baseSteps.length) B.lastTurnPlays = baseSteps.map(s => s.id);
+
+    // Empower slots bolster the glyphs resolved immediately before and after them (+1 each).
+    const empBonus = new Array(runSeq.length).fill(0);
+    for (let k = 0; k < runSeq.length; k++) {
+      const cov = runSeq[k].covered || [runSeq[k].slot];
+      if (cov.some(ci => slotType(ci) === 'empower')) {
+        if (k - 1 >= 0) empBonus[k - 1] += 1;
+        if (k + 1 < runSeq.length) empBonus[k + 1] += 1;
+      }
+    }
+
+    let prevId = null, chainPos = 0, fxIndex = 0, pendingCatalyst = null;
+    B.lastMirrorTarget = null;   // resets each detonation; tracks what Mirrors are echoing
+    let comboLen = 0, comboPrev = null, maxCombo = 0, prevComboEl = null;
+    for (let k = 0; k < runSeq.length; k++) {
+      const ev = runSeq[k];
+      const slot = ev.slot;
+      const sEl = $('socket-row').children[slot];
+      const coveredEls = (ev.covered || [slot]).map(ci => $('socket-row').children[ci]).filter(Boolean);
+
+      // ----- Alphabet combo: figure this glyph's link + bonus before it fires -----
+      const lt = comboLetter(ev.id);
+      const adv = comboAdv(ev.id);   // Combo-up upgrade advances the chain by 2
+      let comboBonus = 0, linked = false;
+      if (lt == null) { comboLen = 0; comboPrev = null; }
+      else if (comboLinks(comboPrev, lt)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; linked = true; }
+      else { comboLen = adv; comboPrev = lt; }
+      if (comboLen > maxCombo) maxCombo = comboLen;
+      if (linked && comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
+      prevComboEl = (lt == null) ? null : sEl;
+
+      // a Catalyst placed earlier infuses this glyph's resolution
+      if (pendingCatalyst) { await applyCatalyst(pendingCatalyst, sEl); pendingCatalyst = null; }
+
+      const g = glyph(ev.id);
+      const redAfter = fxSteps.slice(fxIndex + 1).filter(s => glyph(s.id).color === 'red').length;
+      const originEl = sEl ? sEl.querySelector('.socket-glyph') : null;
+      const originEls = coveredEls.map(ce => ce.querySelector('.socket-glyph')).filter(Boolean);
+      coveredEls.forEach(ce => ce.classList.add('firing'));
+      playColorSfx(g.color, chainPos);
+
+      // visualize the special-slot boosts as the glyph fires (genuine step only)
+      if (!ev.replay && !ev.repeat2) {
+        if (empBonus[k] > 0) empowerSpark(sEl, empBonus[k]);
+        const repAt = (ev.covered || [slot]).filter(ci => slotType(ci) === 'repeat').length;
+        if (repAt > 0) repeatPop(sEl, 2 * repAt);
+      }
+
+      // a multi-socket glyph is fully cursed if ANY socket it covers is cursed
+      const cursedSlot = (ev.covered || [slot]).find(ci => slotCursed(ci));
+      await resolveGlyph(ev.id, g, {
+        slot, chainPos, prevId, redAfter, totalRed, counts, originEl, originEls,
+        comboBonus: comboBonus + empBonus[k],   // Empower slots fold in as a flat +1 to neighbors
+        cursed: cursedSlot != null, curseCaster: cursedSlot != null ? (B.slotFx[cursedSlot] || {}).caster : null,
+        isFirst: chainPos === 0, isLast: fxIndex === fxSteps.length - 1
+      });
+
+      // a curse-slot recoil (or burn) can KO your last beast mid-chain — stop cold
+      // instead of resolving the rest of the chain to an empty stage
+      if (B.ended) { hideComboMeter(true); coveredEls.forEach(ce => ce.classList.remove('firing')); return; }
+
+      // socketing Rubble purges one copy from your deck for good
+      if (ev.id === 'rubble' && !ev.replay) {
+        const pool = root.CG.Game.state.pool;
+        const pi = pool.indexOf('rubble');
+        if (pi !== -1) pool.splice(pi, 1);
+        removeOne(B.drawnThisTurn, 'rubble');   // gone — don't send it to the discard
+      }
+
+      // slot side-effects fire once, on the genuine placement (not replays/repeat copies).
+      // A multi-socket glyph triggers EVERY special slot it covers. These run AFTER
+      // the glyph has resolved — so a Devil-slotted glyph plays out its effect in the
+      // chain first, then gets devoured.
+      if (!ev.replay && !ev.repeat2) {
+        // junk (enemy Rubble / Dead Weight) must never be cloned or held — that
+        // could trap the player with permanent enemy cards in hand
+        if (ev.cloneAny && !g.junk) queueClone(ev.id, sEl);
+        if (ev.holdAny && !g.junk) { B.extras.push(ev.id); removeOne(B.drawnThisTurn, ev.id); holdFx(sEl); }   // retained, not discarded
+        if (ev.catalystAny) pendingCatalyst = g.color;
+        if (ev.devourAny) { removeOne(B.drawnThisTurn, ev.id); await devourGlyph(ev.id, slot, sEl); }
+      }
+
+      prevId = ev.id;
+      chainPos++; fxIndex++;
+      refreshAll();
+      coveredEls.forEach(ce => { ce.classList.remove('firing'); ce.classList.add('spent'); });
+      await wait(360);
+
+      if (alive().length === 0) break; // enemies wiped mid-chain
+    }
+
+    // big payoff for a long alphabet chain
+    if (maxCombo >= 3) { comboFinale(maxCombo); await wait(260); }
+    hideComboMeter();
+
+    // glyphs left unplayed in hand fire their lingering "end of turn" effects
+    if (alive().length > 0) await processUnplayed();
+
+    await wait(250);
+    await discardHand();
+
+    // win check
+    if (alive().length === 0) { return victory(); }
+
+    // the spent runes dissolve into embers instead of cutting away
+    await clearSocketsExit();
+
+    // enemies respond
+    await enemyTurn();
+    if (B.ended) return;
+
+    B.resolving = false;
+    beginTurn();
+  }
+
+  // unplaced glyphs sweep off into the discard pile, then clear
+  function discardHand() {
+    // every real deck card touched this turn (played or not) lands in the discard pile
+    B.discard.push(...B.drawnThisTurn);
+    B.drawnThisTurn = [];
+    const cards = Array.from($('hand-row').querySelectorAll('.glyph'));
+    return animateDiscard(cards).then(() => {
+      B.hand = [];
+      renderHand(false);
+      updatePiles();   // count ticks up as the cards land in the pile
+    });
+  }
+
+  // refresh the deck / discard pile counters
+  function updatePiles() {
+    const d = $('pile-deck-count'), c = $('pile-discard-count');
+    if (d) d.textContent = B.draw.length;
+    if (c) c.textContent = B.discard.length;
+    renderPileViewer();   // keep an open pile modal in sync as cards move
+  }
+
+  function playColorSfx(color, step) {
+    if (color === 'red') SFX.fireRed(step);
+    else if (color === 'blue') SFX.fireBlue(step);
+    else if (color === 'green') SFX.fireGreen(step);
+    else SFX.firePurple(step);
+  }
+
+  // the player's visual anchor is the portrait art, not the whole emblem,
+  // so heal/shield/strength FX land dead-center over the monster image
+  function playerArt() { const pc = $('player-monster'); return (pc && pc.querySelector('.pc-portrait')) || pc; }
+  function playerPos() { return offset(center(playerArt()), 0, -40); }
+  // total strength = persistent battle strength + temporary "this turn" strength
+  function effStrength() { return B.strength + (B.turnStrength || 0); }
+
+  // ---- Alphabet combos: linear A→B→C (C ends the chain), Wild links to anything ----
+  const COMBO_SUCC = { A: 'B', B: 'C' };   // no C→A wraparound
+  function comboLetter(id) { const l = glyph(id).letter; return l || null; }
+  // does `cur` continue a chain whose previous effective letter was `prev`?
+  function comboLinks(prev, cur) {
+    if (cur == null || prev == null) return false;
+    if (cur === 'wild' || prev === 'wild') return true;
+    return COMBO_SUCC[prev] === cur;
+  }
+  // how many steps a glyph advances the combo chain (Combo-up upgrade = 2)
+  function comboAdv(id) {
+    const up = root.CG.Game.state.comboUp;
+    const base = glyph(id).cloneOf || id;
+    return 1 + ((up && up[base]) ? 1 : 0);
+  }
+  // Gathering Tails: each glyph's main effect +1 per glyph already played
+  function gather(ctx) { return B.monster.passive === 'gatheringTails' ? ctx.chainPos : 0; }
+  // Ember Ward / Emberstorm bonuses keyed off red glyphs
+  function emberBonusAmt() {
+    const bl = root.CG.Game.state.blessings;
+    return (bl.emberstorm ? 1 : 0) + (bl.pyreheart ? 2 : 0);
+  }
+  function emberDmg(g) { return g.color === 'red' ? emberBonusAmt() : 0; }
+  // a small "this copy is forged" line for tooltips
+  function upgradeTipSuffix(id) {
+    const parts = [];
+    const e = empowerOf(id);
+    if (e > 0) parts.push('✦ Power +' + e);
+    if (comboAdv(id) > 1) parts.push('▲▲ Combo Up');
+    return parts.length ? ' <span class="gt-up">' + parts.join(' · ') + '</span>' : '';
+  }
+  // permanent +N to a glyph's main effect, earned from events / the shop
+  function empowerOf(id) {
+    const st = root.CG.Game.state;
+    const key = glyph(id).cloneOf || id;
+    const inst = (st.empower && st.empower[key]) || 0;
+    const run = (st.runEmpower && st.runEmpower[baseOf(key)]) || 0;   // shared by every copy of the type (Everflame)
+    return inst + run;
+  }
+
+  // ----- live "what would this do" preview env (drives card detail numbers) -----
+  // count of placed glyph heads (each resolves as one effect step)
+  function placedHeadCount() {
+    let n = 0;
+    for (let i = 0; i < B.sockets.length; i++) if (B.sockets[i] && B.spanHead[i] == null) n++;
+    return n;
+  }
+  // trailing alphabet-combo state across the glyphs already socketed, in order
+  function placedComboTail() {
+    let prev = null, len = 0;
+    for (let i = 0; i < B.sockets.length; i++) {
+      if (B.spanHead[i] != null || !B.sockets[i]) continue;
+      const lt = comboLetter(B.sockets[i]);
+      if (lt == null) { len = 0; prev = null; }
+      else if (comboLinks(prev, lt)) { len += 1; prev = lt; }
+      else { len = 1; prev = lt; }
+    }
+    return { prev: prev, len: len };
+  }
+  // estimate the shield a glyph would grant, given the running sim state. Used to
+  // project how much shield later glyphs (e.g. Bulwark Slam) will have to work with.
+  function simShieldGain(id, gt, sim) {
+    const g = glyph(id);
+    const bId = baseOf(id);
+    let base = null;
+    if (bId === 'rampart') base = 2 * sim.pos;                       // 2 per glyph already played
+    else if (bId === 'juggernaut') base = Math.ceil(B.monster.maxHp / 2);
+    else if (g.dyn) {
+      const tok = g.dyn.find(t => t.kind === 'shield');
+      if (tok) base = (typeof tok.base === 'function') ? tok.base({ shield: sim.shield }) : tok.base;
+    }
+    if (base == null) return 0;                                     // not a shield grant
+    if (bId === 'steady' && sim.pos === 0) base += 2;                // +2 if first glyph
+    if (bId === 'blood_harden') base += B.enemies.filter(e => e.alive && e.leech > 0).length;
+    let a = base + gt + sim.resilience;
+    if (sim.frail) a = Math.floor(a * 0.5);
+    return Math.max(0, a);
+  }
+  // walk the placed chain in order, accumulating shield / resilience / combo so a
+  // glyph's preview reflects the state it will see WHEN it resolves. Stops just
+  // before socket `targetSlot` (pass -1 to simulate the whole placed chain).
+  function projectStateBefore(targetSlot) {
+    const sim = {
+      shield: B.playerShield, resilience: B.resilience, frail: B.playerFrail > 0,
+      strength: effStrength(), pos: 0, prev: null, len: 0
+    };
+    for (let i = 0; i < B.sockets.length; i++) {
+      if (B.spanHead[i] != null || !B.sockets[i]) continue;
+      if (i === targetSlot) break;
+      const id = B.sockets[i];
+      const lt = comboLetter(id);
+      const adv = comboAdv(id);
+      const combo = (lt != null && comboLinks(sim.prev, lt)) ? (sim.len + (adv - 1)) : 0;
+      const gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
+      const gt = gather + combo + (glyph(id).cloneEmpower || 0) + empowerOf(id);
+      // cursed slots still grant you the shield (it just also feeds the caster), so always bank it
+      sim.shield += simShieldGain(id, gt, sim);
+      if (baseOf(id) === 'fortify' || baseOf(id) === 'unbreakable') sim.resilience += 1 + (gt - gather);
+      if (lt == null) { sim.len = 0; sim.prev = null; }
+      else if (comboLinks(sim.prev, lt)) { sim.len += adv; sim.prev = lt; }
+      else { sim.len = adv; sim.prev = lt; }
+      sim.pos += 1;
+    }
+    return sim;
+  }
+  function envFromSim(sim) {
+    return {
+      gather: 0, comboBonus: 0, cloneEmpower: 0, chainPos: sim.pos,
+      strength: sim.strength, weak: B.playerWeak > 0,
+      shield: sim.shield, resilience: sim.resilience, frail: sim.frail,
+      devoured: (B.monster && B.monster.devoured) || 0,
+      ember: emberBonusAmt()
+    };
+  }
+  // how many times a glyph (by its true base id) has resolved this battle
+  function rampOf(id) {
+    const g = glyph(id);
+    return (B.resolveCount && B.resolveCount[baseOf(g.cloneOf || id)]) || 0;
+  }
+  // ---- Empower-slot previews ----
+  // the order of filled glyphs (head slots only) as they'll resolve
+  function placedOrder() {
+    const order = [];
+    for (let i = 0; i < B.sockets.length; i++) {
+      if (B.spanHead[i] != null) continue;     // continuation half of a multi-socket glyph
+      if (B.sockets[i]) order.push(i);
+    }
+    return order;
+  }
+  // does the glyph anchored at head slot `h` cover an Empower socket?
+  function coversEmpower(h) {
+    if (slotType(h) === 'empower') return true;
+    for (let j = h + 1; j < B.sockets.length; j++) if (B.spanHead[j] === h && slotType(j) === 'empower') return true;
+    return false;
+  }
+  // +1 for each Empower-glyph resolved immediately before/after this socket
+  function empowerBonusForSlot(slotIndex) {
+    const order = placedOrder();
+    const pos = order.indexOf(slotIndex);
+    if (pos === -1) return 0;
+    let b = 0;
+    if (pos > 0 && coversEmpower(order[pos - 1])) b += 1;
+    if (pos < order.length - 1 && coversEmpower(order[pos + 1])) b += 1;
+    return b;
+  }
+  // env for a hand card if it were played NEXT (appended after the placed chain)
+  function handEnv(id) {
+    const sim = projectStateBefore(-1);
+    const linked = comboLinks(sim.prev, comboLetter(id));
+    const e = envFromSim(sim);
+    e.gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
+    e.comboBonus = linked ? (sim.len + (comboAdv(id) - 1)) : 0;
+    // if the last placed glyph sits in an Empower slot, a card played next is "after" it
+    const order = placedOrder();
+    if (order.length && coversEmpower(order[order.length - 1])) e.comboBonus += 1;
+    e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
+    e.ramp = rampOf(id);
+    e.linked = linked;
+    return e;
+  }
+  // env for a glyph already sitting in socket `slotIndex` (its real chain position)
+  function socketEnv(slotIndex) {
+    const sim = projectStateBefore(slotIndex);
+    const id = B.sockets[slotIndex];
+    const lt = comboLetter(id);
+    const linked = comboLinks(sim.prev, lt);
+    const e = envFromSim(sim);
+    e.gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
+    e.comboBonus = ((lt == null) ? 0 : (linked ? (sim.len + (comboAdv(id) - 1)) : 0)) + empowerBonusForSlot(slotIndex);
+    e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
+    e.ramp = rampOf(id);
+    return e;
+  }
+  function fmtDesc(id, env) { return root.CG.DATA.formatDesc(glyph(id), env); }
+
+  // self-targeting glyphs (shield / buff) get their own cast bolt so the
+  // socket's firing animation reads as long and satisfying as an attack.
+  // The boon goes to the player; a cursed slot ALSO streaks a mirror to the caster.
+  function castSelf(fromPos, color) {
+    const p = boltAll(center(playerArt()), color);   // twin streams for multi-socket glyphs
+    if (RES && RES.cursed && RES.caster && RES.caster.alive) {
+      boltAll(center(RES.caster.dom), color);   // mirrored boon also feeds the curse-caster
+    }
+    return p;
+  }
+
+  // active resolution context — lets heal/shield/damage know about a cursed slot
+  let RES = null;
+
+  // returns when this glyph's visual + effect is applied
+  async function resolveGlyph(id, g, ctx) {
+    const fromPos = ctx.originEl ? center(ctx.originEl) : center(playerArt());
+    // a multi-socket glyph fires from each of its sockets at once
+    const prevOrigins = B.fireOrigins;
+    B.fireOrigins = (ctx.originEls && ctx.originEls.length) ? ctx.originEls.map(center) : [fromPos];
+    const R = 'var(--' + g.color + ')';
+    const gt = gather(ctx) + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) + empowerOf(id);   // Clone +1, Alphabet combo +N, permanent empower
+    const prevRES = RES;
+    RES = { cursed: !!ctx.cursed, caster: ctx.curseCaster || null };
+    try {
+      await resolveGlyphInner(id, g, ctx, fromPos, R, gt);
+    } finally {
+      RES = prevRES;
+      B.fireOrigins = prevOrigins;
+    }
+  }
+
+  // fire a projectile to `to` from every active origin; resolve when the
+  // primary (first) bolt lands. Extra origins are cosmetic twin streams.
+  function boltAll(to, color, onPrimaryHit) {
+    const origins = (B.fireOrigins && B.fireOrigins.length) ? B.fireOrigins : [playerPos()];
+    return new Promise(res => {
+      origins.forEach((o, i) => bolt(o, to, color, i === 0 ? () => { if (onPrimaryHit) onPrimaryHit(); setTimeout(res, 40); } : null));
+    });
+  }
+
+  async function resolveGlyphInner(id, g, ctx, fromPos, R, gt) {
+    // Gathering Tails empowers DAMAGE only — gtx strips the passive so it does
+    // NOT swell Burn / shield / heal (combo + clone empower still apply).
+    const gtx = gt - gather(ctx);
+    // Ember Ward blessing: shield on each red glyph
+    if (g.color === 'red' && root.CG.Game.state.blessings.emberward) gainShield(2);
+
+    switch (baseOf(g.cloneOf || id)) {
+      /* -------- JUNK forced on you by enemies -------- */
+      case 'rubble':
+      case 'deadweight':
+        floatText(fromPos, '…', 'status'); await wait(120);
+        break;
+
+      /* -------- TROLL -------- */
+      case 'smash':
+        await hitTargets(targetFirst(), 6 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'brace':
+        await castSelf(fromPos, R); gainShield(6 + gt); await wait(220);
+        break;
+      case 'quake':
+        await hitTargets(targetAll(), 3 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'bulwark_slam':
+        await hitTargets(targetFirst(), B.playerShield + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'hammer':
+        await hitTargets(targetFirst(), (B.playerShield > 0 ? 6 : 4) + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'steady':
+        await castSelf(fromPos, R);
+        gainShield(4 + (ctx.isFirst ? 2 : 0) + gt);
+        await wait(220);
+        break;
+      case 'boulder':
+        await hitTargets(targetFirst(), 8 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'iron_skin':
+        await castSelf(fromPos, R); gainShield(8 + gt); await wait(220);
+        break;
+      case 'mend':
+        await castSelf(fromPos, R); heal(6 + gt); await wait(220);
+        break;
+      case 'rockfall': {
+        const extra = Math.max(0, (ctx.counts['rockfall'] || 1) - 1);   // other Rockfall this turn
+        await hitTargets(targetAll(), 2 + extra + gt + emberDmg(g), fromPos, R);
+        break;
+      }
+      case 'backhand': {
+        const prevRed = ctx.prevId && glyph(ctx.prevId).color === 'red' ? 2 : 0;
+        await hitTargets(targetRandom(), 5 + prevRed + gt + emberDmg(g), fromPos, R);
+        break;
+      }
+      case 'fortify': {
+        await castSelf(fromPos, R);
+        const amt = 1 + Math.round(gtx);   // power-up / combo swell the buff
+        B.resilience += amt;
+        floatText(playerPos(), 'Resilience +' + amt, 'status');
+        resilienceFx(playerArt());
+        refreshAll(); await wait(220);
+        break;
+      }
+      case 'rampart':
+        await castSelf(fromPos, R);
+        gainShield(2 * ctx.chainPos + gt);
+        await wait(220);
+        break;
+      case 'spiked_hide': {
+        await castSelf(fromPos, R);
+        const before = B.playerShield;
+        gainShield(5 + gt);
+        const reflected = B.playerShield - before;   // honor Resilience / Frail
+        if (reflected > 0) await hitTargets(targetRandom(), reflected, fromPos, R);
+        await wait(160);
+        break;
+      }
+      case 'crush': {
+        const t = targetFirst();
+        const noShield = t[0] && (t[0].shield || 0) <= 0 ? 4 : 0;
+        await hitTargets(t, 5 + noShield + gt + emberDmg(g), fromPos, R);
+        break;
+      }
+      case 'second_wind': {
+        const low = B.monster.hp < B.monster.maxHp / 2 ? 4 : 0;
+        await castSelf(fromPos, R); heal(4 + low + gt); await wait(220);
+        break;
+      }
+      case 'avalanche':
+        await hitTargets(targetAll(), B.playerShield + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'bastion': {
+        await castSelf(fromPos, R);
+        const before = B.playerShield;
+        gainShield(10 + gt);
+        B.carryShield += (B.playerShield - before);   // this much survives the next turn reset
+        floatText(playerPos(), 'Held shield', 'status');
+        await wait(220);
+        break;
+      }
+      case 'titans_smash': {
+        const bonus = Math.floor(B.playerShield / 3);
+        await hitTargets(targetFirst(), 9 + bonus + gt + emberDmg(g), fromPos, R);
+        break;
+      }
+      case 'unbreakable': {
+        await castSelf(fromPos, R);
+        const amt = 1 + Math.round(gtx);   // power-up / combo swell the buff
+        B.monster.runResilience = (B.monster.runResilience || 0) + amt;
+        B.resilience += amt;
+        floatText(playerPos(), 'Resilience +' + amt + ' (run)', 'status');
+        resilienceFx(playerArt());
+        refreshAll(); await wait(220);
+        break;
+      }
+      case 'reckoning':
+        await hitTargets(targetAll(), 2 * effStrength() + gt + emberDmg(g), fromPos, R, { strength: false });
+        break;
+      case 'mountains_wrath':
+        await hitTargets(targetFirst(), B.playerShield * 2 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'aftershock': {
+        const volleys = Math.max(1, B.blueThisTurn || 0);
+        for (let v = 0; v < volleys; v++) {
+          await hitTargets(targetAll(), 3 + gt + emberDmg(g), fromPos, R);
+          if (alive().length === 0) break;
+        }
+        break;
+      }
+      case 'juggernaut': {
+        await castSelf(fromPos, R);
+        gainShield(Math.ceil(B.monster.maxHp / 2) + gt);
+        await wait(220);
+        break;
+      }
+
+      /* -------- GHOUL -------- */
+      case 'leech': {
+        const t = targetCenter();
+        await hitTargets(t, 3 + gt + emberDmg(g), fromPos, R);
+        if (t[0] && t[0].alive) applyLeech(t[0]);
+        break;
+      }
+      case 'rake': {
+        const hitList = [];
+        for (let n = 0; n < 2; n++) {
+          const t = targetRandom();
+          if (t[0]) {
+            const bonus = t[0].leech > 0 ? 1 : 0;
+            await hitTargets(t, 2 + gt + bonus + emberDmg(g), fromPos, R);
+            if (t[0].alive) hitList.push(t[0]);
+          }
+        }
+        if (ctx.isLast && ctx.totalRed === 1) hitList.forEach(e => { if (e.alive) applyLeech(e); });
+        break;
+      }
+      case 'vigor': {
+        const gain = 1 + ctx.redAfter + Math.round(gtx);   // +power-up / combo
+        await castSelf(fromPos, R);
+        B.strength += gain;
+        floatText(playerPos(), 'Strength +' + gain, 'status');
+        strengthFx(playerArt());
+        refreshAll(); await wait(220);
+        break;
+      }
+      case 'blood_harden': {
+        const leeched = B.enemies.filter(e => e.alive && e.leech > 0).length;
+        await castSelf(fromPos, R); gainShield(2 + leeched + gt); await wait(220);
+        break;
+      }
+      case 'snarl': {
+        const base = 0.5 + (ctx.isFirst ? 0.25 : 0);
+        const stacks = 1 + Math.round(gtx);   // power-up / combo apply more Scare
+        for (const e of alive()) {
+          await wait(130);
+          if (Math.random() < base) {
+            e.scare = (e.scare || 0) + stacks; e.scareTurns = 3;
+            floatText(offset(center(e.dom), 0, -60), 'Scared +' + stacks + '!', 'status');
+            scareFx(e.dom);
+            e.dom.classList.add('hit-flash');
+            setTimeout(() => e.dom.classList.remove('hit-flash'), 400);
+            SFX.firePurple(0);
+          } else {
+            floatText(offset(center(e.dom), 0, -60), 'Resist', 'status');
+          }
+        }
+        refreshAll();
+        break;
+      }
+      case 'gnaw':
+        await hitTargets(targetFirst(), 4 + gt + emberDmg(g), fromPos, R);
+        heal(2 + gtx);
+        await wait(160);
+        break;
+      case 'grave_rot': {
+        const all = alive();
+        const plain = all.filter(e => !(e.leech > 0));
+        const rotted = all.filter(e => e.leech > 0);   // Leeched foes take +2
+        if (plain.length) await hitTargets(plain, 3 + gt + emberDmg(g), fromPos, R);
+        if (rotted.length) await hitTargets(rotted, 5 + gt + emberDmg(g), fromPos, R);
+        break;
+      }
+      case 'mend_flesh':
+        await castSelf(fromPos, R); heal(5 + gtx); await wait(220);
+        break;
+      case 'bone_wall':
+        await castSelf(fromPos, R); gainShield(5 + gt); await wait(220);
+        break;
+      case 'raise_dead':
+        await castSelf(fromPos, R); summonHusks(2, fromPos); await wait(220);
+        break;
+      case 'exsanguinate': {
+        const t = targetCenter();
+        await hitTargets(t, 5 + gt + emberDmg(g), fromPos, R);
+        if (t[0] && t[0].alive) applyLeech(t[0]);
+        heal(3 + gtx);
+        await wait(160);
+        break;
+      }
+      case 'dread_howl': {
+        const stacks = 1 + Math.round(gtx) + (B.monster.hp < B.monster.maxHp / 2 ? 1 : 0);
+        for (const e of alive()) {
+          e.scare = (e.scare || 0) + stacks; e.scareTurns = 3;
+          floatText(offset(center(e.dom), 0, -60), 'Scared +' + stacks + '!', 'status');
+          scareFx(e.dom);
+          e.dom.classList.add('hit-flash');
+          setTimeout(() => e.dom.classList.remove('hit-flash'), 400);
+        }
+        SFX.firePurple(0); refreshAll(); await wait(160);
+        break;
+      }
+      case 'soul_harvest': {
+        const targets = alive();
+        const n = targets.length;
+        await hitTargets(targets, 3 + gt + emberDmg(g), fromPos, R);
+        for (let i = 0; i < n; i++) heal(1);   // one heal per foe hit — each feeds Gravetide
+        await wait(120);
+        break;
+      }
+      case 'blood_pact': {
+        await castSelf(fromPos, R);
+        const loss = Math.min(4, Math.max(0, B.monster.hp - 1));   // blood magic, never lethal
+        if (loss > 0) selfDamage(loss);
+        const gain = 3 + Math.round(gtx);
+        B.strength += gain;
+        floatText(playerPos(), 'Strength +' + gain, 'status');
+        strengthFx(playerArt());
+        refreshAll(); await wait(220);
+        break;
+      }
+      case 'glutton': {
+        const dmg = Math.max(2, 2 * (B.monster.devoured || 0)) + gt + emberDmg(g);
+        await hitTargets(targetFirst(), dmg, fromPos, R);
+        break;
+      }
+      case 'plague':
+        for (const en of alive()) applyLeech(en);
+        await castSelf(fromPos, R); heal(2 + gtx); await wait(200);
+        break;
+      case 'mass_grave':
+        summonHusks(3, fromPos);
+        await hitTargets(targetAll(), 2 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'lich_ascendant':
+        await castSelf(fromPos, R);
+        heal(8 + gtx);
+        B.strength += 2 + Math.round(gtx);
+        floatText(playerPos(), 'Strength +' + (2 + Math.round(gtx)), 'status');
+        strengthFx(playerArt());
+        refreshAll(); await wait(220);
+        break;
+      case 'husk':
+        await hitTargets(targetRandom(), 1 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'maweaten_scrap':
+        await hitTargets(targetRandom(), 5 + gt + emberDmg(g), fromPos, R);
+        break;
+
+      /* -------- KITSUNE -------- */
+      case 'flicker':
+        await hitTargets(targetRandom(), 2 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'foxfire': {
+        const t = targetRandom();
+        if (t[0]) { await boltP(fromPos, center(t[0].dom), R); addBurn(t[0], 2 + gtx); }
+        await wait(160);
+        break;
+      }
+      case 'onslaught': {
+        const hits = ctx.chainPos;   // one volley per glyph played before this
+        if (hits <= 0) { floatText(playerPos(), 'no momentum', 'status'); await wait(140); break; }
+        for (let h = 0; h < hits; h++) {
+          const t = targetRandom();
+          if (t[0]) await hitTargets(t, 2 + gt + emberDmg(g), fromPos, R);
+        }
+        break;
+      }
+      case 'wildfire': {
+        // Burn everyone; already-burning foes gain extra Burn and take that much damage now
+        const burnAmt = 1 + gtx;
+        for (const en of alive()) {
+          const wasBurning = en.burn > 0;
+          await boltAll(center(en.dom), R);
+          en.burn = (en.burn || 0) + burnAmt;
+          floatText(offset(center(en.dom), 0, -64), 'Burn ' + en.burn, 'status');
+          en.dom.classList.add('hit-flash');
+          setTimeout(() => en.dom.classList.remove('hit-flash'), 400);
+          if (wasBurning) {
+            await wait(80);
+            applyDamage(en, en.burn, { strength: false, scare: false });
+          }
+          refreshAll();
+        }
+        // cursed slot: the conflagration also catches you (once)
+        if (RES && RES.cursed && !RES.burnMirrored) { RES.burnMirrored = true; addPlayerBurn(burnAmt); }
+        await wait(120);
+        break;
+      }
+      case 'mirror': {
+        // copy the previous glyph — but if that was itself a Mirror, echo whatever
+        // the last Mirror copied (so a run of Mirrors all repeat the same effect)
+        const prevBase = ctx.prevId ? baseOf(glyph(ctx.prevId).cloneOf || ctx.prevId) : null;
+        const echoId = (prevBase && prevBase !== 'mirror') ? ctx.prevId
+          : (prevBase === 'mirror' ? B.lastMirrorTarget : null);
+        if (echoId) {
+          B.lastMirrorTarget = echoId;
+          // the echo carries the mirrored card's OWN upgrades: power (folded in via
+          // empowerOf(echoId) inside resolveGlyph) and Combo-up (its extra combo step).
+          // Mirror's OWN power-up adds bonus might to the reflection on top of that.
+          const echoCtx = Object.assign({}, ctx, {
+            mirrored: true,
+            comboBonus: (ctx.comboBonus || 0) + Math.max(0, comboAdv(echoId) - 1) + empowerOf(id)
+          });
+          await resolveGlyph(echoId, glyph(echoId), echoCtx);
+        } else {
+          floatText(playerPos(), 'no echo', 'status'); await wait(120);
+        }
+        break;
+      }
+      case 'spark':
+        await hitTargets(targetRandom(), 4 + (ctx.chainPos === 0 ? 2 : 0) + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'smolder': {
+        const t = targetFirst();
+        if (t[0]) { await boltP(fromPos, center(t[0].dom), R); addBurn(t[0], 2 + gtx); }
+        await wait(150);
+        break;
+      }
+      case 'wisp':
+        await hitTargets(targetAll(), 2 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'scorch': {
+        const t = targetHighest();
+        if (t[0]) { await boltP(fromPos, center(t[0].dom), R); addBurn(t[0], 3 + gtx); }
+        await wait(150);
+        break;
+      }
+      case 'veil':
+        await castSelf(fromPos, R); gainShield(4 + gtx); await wait(220);
+        break;
+      case 'emberlash':
+        for (let n = 0; n < 3; n++) {
+          const t = targetRandom();
+          if (t[0]) await hitTargets(t, 1 + gt + emberDmg(g), fromPos, R);
+        }
+        break;
+      case 'lick_wounds':
+        await castSelf(fromPos, R); heal(5 + gtx); await wait(220);
+        break;
+      case 'everflame': {
+        // gt already folds in the permanent run-empower (shared by every Everflame copy)
+        const dmg = 4 + gt + emberDmg(g);
+        await hitTargets(targetRandom(), dmg, fromPos, R);
+        // each resolve permanently strengthens EVERY Everflame in the deck, for the rest of the run
+        const st = root.CG.Game.state;
+        st.runEmpower['everflame'] = (st.runEmpower['everflame'] || 0) + 1;
+        break;
+      }
+      case 'conflagration':
+        for (const en of alive()) {
+          if (en.burn > 0) { await boltAll(center(en.dom), R); applyDamage(en, en.burn + gt, { strength: false }); refreshAll(); }
+        }
+        await wait(120);
+        break;
+      case 'foxfire_dance':
+        for (const en of alive()) { await boltAll(center(en.dom), R); addBurn(en, 2 + gtx); }
+        await wait(120);
+        break;
+      case 'hoarders_flame': {
+        const hits = B.hand.length;   // remaining unplayed cards swell the volley
+        if (hits <= 0) { floatText(playerPos(), 'empty hand', 'status'); await wait(140); break; }
+        for (let h = 0; h < hits; h++) {
+          const t = targetRandom();
+          if (t[0]) await hitTargets(t, 2 + gt + emberDmg(g), fromPos, R);
+        }
+        break;
+      }
+      case 'nine_tails':
+        await hitTargets(targetRandom(), 2 * ctx.chainPos + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'immolate': {
+        const t = targetFirst();
+        await hitTargets(t, 5 + gt + emberDmg(g), fromPos, R);
+        if (t[0] && t[0].alive) addBurn(t[0], 5);
+        break;
+      }
+      case 'will_o_wisp':
+        await hitTargets(targetLowest(), 3 + gt + emberDmg(g), fromPos, R);
+        break;
+      case 'ember_hoard':
+        await castSelf(fromPos, R); gainShield(2 * B.hand.length + gtx); await wait(220);
+        break;
+      case 'spirit_fire': {
+        const n = ctx.totalRed;
+        for (const en of alive()) { await boltAll(center(en.dom), R); addBurn(en, n + gtx); }
+        await wait(120);
+        break;
+      }
+      case 'nine_tailed_inferno': {
+        for (const en of alive()) {
+          if (en.burn > 0) {
+            await boltAll(center(en.dom), R);
+            applyDamage(en, en.burn, { strength: false });
+            en.burn = 0; refreshAll();
+          }
+        }
+        for (const en of alive()) addBurn(en, 3 + gtx);
+        await wait(140);
+        break;
+      }
+      case 'phoenix': {
+        await castSelf(fromPos, R);
+        heal(10 + gtx + (B.hand.length === 0 ? 10 : 0));
+        await wait(220);
+        break;
+      }
+      case 'trickster_echo':
+        if (ctx.prevId && baseOf(ctx.prevId) !== 'trickster_echo') {
+          // +3 base reflection power, plus this Echo's own power-up
+          await resolveGlyph(ctx.prevId, glyph(ctx.prevId),
+            Object.assign({}, ctx, { mirrored: true, comboBonus: (ctx.comboBonus || 0) + 3 + empowerOf(id) }));
+        } else {
+          floatText(playerPos(), 'no echo', 'status'); await wait(120);
+        }
+        break;
+    }
+  }
+
+  // apply Burn to one enemy with the standard themed float + flash
+  function addBurn(en, n) {
+    if (!en || !en.alive || n <= 0) return;
+    en.burn = (en.burn || 0) + n;
+    floatText(offset(center(en.dom), 0, -60), 'Burn ' + en.burn, 'status');
+    burnApplyFx(en.dom);
+    en.dom.classList.add('hit-flash');
+    setTimeout(() => en.dom.classList.remove('hit-flash'), 400);
+    // CURSED slot: the burn lands on the enemy as normal, but ALSO catches you.
+    // Mirror once per glyph (like damage recoil) so an AoE burn doesn't multi-stack.
+    if (RES && RES.cursed && !RES.burnMirrored) {
+      RES.burnMirrored = true;
+      addPlayerBurn(n);
+    }
+    refreshAll();
+  }
+
+  // Burn applied to the player (cursed-slot recoil). Ticks down each round like enemy Burn.
+  function addPlayerBurn(n) {
+    if (n <= 0) return;
+    B.playerBurn = (B.playerBurn || 0) + n;
+    floatText(offset(center(playerArt()), 0, -86), '🔥 Burn ' + B.playerBurn, 'dmg');
+    const pd = $('player-monster');
+    burnApplyFx(playerArt());
+    playerHitReact();
+    pd.classList.add('hit-flash');
+    setTimeout(() => pd.classList.remove('hit-flash'), 400);
+  }
+
+  function applyLeech(en) {
+    en.leech = 3; // refresh (does not stack)
+    floatText(offset(center(en.dom), 0, -70), 'Leech 3', 'status');
+    leechApplyFx(en.dom);
+  }
+
+  function offset(p, dx, dy) { return { x: p.x + dx, y: p.y + dy }; }
+
+  // a bolt that resolves a promise when it lands
+  function boltP(from, to, color) {
+    return new Promise(res => bolt(from, to, color, () => setTimeout(res, 40)));
+  }
+
+  // deal `dmg` to each target with projectile; returns total damage dealt.
+  // Weak reduces your damage; a cursed slot ALSO recoils the strike onto you
+  // (the glyph still hits the enemies — the curse just mirrors it back).
+  // A multi-socket glyph fires a twin stream from each of its sockets.
+  function hitTargets(targets, dmg, fromPos, color, opts) {
+    if (B.playerWeak > 0) dmg = Math.max(1, Math.round(dmg * 0.6));
+    const origins = (B.fireOrigins && B.fireOrigins.length) ? B.fireOrigins : [fromPos];
+    // the strike's LOOK is the beast's signature (blade/gnaw/fire), not the glyph color
+    const st = playerStrikeStyle();
+    // CURSED slot: the strike lands on the enemies as normal, but also recoils onto you
+    if (RES && RES.cursed) {
+      if (st.ranged) {
+        origins.forEach((o, oi) => setTimeout(() =>
+          bolt(o, center(playerArt()), st.color, oi === 0 ? () => damagePlayer(dmg) : null, st.kind), 40));
+      } else {
+        setTimeout(() => damagePlayer(dmg), 200);   // melee recoil — no projectile
+      }
+    }
+    return new Promise(resolve => {
+      if (!targets.length) { setTimeout(() => resolve(0), (RES && RES.cursed) ? 180 : 0); return; }
+      let total = 0, done = 0;
+      targets.forEach((tg, k) => {
+        const to = center(tg.dom);
+        const land = () => {
+          // applyDamage fires the beast's signature (slash / bite / foxfire) over the foe
+          total += applyDamage(tg, dmg, opts);
+          done++;
+          if (done === targets.length) setTimeout(() => resolve(total), 60);
+        };
+        setTimeout(() => {
+          if (st.ranged) {
+            origins.forEach((o, oi) => bolt(o, to, st.color, oi === 0 ? land : null, st.kind));
+          } else {
+            land();   // melee: the blade / bite simply strikes over the enemy
+          }
+        }, k * 70 + (st.ranged ? 0 : 60));
+      });
+    });
+  }
+
+  // how much a living Wardstone shaves off damage to its protected kin (max,
+  // not stacked). The Wardstone itself is never warded, so it can be broken.
+  function wardReductionFor(target) {
+    let w = 0;
+    for (const o of B.enemies) {
+      if (o.alive && o !== target && o.base && o.base.ward > 0) w = Math.max(w, o.base.ward);
+    }
+    return w;
+  }
+  // a Thornmail foe lashes a flat bite back when struck
+  function thornsRecoil(en) {
+    const n = en.base.thorns;
+    floatText(offset(center(en.dom), 0, -68), '🜂 ' + n, 'dmg');
+    fxMotes(center(en.dom), 5, '#8fe08f', 'fx-mote-spark', 46);
+    damagePlayer(n);
+  }
+
+  // apply damage to an enemy. opts.strength (player bonus) and opts.scare default on.
+  function applyDamage(en, amount, opts) {
+    opts = opts || {};
+    if (!en.alive) return 0;
+    let amt = amount;
+    if (opts.strength !== false) amt += effStrength();
+    if (opts.scare !== false) amt += (en.scare || 0);
+    amt = Math.max(0, Math.round(amt));
+    // WARD: a living Wardstone shaves damage off its protected kin (min 1)
+    const ward = wardReductionFor(en);
+    if (ward > 0 && amt > 0) amt = Math.max(1, amt - ward);
+
+    const beforeTotal = en.hp + en.shield;
+    let remaining = amt;
+    if (en.shield > 0) {
+      const absorbed = Math.min(en.shield, remaining);
+      en.shield -= absorbed; remaining -= absorbed;
+      setShieldPip(en.dom, en.shield);
+    }
+    en.hp = Math.max(0, en.hp - remaining);
+    const dealt = beforeTotal - (en.hp + en.shield);
+    setBar(en.dom, en.hp, en.maxHp);
+    // status ticks (burn/leech) show their own themed number, so skip the -N float
+    if (!opts.noFloat) floatText(offset(center(en.dom), (Math.random() * 40 - 20), -40), '-' + amt, 'dmg');
+    en.dom.classList.add('hit-flash');
+    setTimeout(() => en.dom.classList.remove('hit-flash'), 400);
+    // genuine attacks (not burn/leech ticks) play the active beast's signature strike
+    if (!opts.noFloat) monsterStrikeFx(en);
+    SFX.hit();
+    if (amt >= 9) shake();
+    if (en.hp <= 0 && en.alive) {
+      en.alive = false;
+      killEnemyVisual(en);
+    } else if (en.alive && en.base && en.base.thorns > 0 && dealt > 0 && !opts.noFloat && !opts.reflect && !B.ended) {
+      // THORNS: a genuine strike (not a burn/leech tick) lashes back, per hit —
+      // so dumping multi-hit glyphs into it hurts. Skipped if the blow killed it.
+      thornsRecoil(en);
+    }
+    return dealt;
+  }
+
+  // a satisfying death: a flash + collapse, an ember burst, then the corpse is
+  // removed from the formation (no lingering transparent ghost).
+  // how grand a foe's demise should be
+  function enemyTier(en) {
+    const d = (en && en.base) || {};
+    if (d.boss) return 'finalboss';
+    if (d.floorBoss) return 'floorboss';
+    if (d.elite) return 'elite';
+    return 'normal';
+  }
+  // Spectacle scaled to the foe's importance. Kept deliberately light: the
+  // blend-mode/blur flame particles are costly, so higher tiers lean on cheap
+  // transform/opacity rings + ash and STAGGER their spawns across frames rather
+  // than dumping 100+ composited particles into a single frame (which stuttered).
+  // the monster ART's visual box in stage space — measures the scaled <img>
+  // itself (so the silhouette, not the layout box) so FX center on the body and
+  // can scatter across it, rather than clumping at the lower combatant box edge
+  function spriteAnchor(en) {
+    const Scale = root.CG.Scale;
+    const sprEl = en.dom && (en.dom.querySelector('.c-sprite img') || en.dom.querySelector('.c-sprite'));
+    const r = (sprEl || en.dom).getBoundingClientRect();
+    if (!Scale) return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
+    const tl = Scale.toStage(r.left, r.top), br = Scale.toStage(r.right, r.bottom);
+    return { x: (tl.x + br.x) / 2, y: (tl.y + br.y) / 2, w: br.x - tl.x, h: br.y - tl.y };
+  }
+  function deathSpectacle(en, tier) {
+    const a = spriteAnchor(en);
+    const RED = '#ff6a4a', GOLD = '#ffd070', VIO = '#c45cff';
+    // spread bursts over a few frames so no single frame pays for everything
+    const later = (fn, t) => setTimeout(fn, t);
+    // fire a ring at a point SCATTERED across the body (fx/fy are fractions of the
+    // half-extent) so the bursts pepper the whole monster instead of stacking a
+    // single circle on its midriff
+    const ringAt = (fx, fy, color, life, t) =>
+      later(() => fxRing({ x: a.x + fx * a.w * 0.5, y: a.y + fy * a.h * 0.5 }, color, life, 'fx-ring-shock'), t || 0);
+    if (tier === 'elite') {
+      SFX.death();
+      enemyAsh(en, 22, 1.1);
+      ringAt(0, -0.45, GOLD, 600, 0);
+      ringAt(-0.6, 0.1, RED, 560, 90);
+      ringAt(0.55, 0.4, GOLD, 560, 180);
+      later(() => flameBurst({ x: a.x, y: a.y }, { scale: 1.15, count: 10, sparks: 4, smoke: 1, spread: Math.max(40, a.w * 0.4) }), 50);
+      shake(2);
+    } else if (tier === 'floorboss') {
+      SFX.death(); later(() => SFX.death(), 170);
+      enemyAsh(en, 28, 1.2);
+      ringAt(0, -0.6, GOLD, 680, 0);
+      ringAt(-0.7, -0.1, RED, 640, 90);
+      ringAt(0.7, 0.15, GOLD, 640, 180);
+      ringAt(-0.2, 0.6, RED, 620, 270);
+      later(() => flameBurst({ x: a.x, y: a.y }, { scale: 1.4, count: 14, sparks: 6, smoke: 1, spread: Math.max(48, a.w * 0.45) }), 60);
+      deathFlash(0.42, 520, 'rgba(255,220,170,1)');
+      shake(2); later(() => shake(2), 300);
+    } else if (tier === 'finalboss') {
+      // no blur/blend flame particles here — purely cheap rings, ash + a flash,
+      // staggered, so the largest sprite's demise doesn't spike a frame
+      SFX.death(); later(() => SFX.death(), 200);
+      enemyAsh(en, 34, 1.3);
+      // a chain of shockwaves walking across the whole silhouette
+      ringAt(0, -0.7, GOLD, 720, 0);
+      ringAt(-0.75, -0.25, VIO, 700, 90);
+      ringAt(0.75, -0.05, GOLD, 700, 180);
+      ringAt(-0.4, 0.45, VIO, 680, 270);
+      ringAt(0.45, 0.6, RED, 680, 360);
+      ringAt(0, 0.15, GOLD, 760, 120);
+      deathFlash(0.55, 680, 'rgba(255,245,220,1)');
+      shake(3); later(() => shake(2), 340);
+    } else {
+      SFX.death();
+      enemyAsh(en, 16);
+      ringAt(0, -0.3, RED, 560, 0);
+      ringAt(0.2, 0.35, RED, 560, 90);
+      shake(1);
+    }
+  }
+  // Pull a dying enemy OUT of the flex flow, pinned exactly where it stands, so
+  // its (possibly long) death animation can't be yanked sideways when a faster
+  // neighbouring corpse clears — and so it leaves no collapsing gap that makes
+  // others jump. The living siblings FLIP-slide to fill the space it vacates.
+  function detachDyingFromFlow(d) {
+    const zone = $('enemy-zone'), Scale = root.CG.Scale;
+    if (!zone || !Scale || d.style.position === 'absolute') return;
+    const sibs = Array.from(zone.querySelectorAll('.combatant.enemy'))
+      .filter(c => c !== d && !c.classList.contains('dying') && !c.classList.contains('dead'));
+    // settle any reflow tween still running so we read true resting positions
+    sibs.forEach(c => { if (c.getAnimations) c.getAnimations().forEach(a => { if (a.id === 'reflow') { try { a.finish(); } catch (e) {} } }); });
+    const before = sibs.map(c => { const r = c.getBoundingClientRect(); return Scale.toStage(r.left + r.width / 2, r.top).x; });
+    // d may itself be mid-slide from an earlier death's FLIP — bake that live
+    // transform into the pin so it freezes exactly where it's *seen*, not where
+    // its flow slot is (otherwise it would snap back before the death plays)
+    let tx = 0, ty = 0;
+    const cs = root.getComputedStyle(d).transform;
+    if (cs && cs !== 'none') {
+      try { const m = new root.DOMMatrixReadOnly(cs); tx = m.m41; ty = m.m42; } catch (e) {}
+    }
+    if (d.getAnimations) d.getAnimations().forEach(a => { if (a.id === 'reflow') { try { a.cancel(); } catch (e) {} } });
+    // freeze d at its current visual box, then lift it out of the layout
+    const left = d.offsetLeft + tx, top = d.offsetTop + ty, w = d.offsetWidth, h = d.offsetHeight;
+    d.style.width = w + 'px'; d.style.height = h + 'px';
+    d.style.left = left + 'px'; d.style.top = top + 'px';
+    d.style.margin = '0'; d.style.position = 'absolute';
+    // FLIP the survivors into the newly-centered formation
+    sibs.forEach((c, i) => {
+      const r = c.getBoundingClientRect();
+      const nowX = Scale.toStage(r.left + r.width / 2, r.top).x;
+      const dx = before[i] - nowX;
+      if (Math.abs(dx) < 1 || typeof c.animate !== 'function') return;
+      const anim = c.animate(
+        [{ transform: 'translateX(' + dx + 'px)' }, { transform: 'translateX(0)' }],
+        { duration: 460, easing: 'cubic-bezier(.4,.05,.25,1)' }
+      );
+      anim.id = 'reflow';
+    });
+  }
+  function killEnemyVisual(en) {
+    if (!en || !en.dom || en.dom.classList.contains('dying')) return;
+    const tier = enemyTier(en);
+    const intDom = en.dom.querySelector('.intent'); if (intDom) intDom.style.display = 'none';
+    deathSpectacle(en, tier);
+    const d = en.dom;
+    // remove the corpse from the flex flow up front so simultaneous/staggered
+    // deaths never shove a still-animating foe around (the clunky "jump")
+    detachDyingFromFlow(d);
+    // the sprite implode is keyed off the already-present tier-* class, so the
+    // death motion pivots from the monster art's own centre (no upward lurch)
+    d.classList.add('dying');
+    // grander deaths play longer before the corpse clears
+    const dur = tier === 'finalboss' ? 1400 : tier === 'floorboss' ? 1250 : tier === 'elite' ? 1150 : 820;
+    let finished = false;
+    const done = (e) => {
+      if (e && e.animationName && e.animationName.indexOf('enemyDeath') !== 0) return;
+      if (finished) return;
+      finished = true;
+      // survivors already slid over when this foe was lifted out of flow at death
+      // start, so we just clear the (out-of-flow) corpse now — nothing to reflow
+      d.classList.add('dead');
+      d.removeEventListener('animationend', done);
+    };
+    d.addEventListener('animationend', done);
+    setTimeout(() => done(), dur);   // safety net if animationend never fires
+  }
+
+  // Smoothly re-center the surviving enemies when the formation changes. `mutate`
+  // performs the layout change (e.g. hiding the corpse); we measure before/after
+  // in stage space and tween each survivor from its old slot to its new one.
+  function reflowEnemies(mutate) {
+    const zone = $('enemy-zone'), Scale = root.CG.Scale;
+    if (!zone || !Scale) { mutate(); return; }
+    const movers = Array.from(zone.querySelectorAll('.combatant.enemy'))
+      .filter(c => !c.classList.contains('dying') && !c.classList.contains('dead'));
+    // settle any FLIP tween still running from a previous (e.g. simultaneous AoE)
+    // death so we measure true resting positions, not a sprite mid-glide — that
+    // stale read is what made a survivor jump to center clunkily
+    movers.forEach(c => { if (c.getAnimations) c.getAnimations().forEach(a => { if (a.id === 'reflow') { try { a.finish(); } catch (e) {} } }); });
+    const before = movers.map(c => { const r = c.getBoundingClientRect(); return Scale.toStage(r.left + r.width / 2, r.top).x; });
+    mutate();
+    movers.forEach((c, i) => {
+      const r = c.getBoundingClientRect();
+      const nowX = Scale.toStage(r.left + r.width / 2, r.top).x;
+      const dx = before[i] - nowX;
+      if (Math.abs(dx) < 1 || typeof c.animate !== 'function') return;
+      const anim = c.animate(
+        [{ transform: 'translateX(' + dx + 'px)' }, { transform: 'translateX(0)' }],
+        { duration: 460, easing: 'cubic-bezier(.4,.05,.25,1)' }
+      );
+      anim.id = 'reflow';
+    });
+  }
+
+  // a burst of ember/ash motes from the dying foe (count + size scale with tier).
+  // origins are SCATTERED across the monster art and centered on its body, then
+  // each mote flies outward from where it was born — so it reads as the whole
+  // sprite disintegrating, not a single jet near the feet.
+  function enemyAsh(en, n, sizeMul) {
+    const stage = $('stage');
+    if (!stage || !en.dom) return;
+    n = n || 12; sizeMul = sizeMul || 1;
+    const a = spriteAnchor(en);
+    // generous absolute spread (with a large minimum) so the blast clearly fills
+    // and overshoots the silhouette regardless of how the art measures
+    const spreadX = Math.max(a.w * 0.6, 130) * sizeMul;
+    const spreadY = Math.max(a.h * 0.5, 150) * sizeMul;
+    for (let i = 0; i < n; i++) {
+      // born anywhere across the whole body box
+      const ox = (Math.random() * 2 - 1) * spreadX;
+      const oy = (Math.random() * 2 - 1) * spreadY;
+      const sx = a.x + ox, sy = a.y + oy;
+      const p = el('div', 'death-mote', Math.random() < 0.5 ? '🔥' : '✦');
+      p.style.left = sx + 'px';
+      p.style.top = sy + 'px';
+      p.style.fontSize = (24 * sizeMul).toFixed(0) + 'px';
+      stage.appendChild(p);
+      // then blast FAR outward from the body center, so the debris flies wide
+      const outAng = Math.atan2(oy, ox || (Math.random() - 0.5));
+      const ang = outAng + (Math.random() - 0.5) * 0.8;
+      const dist = (170 + Math.random() * 280) * sizeMul;
+      const dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist - 60 * sizeMul;
+      const dur = 620 + Math.random() * 480;
+      p.animate([
+        { transform: 'translate(-50%,-50%) translate(0,0) scale(1)', opacity: 1 },
+        { transform: `translate(-50%,-50%) translate(${dx}px,${dy}px) scale(.2) rotate(${(Math.random() * 360) | 0}deg)`, opacity: 0 }
+      ], { duration: dur, easing: 'cubic-bezier(.2,.6,.3,1)', fill: 'forwards' }).onfinish = () => p.remove();
+    }
+  }
+
+  function gainShield(amt) {
+    let a = amt + (B.resilience || 0);
+    if (B.playerFrail > 0) a = Math.floor(a * 0.5);
+    if (a <= 0) return;
+    // original: shield the player
+    B.playerShield += a;
+    setShieldPip($('player-monster'), B.playerShield);
+    floatText(offset(center(playerArt()), 0, -120), '+' + a + '◆', 'shield');
+    shieldGainFx(playerArt());
+    // CURSED slot: the boon is ALSO mirrored to the enemy that cast the curse
+    if (RES && RES.cursed && RES.caster && RES.caster.alive) {
+      const en = RES.caster;
+      en.shield += a;
+      setShieldPip(en.dom, en.shield);
+      floatText(offset(center(en.dom), 0, -50), '+' + a + '◆', 'shield');
+    }
+  }
+  function heal(amt) {
+    if (amt <= 0) return;
+    B.monster.hp = Math.min(B.monster.maxHp, B.monster.hp + amt);
+    setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
+    floatText(offset(center(playerArt()), 0, -160), '+' + amt + '♥', 'heal');
+    healFx(playerArt());
+    // CURSED slot: the life is ALSO mirrored to the enemy that cast the curse
+    if (RES && RES.cursed && RES.caster && RES.caster.alive) {
+      const en = RES.caster;
+      en.hp = Math.min(en.maxHp, en.hp + amt);
+      setBar(en.dom, en.hp, en.maxHp);
+      floatText(offset(center(en.dom), 0, -50), '+' + amt + '♥', 'heal');
+    }
+  }
+  function selfDamage(n) {
+    if (n <= 0) return;
+    B.monster.hp = Math.max(0, B.monster.hp - n);
+    setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
+    floatText(offset(center(playerArt()), 0, -90), '-' + n, 'dmg');
+    const pd = $('player-monster');
+    playerHitReact();
+    pd.classList.add('hit-flash');
+    setTimeout(() => pd.classList.remove('hit-flash'), 400);
+    if (B.monster.hp <= 0) handlePlayerDeath();
+  }
+
+  // ============================================================
+  // SLOT-TYPE BEHAVIORS
+  // ============================================================
+  // DEVIL: devour the glyph (purge one copy from the run deck for good) for a
+  // permanent boon by color, AND spit back a permanent Maw-Eaten Scrap token — a
+  // basic, wild-combo striker added to your deck and next hand. Feeding a Scrap
+  // BACK to the Devil tears away 30% of your current HP instead (no boon/token).
+  const DEVIL_TOKEN = 'maweaten_scrap';
+  async function devourGlyph(id, slot, sEl) {
+    const g = glyph(id);
+    const from = sEl ? center(sEl.querySelector('.socket-glyph') || sEl) : playerPos();
+    const baseId = g.cloneOf || id;
+    // a real (non-clone) glyph is gone from the deck for good
+    if (!g.cloneOf) {
+      const pool = root.CG.Game.state.pool;
+      const pi = pool.indexOf(baseId);
+      if (pi !== -1) pool.splice(pi, 1);
+    }
+    B.monster.devoured = (B.monster.devoured || 0) + 1;   // run total (Glutton scales off it)
+
+    // feeding the Devil its own Scrap: it bites back for 30% of current HP
+    if (baseId === DEVIL_TOKEN) {
+      floatText(from, 'Devoured', 'status');
+      await boltP(from, playerPos(), 'var(--red)');
+      const bite = Math.max(1, Math.ceil(B.monster.hp * 0.30));
+      floatText(offset(playerPos(), 0, -40), 'Blood Tithe!', 'status');
+      selfDamage(bite);
+      shake();
+      updateTopbar();
+      await wait(220);
+      return;
+    }
+
+    // ordinary devour: purge the card, gain a permanent boon by color...
+    floatText(from, 'Devoured', 'status');
+    await boltP(from, playerPos(), 'var(--purple)');
+    if (g.color === 'red') {
+      B.monster.runStrength = (B.monster.runStrength || 0) + 1;
+      B.strength += 1;
+      floatText(playerPos(), 'Strength +1 (run)', 'status');
+      strengthFx(playerArt());
+    } else if (g.color === 'blue') {
+      B.monster.runTurnShield = (B.monster.runTurnShield || 0) + 1;
+      gainShield(1);
+      floatText(playerPos(), 'Turn Shield +1 (run)', 'status');
+    } else {
+      B.monster.maxHp += 3;
+      B.monster.hp = Math.min(B.monster.maxHp, B.monster.hp + 3);
+      setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
+      floatText(playerPos(), 'Max HP +3 (run)', 'heal');
+    }
+    // ...AND spit back a permanent Maw-Eaten Scrap token
+    root.CG.Game.state.pool.push(DEVIL_TOKEN);   // permanent deck addition
+    B.extras.push(DEVIL_TOKEN);                   // and into the very next hand
+    floatText(offset(playerPos(), 0, -150), '+ Maw-Eaten Scrap', 'status');
+    fxMotes(center(playerArt()), 8, '#ff5470', 'fx-mote-rise', 60);
+    updateTopbar();
+    await wait(180);
+  }
+
+  // CATALYST: the color sown in the slot infuses the NEXT glyph with a bonus.
+  async function applyCatalyst(color, sEl) {
+    const from = sEl ? center(sEl) : playerPos();
+    // show the infusion firing out of the glyph regardless of color
+    const cc = color === 'red' ? '#ff6a4a' : color === 'blue' ? '#5ab6ff' : '#5fe07a';
+    floatText(offset(from, 0, -34), 'Infused ✦', color === 'red' ? 'dmg' : color === 'blue' ? 'shield' : 'heal');
+    fxRing(from, cc, 620);
+    fxMotes(from, 9, cc, 'fx-mote-rise', 54);
+    if (color === 'red') {
+      await hitTargets(targetAll(), 3, from, 'var(--red)');
+    } else if (color === 'blue') {
+      gainShield(3); await wait(200);
+    } else {
+      heal(6); await wait(200);
+    }
+  }
+
+  // END OF TURN: glyphs still sitting in your hand fire a parting effect.
+  async function processUnplayed() {
+    for (const id of B.hand.slice()) {
+      const ou = glyph(id).onUnplayed;
+      if (!ou) continue;
+      const from = playerPos();
+      if (ou.kind === 'damageRandom') {
+        floatText(from, glyph(id).name, 'status');
+        await hitTargets(targetRandom(), ou.value, from, 'var(--red)');
+      } else if (ou.kind === 'block') {
+        floatText(from, glyph(id).name, 'status');
+        gainShield(ou.value);
+        await wait(180);
+      }
+      refreshAll();
+      if (alive().length === 0) break;
+    }
+  }
+
+  // CLONE: stamp an empowered copy of the glyph into your next hand (one-shot).
+  function queueClone(id, sEl) {
+    const base = glyph(id);
+    if (base.junk) return;   // never clone enemy junk
+
+    const cid = (base.cloneOf || id) + '#clone' + (B.cloneSeq++);
+    B.tempGlyphs[cid] = Object.assign({}, base, {
+      id: cid,
+      cloneOf: base.cloneOf || id,
+      cloneEmpower: (base.cloneEmpower || 0) + 1,
+      sticky: false, junk: false,
+      desc: base.desc + ' <i>(Clone +' + ((base.cloneEmpower || 0) + 1) + ')</i>'
+    });
+    B.extras.push(cid);   // additive — does not eat into next turn's draw
+    const from = sEl ? center(sEl) : playerPos();
+    floatText(offset(from, 0, -10), 'Cloned ⧉', 'status');
+    fxRing(from, '#8ad0ff', 640);
+    fxMotes(from, 8, '#aee0ff', 'fx-mote-rise', 52);
+    const gv = sEl ? sEl.querySelector('.socket-glyph') : null;
+    if (gv && gv.animate) gv.animate([
+      { transform: 'scale(1)', filter: 'brightness(1)' },
+      { transform: 'scale(1.14)', filter: 'brightness(1.5) drop-shadow(0 0 12px #8ad0ff)', offset: 0.4 },
+      { transform: 'scale(1)', filter: 'brightness(1)' }
+    ], { duration: 560, easing: 'cubic-bezier(.3,1.4,.4,1)' });
+  }
+
+  // RAISE DEAD / MASS GRAVE: conjure disposable Husk tokens into your next hand.
+  // Husks are one-shot (gone if unused) and aren't real deck cards, so feeding one
+  // to the Devil grants its boon WITHOUT shrinking your run deck.
+  function summonHusks(n, from) {
+    for (let i = 0; i < n; i++) {
+      const cid = 'husk#h' + (B.cloneSeq++);
+      // each Husk gets a random combo letter, fixed for its (short) lifetime, so it
+      // can slot into an A->B->C chain like any real glyph
+      const letter = ['A', 'B', 'C'][Math.floor(Math.random() * 3)];
+      B.tempGlyphs[cid] = Object.assign({}, GLYPHS.husk, {
+        id: cid, cloneOf: 'husk', token: true, sticky: false, junk: false, letter: letter
+      });
+      B.extras.push(cid);
+    }
+    floatText(from || playerPos(), 'Raise Dead ⚰ ×' + n, 'status');
+  }
+
+  // ============================================================
+  // ENEMY TURN
+  // ============================================================
+  // burn ticks, leech saps, scare decay — all at the top of the enemy turn
+  async function processStatusTicks() {
+    for (const en of B.enemies) {
+      if (!en.alive) continue;
+      if (en.burn > 0) {
+        const n = en.burn;
+        floatText(offset(center(en.dom), 0, -70), '🔥' + n, 'dmg');
+        burnTickFx(en.dom);
+        applyDamage(en, n, { strength: false, noFloat: true });
+        en.burn = Math.max(0, n - 1);
+        await wait(220);
+      }
+      if (en.alive && en.leech > 0) {
+        const sap = Math.max(1, Math.ceil(en.hp * 0.10));
+        floatText(offset(center(en.dom), 0, -70), '🩸' + sap, 'status');
+        leechTickFx(en.dom, playerArt());
+        applyDamage(en, sap, { strength: false, scare: false, noFloat: true });
+        heal(sap); // triggers Gravetide
+        en.leech -= 1;
+        await wait(240);
+      }
+    }
+    // your own Burn (from a cursed burn glyph) ticks here too
+    if (B.playerBurn > 0 && !B.ended) {
+      const n = B.playerBurn;
+      const mon = B.monster;
+      floatText(offset(center(playerArt()), 0, -86), '🔥' + n, 'dmg');
+      burnTickFx(playerArt());
+      damagePlayer(n);
+      // if burn KO'd the beast, the swapped-in one shouldn't inherit it
+      if (!B.ended && B.monster === mon) B.playerBurn = Math.max(0, n - 1);
+      await wait(220);
+    }
+    // scare lasts a fixed number of turns
+    B.enemies.forEach(en => {
+      if (en.scareTurns > 0) { en.scareTurns -= 1; if (en.scareTurns <= 0) en.scare = 0; }
+    });
+    refreshAll();
+  }
+
+  async function enemyTurn() {
+    // slot timers + player debuffs decay first, so a freshly-applied "2 turns"
+    // lasts both of the player's next two turns
+    tickRoundTimers();
+    await processStatusTicks();
+    if (alive().length === 0) { victory(); return; }
+    // iterate a snapshot — summons join the fight but act next round
+    const actors = B.enemies.slice();
+    for (const en of actors) {
+      if (!en.alive || B.ended) continue;
+      await wait(260);
+      await doEnemyAction(en, en.intent);
+      if (B.ended) return;
+      if (en.weak > 0) en.weak = Math.max(0, en.weak - 1);
+      // ENRAGE: works itself into a deeper frenzy every turn — permanent, ramping
+      // Strength that turns a drawn-out fight lethal. Bumped before the next intent
+      // is prepared so the telegraph already reflects the escalation.
+      if (en.alive && en.base && en.base.enrage > 0) {
+        en.strength = (en.strength || 0) + en.base.enrage;
+        en.strengthTurns = 9999;
+        floatText(offset(center(en.dom), 0, -52), 'Enrage +' + en.base.enrage, 'status');
+        strengthFx(en.dom);
+      }
+      advanceIntent(en);
+      if (en.strengthTurns > 0) { en.strengthTurns--; if (en.strengthTurns === 0) en.strength = 0; }
+      refreshAll();
+      await wait(140);
+    }
+    refreshAll();
+  }
+
+  async function doEnemyAction(en, intent) {
+    switch (intent.type) {
+      case 'multi': {
+        for (const a of intent.actions) {
+          if (!en.alive || B.ended) break;
+          await doEnemyAction(en, a);
+          if (B.ended) return;
+          await wait(200);
+        }
+        break;
+      }
+      case 'attack': {
+        const hits = intent.hits || 1;
+        for (let h = 0; h < hits; h++) {
+          let dmg = intent.value;
+          if (en.weak > 0) dmg = Math.max(1, Math.round(dmg * 0.55));
+          en.dom.querySelector('.intent').style.display = 'none';
+          en.dom.style.transition = 'transform .15s';
+          en.dom.style.transform = 'translateY(40px) scale(1.06)';
+          SFX.enemyHit();
+          await wait(160);
+          en.dom.style.transform = '';
+          damagePlayer(dmg);
+          if (B.ended) return;
+          if (h < hits - 1) await wait(200);
+        }
+        break;
+      }
+      case 'defend':
+        en.shield += intent.value;
+        setShieldPip(en.dom, en.shield);
+        floatText(offset(center(en.dom), 0, -40), '+' + intent.value + '◆', 'shield');
+        SFX.fireBlue(0);
+        break;
+      case 'buff':
+        if (intent.turns) {
+          en.strength = (en.strength || 0) + (intent.value || 3);
+          en.strengthTurns = Math.max(en.strengthTurns || 0, intent.turns);
+          floatText(offset(center(en.dom), 0, -40), 'Strength +' + (intent.value || 3), 'status');
+        } else {
+          en.empower = (en.empower || 0) + (intent.value || 4);
+          floatText(offset(center(en.dom), 0, -40), 'Empowered', 'status');
+        }
+        SFX.firePurple(0);
+        break;
+      case 'rally': {
+        const val = intent.value || 4;
+        B.enemies.forEach(o => {
+          if (o !== en && o.alive) {
+            o.empower = (o.empower || 0) + val;
+            floatText(offset(center(o.dom), 0, -40), 'Rallied +' + val, 'status');
+            o.dom.classList.add('hit-flash');
+            setTimeout(() => o.dom.classList.remove('hit-flash'), 400);
+          }
+        });
+        SFX.firePurple(0);
+        await wait(200);
+        break;
+      }
+      case 'curse': {
+        const slot = clampSlot(intent.slot);
+        B.slotFx[slot].cursed = intent.value;
+        B.slotFx[slot].caster = en;
+        renderSockets();
+        slotCurseFx($('socket-row').children[slot]);
+        floatText(playerPos(), 'Slot ' + (slot + 1) + ' Cursed', 'status');
+        SFX.firePurple(0);
+        await wait(360);
+        break;
+      }
+      case 'sunder': {
+        const slot = clampSlot(intent.slot);
+        B.slotFx[slot].disabled = intent.value;
+        renderSockets();
+        slotBanishFx($('socket-row').children[slot]);
+        floatText(playerPos(), 'Slot ' + (slot + 1) + ' Sealed', 'status');
+        SFX.firePurple(0);
+        await wait(360);
+        break;
+      }
+      case 'trash': {
+        const n = intent.count || 1;
+        if (intent.where === 'hand') {
+          for (let i = 0; i < n; i++) B.injected.push('rubble');
+          floatText(playerPos(), '+' + n + ' Rubble (hand)', 'status');
+        } else {
+          for (let i = 0; i < n; i++) root.CG.Game.state.pool.push('rubble');
+          floatText(playerPos(), '+' + n + ' Rubble (deck)', 'status');
+        }
+        SFX.firePurple(0);
+        await wait(220);
+        break;
+      }
+      case 'clog':
+        if (B.stuck.indexOf('deadweight') === -1) B.stuck.push('deadweight');
+        floatText(playerPos(), 'Dead Weight!', 'status');
+        SFX.firePurple(0);
+        await wait(220);
+        break;
+      case 'debuff': {
+        if (intent.stat === 'frail') { B.playerFrail = intent.value; floatText(playerPos(), 'Frail ' + intent.value, 'status'); weakFx(playerArt()); }
+        else { B.playerWeak = intent.value; floatText(playerPos(), 'Weak ' + intent.value, 'status'); weakFx(playerArt()); }
+        SFX.firePurple(0);
+        await wait(220);
+        break;
+      }
+      case 'summon': {
+        if (en.summonsLeft == null) en.summonsLeft = intent.max || 2;
+        if (en.summonsLeft > 0 && alive().length < MAX_ENEMIES) {
+          en.summonsLeft--;
+          spawnEnemy(root.CG.DATA.ENEMIES[intent.who]);
+          floatText(offset(center(en.dom), 0, -40), 'Summon!', 'status');
+          SFX.firePurple(0);
+          await wait(260);
+        } else {
+          floatText(offset(center(en.dom), 0, -40), '…', 'status');
+          await wait(120);
+        }
+        break;
+      }
+      case 'regen': {
+        const v = intent.value || 6;
+        en.hp = Math.min(en.maxHp, en.hp + v);
+        setBar(en.dom, en.hp, en.maxHp);
+        floatText(offset(center(en.dom), 0, -40), '+' + v + '♥', 'heal');
+        healFx(en.dom);
+        SFX.fireBlue(0);
+        await wait(260);
+        break;
+      }
+      case 'siphon': {
+        const v = intent.value || 2;
+        bolt(center(playerArt()), center(en.dom), '#c45cff');   // power drains toward the foe
+        await wait(140);
+        if (intent.stat === 'strength') {
+          const taken = Math.min(B.strength, v);
+          if (taken > 0) {
+            B.strength -= taken;
+            en.strength = (en.strength || 0) + taken;
+            en.strengthTurns = Math.max(en.strengthTurns || 0, 3);
+          }
+          floatText(playerPos(), taken > 0 ? 'Strength −' + taken : 'No Strength to drain', 'status');
+        } else {
+          const taken = Math.min(B.playerShield, v);
+          if (taken > 0) {
+            B.playerShield -= taken;
+            setShieldPip($('player-monster'), B.playerShield);
+            en.shield += taken;
+            setShieldPip(en.dom, en.shield);
+          }
+          floatText(playerPos(), taken > 0 ? 'Block −' + taken : 'No Block to drain', 'status');
+        }
+        SFX.firePurple(0);
+        await wait(300);
+        break;
+      }
+    }
+  }
+
+  const MAX_ENEMIES = 5;
+  function clampSlot(i) {
+    const max = B.monster.sockets - 1;
+    if (i == null || i < 0) return 0;
+    return Math.min(i, max);
+  }
+
+  function advanceIntent(en) {
+    en.intentIndex = (en.intentIndex + 1) % en.base.intents.length;
+    en.intent = prepareIntent(en);
+  }
+
+  // clone the upcoming intent + bake in target slot / empower so the telegraph is exact.
+  // a base entry may be an ARRAY — that becomes a two-action "multi" telegraph.
+  function prepareIntent(en) {
+    const entry = en.base.intents[en.intentIndex];
+    if (Array.isArray(entry)) {
+      return { type: 'multi', actions: entry.map(sub => prepareSubIntent(en, sub)) };
+    }
+    return prepareSubIntent(en, entry);
+  }
+  function prepareSubIntent(en, baseSub) {
+    const it = Object.assign({}, baseSub);
+    if (it.type === 'curse' || it.type === 'sunder') it.slot = chooseTargetSlot(it.type);
+    if (it.type === 'attack') {
+      let bonus = en.strength || 0;          // lasting Strength from multi-turn self-buffs
+      if ((en.empower || 0) > 0) { bonus += en.empower; it.empowered = true; en.empower = 0; }
+      if (bonus) it.value += bonus;
+    }
+    return it;
+  }
+  function chooseTargetSlot(kind) {
+    const n = B.monster.sockets;
+    const prefer = [];
+    for (let i = 0; i < n; i++) {
+      const fx = B.slotFx[i] || {};
+      if (kind === 'sunder' && fx.disabled > 0) continue;
+      if (kind === 'curse' && fx.cursed > 0) continue;
+      prefer.push(i);
+    }
+    const pool = prefer.length ? prefer : Array.from({ length: n }, (_, i) => i);
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function tickRoundTimers() {
+    B.slotFx.forEach(fx => {
+      if (fx.disabled > 0) fx.disabled--;
+      if (fx.cursed > 0) { fx.cursed--; if (fx.cursed <= 0) fx.caster = null; }
+    });
+    if (B.playerWeak > 0) B.playerWeak--;
+    if (B.playerFrail > 0) B.playerFrail--;
+  }
+
+  // Enemies grow a little tougher the deeper you climb — modest, incremental
+  // bumps to HP and to their attack / guard numbers. Bosses keep their tuned
+  // stats; everyone else (summons included) scales with node depth.
+  function scaleEnemyDef(def, depth) {
+    if (!depth || def.boss) return def;
+    const hpMul = 1 + depth * 0.05;
+    const atkBonus = Math.round(depth * 0.34);
+    const defBonus = Math.round(depth * 0.3);
+    const scaleSub = it => {
+      const o = Object.assign({}, it);
+      if (o.type === 'attack') o.value = it.value + atkBonus;
+      else if (o.type === 'defend') o.value = it.value + defBonus;
+      return o;
+    };
+    const intents = def.intents.map(entry => Array.isArray(entry) ? entry.map(scaleSub) : scaleSub(entry));
+    return Object.assign({}, def, { maxHp: Math.round(def.maxHp * hpMul), intents });
+  }
+
+  function spawnEnemy(def) {
+    def = scaleEnemyDef(def, B.depthScale || 0);
+    const en = {
+      base: def, id: def.id + '#' + (B.enemies.length), name: def.name, emoji: def.emoji, img: def.img,
+      maxHp: def.maxHp, hp: def.maxHp, shield: 0,
+      weak: 0, burn: 0, leech: 0, scare: 0, scareTurns: 0, empower: 0,
+      strength: 0, strengthTurns: 0,
+      intentIndex: 0, intent: null, alive: true, dom: null
+    };
+    en.intent = prepareIntent(en);
+    const c = el('div', 'combatant enemy summoning');
+    c.innerHTML = combatantHTML(en.name, false);
+    paintSprite(c, en);
+    en.dom = c;
+    // FLIP: the already-present foes glide aside to make room as the minion
+    // materializes, rather than the flex row snapping to a new layout
+    reflowEnemies(() => { $('enemy-zone').appendChild(c); });
+    attachIntentTip(en);
+    B.enemies.push(en);
+    // a little arrival burst once it has a real position on stage
+    requestAnimationFrame(() => {
+      const Scale = root.CG.Scale;
+      if (!Scale) return;
+      const r = c.getBoundingClientRect();
+      const p = Scale.toStage(r.left + r.width / 2, r.top + r.height / 2);
+      fxRing(p, '#b07bff', 620);
+      fxMotes(p, 10, '#c9a3ff', 'fx-mote-rise', 70);
+    });
+    setTimeout(() => c.classList.remove('summoning'), 460);
+    refreshAll();
+  }
+
+  function damagePlayer(dmg) {
+    let remaining = dmg;
+    // Stonehide: flat damage reduction (min 1)
+    if (B.monster.passive === 'stonehide') {
+      remaining = Math.max(1, remaining - B.monster.passiveVal);
+    }
+    // Stoneblood blessing: further flat reduction (min 1)
+    if (root.CG.Game.state.blessings.stoneblood) {
+      remaining = Math.max(1, remaining - 1);
+    }
+    if (B.playerShield > 0) {
+      const absorbed = Math.min(B.playerShield, remaining);
+      B.playerShield -= absorbed; remaining -= absorbed;
+      setShieldPip($('player-monster'), B.playerShield);
+      if (absorbed > 0) floatText(offset(center(playerArt()), -60, -80), '-' + absorbed + '◆', 'shield');
+    }
+    if (remaining > 0) {
+      B.monster.hp = Math.max(0, B.monster.hp - remaining);
+      setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
+      floatText(offset(center(playerArt()), 30, -60), '-' + remaining, 'dmg');
+      const pd = $('player-monster');
+      playerHitReact();
+      pd.classList.add('hit-flash');
+      setTimeout(() => pd.classList.remove('hit-flash'), 400);
+      shake();
+    }
+    if (B.monster.hp <= 0) handlePlayerDeath();
+  }
+
+  function handlePlayerDeath() {
+    B.monster.alive = false;
+    B.monster.hp = 0;
+    SFX.death();
+    const next = root.CG.Game.firstAlive();
+    if (next === -1) {
+      B.ended = true;
+      banner('Defeat', 1600);
+      setTimeout(() => onLoseCb && onLoseCb(), 1500);
+      return;
+    }
+    // swap in next beast
+    root.CG.Game.state.activeIndex = next;
+    B.monster = root.CG.Game.state.monsters[next];
+    B.playerShield = (B.monster.passive === 'startShield') ? B.monster.passiveVal : 0;
+    B.strength = B.monster.runStrength || 0; B.resilience = B.monster.runResilience || 0; B.turnStrength = 0;
+    if (root.CG.Game.state.blessings.warbanner) B.strength += 2;
+    B.carryShield = 0; B.playerBurn = 0;
+    // adopt the incoming beast's socket layout; clear any held/cloned carry-over
+    B.slotTypes = Array.from({ length: B.monster.sockets }, (_, i) => (B.monster.slotTypes && B.monster.slotTypes[i]) || 'normal');
+    B.extras = []; B.injected = []; B.tempGlyphs = {}; B.lastTurnPlays = [];
+    B.resolveCount = {};
+    // fresh deck for the incoming beast
+    B.draw = shuffle(root.CG.Game.state.pool.slice()); B.discard = []; B.drawnThisTurn = [];
+    B.spanHead = new Array(B.monster.sockets).fill(null);
+    banner(B.monster.name + ' steps in!', 1100);
+    renderPlayer();
+    refreshAll();
+  }
+
+  // ============================================================
+  // END STATES
+  // ============================================================
+  function victory() {
+    if (B.ended) return;
+    B.ended = true;
+    B.resolving = false;
+    SFX.victory();
+    banner('Victory', 1500);
+    setTimeout(() => onWinCb && onWinCb(), 1400);
+  }
+
+  function banner(text, dur) {
+    const b = $('battle-banner');
+    b.textContent = text;
+    b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+    setTimeout(() => b.classList.remove('show'), dur || 1400);
+  }
+
+  // ============================================================
+  // DEBUG CHEATS (operate on the live battle)
+  // ============================================================
+  function inBattle() { return !!(B && B.monster && !B.ended); }
+
+  const Debug = {
+    heal() {
+      if (!inBattle()) return;
+      const m = B.monster;
+      m.maxHp = Math.max(m.maxHp, 99);
+      m.hp = m.maxHp;
+      refreshAll();
+      floatText(playerPos(), '+HP', 'heal');
+    },
+    strength() {
+      if (!inBattle()) return;
+      B.strength = 99;
+      refreshAll();
+      floatText(playerPos(), 'Strength 99', 'status');
+    },
+    allGlyphs() {
+      if (!inBattle()) return;
+      B.hand = Object.keys(GLYPHS).filter(id => !GLYPHS[id].junk);
+      renderHand(true);
+      $('btn-detonate').disabled = B.sockets.every(s => s === null);
+    },
+    maxSlots() {
+      if (!inBattle()) return;
+      B.monster.sockets = 9;
+      while (B.slotFx.length < 9) B.slotFx.push({ disabled: 0, cursed: 0, caster: null });
+      while (B.slotTypes.length < 9) B.slotTypes.push('normal');
+      const next = B.sockets.slice();
+      while (next.length < 9) next.push(null);
+      B.sockets = next;
+      renderSockets();
+    },
+    killAll() {
+      if (!inBattle()) return;
+      B.enemies.forEach(en => {
+        if (!en.alive) return;
+        en.hp = 0; en.alive = false;
+        setBar(en.dom, 0, en.maxHp);
+        killEnemyVisual(en);
+      });
+      victory();
+    }
+  };
+
+  // ============================================================
+  // WIRING
+  // ============================================================
+  function init() {
+    $('btn-detonate').addEventListener('click', detonate);
+
+    // ---- debug menu ----
+    const modal = $('debug-modal');
+    const open = () => { modal.classList.remove('hidden'); SFX.click && SFX.click(); };
+    const close = () => modal.classList.add('hidden');
+    const dbtn = $('btn-debug');
+    if (dbtn) dbtn.addEventListener('click', open);
+    const dclose = $('btn-debug-close');
+    if (dclose) dclose.addEventListener('click', close);
+    if (modal) {
+      modal.addEventListener('click', e => { if (e.target === modal) close(); });
+      modal.querySelectorAll('[data-debug]').forEach(b => {
+        b.addEventListener('click', () => {
+          const fn = Debug[b.dataset.debug];
+          if (fn) fn();
+          if (b.dataset.debug === 'killAll') close();
+        });
+      });
+    }
+  }
+
+  root.CG = root.CG || {};
+  root.CG.Battle = { start, init, debug: Debug };
+
+})(window);

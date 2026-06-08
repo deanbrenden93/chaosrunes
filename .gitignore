@@ -1,0 +1,16 @@
+# OS / editor cruft
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store
+*.tmp
+*.log
+
+# Dependency / build dirs (none yet, but future-proofing)
+node_modules/
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/

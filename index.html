@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chaos Runes — The Glyph Forge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- Letterboxed viewport. #stage is a fixed 1920x1080 reference that scales uniformly. -->
+  <div id="viewport">
+    <div id="stage">
+
+      <!-- ============ HOME / MAIN MENU ============ -->
+      <section id="screen-home" class="screen is-active">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="home-embers" aria-hidden="true"></div>
+        <div class="home-inner">
+          <img class="home-logo" src="assets/game logo.png" alt="Chaos Runes" />
+          <nav class="home-menu">
+            <button id="btn-new-game" class="btn home-btn home-btn-primary">New Game</button>
+            <button id="btn-continue" class="btn home-btn" disabled>Continue</button>
+            <button id="btn-options" class="btn home-btn">Options</button>
+            <button id="btn-exit" class="btn home-btn">Exit</button>
+          </nav>
+        </div>
+      </section>
+
+      <!-- ============ CHOOSE YOUR BEAST ============ -->
+      <section id="screen-start" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="start-inner">
+          <h2 class="choose-head">Choose Your Beast</h2>
+          <div id="starter-row" class="starter-row"><!-- starter cards injected --></div>
+          <div class="start-actions">
+            <button id="btn-start-back" class="btn btn-ghost">‹ Back</button>
+            <button id="btn-begin" class="btn btn-primary btn-begin" disabled>Begin the Descent</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ GLOBAL TOP HUD (persists across map + battle) ============ -->
+      <div id="battle-topbar" class="battle-topbar hidden">
+        <div class="tb-left">
+          <div class="tb-portrait-wrap"><span id="tb-portrait" class="tb-portrait"></span></div>
+          <div class="tb-id">
+            <div id="tb-name" class="tb-name"></div>
+            <div class="tb-hpbar"><div id="tb-hpfill" class="tb-hpfill"></div><span id="tb-hp" class="tb-hptext"></span></div>
+          </div>
+        </div>
+        <div class="tb-mid">
+          <div class="tb-group"><span class="tb-label">Blessings</span><div id="tb-blessings" class="tb-blessings"></div></div>
+          <div class="tb-group"><span class="tb-label">Items</span>
+            <div class="tb-items">
+              <div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="tb-right">
+          <div class="tb-stat"><span class="tb-label">Souls</span><span id="tb-souls" class="tb-val tb-souls">0</span></div>
+          <div class="tb-stat"><span class="tb-label">Floor</span><span id="tb-floornum" class="tb-val">1</span></div>
+          <div class="tb-stat"><span class="tb-label">Encounter</span><span id="tb-floor" class="tb-val">1</span></div>
+          <div class="tb-stat" id="tb-turn-stat"><span class="tb-label">Turn</span><span id="turn-counter" class="tb-val">1</span></div>
+        </div>
+      </div>
+
+      <!-- ============ MAP SCREEN ============ -->
+      <section id="screen-map" class="screen">
+        <div class="map-bg" aria-hidden="true"></div>
+        <div class="bg-runes" aria-hidden="true"></div>
+        <header class="map-header">
+          <h2 class="map-title">The Spire of Chaos</h2>
+          <button id="btn-collection" class="btn btn-ghost">Collection</button>
+        </header>
+        <div class="map-scroll">
+          <div id="map-canvas" class="map-canvas">
+            <svg id="map-edges" class="map-edges"></svg>
+            <div id="map-nodes" class="map-nodes"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ BATTLE SCREEN ============ -->
+      <section id="screen-battle" class="screen">
+        <div class="battle-bg" aria-hidden="true"></div>
+        <div class="battle-vignette" aria-hidden="true"></div>
+
+        <!-- enemies centered, dungeon-crawler facing -->
+        <div class="enemy-zone" id="enemy-zone"></div>
+
+        <!-- player represented bottom-left (first-person) -->
+        <div id="player-panel" class="player-panel">
+          <div id="player-monster" class="player-combat"></div>
+        </div>
+
+        <!-- forge: centered sockets + hand, ACT at the row's end -->
+        <div class="forge">
+          <div id="socket-row" class="socket-row"></div>
+          <div class="hand-area">
+            <div id="hand-row" class="hand-row"></div>
+            <button id="btn-recall" class="btn btn-ghost btn-recall hidden">Recall ready</button>
+            <button id="btn-detonate" class="btn btn-detonate" disabled>
+              <span class="det-label">Act</span>
+              <span class="det-sub">resolve</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- draw + discard piles -->
+        <div id="pile-tray" class="pile-tray">
+          <button id="pile-deck" class="pile pile-deck" title="Draw pile — cards left to draw">
+            <span class="pile-art">🂠</span>
+            <span class="pile-label">Deck</span>
+            <span class="pile-count" id="pile-deck-count">0</span>
+          </button>
+          <button id="pile-discard" class="pile pile-discard" title="Discard pile — click to view">
+            <span class="pile-art">♺</span>
+            <span class="pile-label">Discard</span>
+            <span class="pile-count" id="pile-discard-count">0</span>
+          </button>
+        </div>
+
+        <!-- pile contents viewer -->
+        <div id="pile-viewer" class="pile-viewer hidden">
+          <div class="pile-viewer-panel">
+            <h3 class="pile-viewer-title" id="pile-viewer-title">Discard</h3>
+            <div class="pile-viewer-grid" id="pile-viewer-grid"></div>
+            <button id="pile-viewer-close" class="btn btn-primary">Close</button>
+          </div>
+          <div id="pv-float-tip" class="pv-float-tip"></div>
+        </div>
+
+        <div id="battle-banner" class="battle-banner"></div>
+      </section>
+
+      <!-- ============ REWARD SCREEN ============ -->
+      <section id="screen-reward" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="reward-inner">
+          <div class="reward-souls-badge">🪙 <span id="reward-souls-val">0</span> <span class="rsb-label">Souls</span></div>
+          <h2 class="reward-head" id="reward-head">Victory</h2>
+          <p class="reward-sub" id="reward-sub">Collect your spoils, then choose a glyph.</p>
+          <div id="reward-claims" class="reward-claims"></div>
+          <h3 class="reward-choose-head" id="reward-choose-head">Choose a Glyph</h3>
+          <div id="reward-glyphs" class="reward-row"></div>
+          <button id="btn-skip-reward" class="btn btn-primary">Continue</button>
+        </div>
+      </section>
+
+      <!-- ============ REST SCREEN ============ -->
+      <section id="screen-rest" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="reward-inner">
+          <h2 class="reward-head">A Quiet Ember</h2>
+          <p class="reward-sub">Tend to your beasts at the campfire.</p>
+          <div id="rest-row" class="reward-row"></div>
+          <button id="btn-leave-rest" class="btn btn-ghost">Leave</button>
+        </div>
+      </section>
+
+      <!-- ============ BLESSING DRAFT (start of run) ============ -->
+      <section id="screen-blessing" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="reward-inner">
+          <h2 class="reward-head" id="blessing-head">The First Ember</h2>
+          <p class="reward-sub" id="blessing-sub">Choose your first blessing.</p>
+          <div id="blessing-row" class="reward-row"></div>
+        </div>
+      </section>
+
+      <!-- ============ EVENT SCREEN ============ -->
+      <section id="screen-event" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="reward-inner">
+          <div class="event-emoji" id="event-emoji">❔</div>
+          <h2 class="reward-head" id="event-head">An Event</h2>
+          <p class="reward-sub event-blurb" id="event-blurb"></p>
+          <div id="event-row" class="reward-row"></div>
+        </div>
+      </section>
+
+      <!-- ============ SHOP SCREEN ============ -->
+      <section id="screen-shop" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="reward-inner">
+          <h2 class="reward-head">The Glyph Bazaar</h2>
+          <p class="reward-sub">Spend your souls, forger. Click to buy.</p>
+          <div id="shop-grid" class="shop-grid"></div>
+          <button id="btn-leave-shop" class="btn btn-ghost">Leave</button>
+        </div>
+      </section>
+
+      <!-- ============ COLLECTION OVERLAY ============ -->
+      <section id="screen-collection" class="screen overlay">
+        <div class="collection-panel">
+          <h2 class="reward-head">Your Menagerie</h2>
+          <div id="collection-row" class="collection-row"></div>
+          <div class="collection-deck">
+            <h3>Glyph Pool</h3>
+            <div id="collection-glyphs" class="collection-glyphs"></div>
+            <div id="deck-detail" class="deck-detail hidden"></div>
+          </div>
+          <div class="collection-blessings">
+            <h3>Blessings</h3>
+            <div id="collection-blessings" class="collection-blessings-row"></div>
+          </div>
+          <button id="btn-close-collection" class="btn btn-primary">Close</button>
+        </div>
+      </section>
+
+      <!-- ============ GLOBAL OPTIONS GEAR (all screens but Home) ============ -->
+      <button id="btn-options-gear" class="btn-options-gear hidden" title="Options" aria-label="Options">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94a7.49 7.49 0 0 0 .05-.94 7.49 7.49 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7 7 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.32 8.2a.5.5 0 0 0 .12.64l2.03 1.58a7.49 7.49 0 0 0 0 1.88L2.44 13.9a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96a7 7 0 0 0 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7 7 0 0 0 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/></svg>
+      </button>
+
+      <!-- ============ OPTIONS OVERLAY ============ -->
+      <div id="options-modal" class="options-modal hidden">
+        <div class="options-panel">
+          <h2 class="options-title">Options</h2>
+          <div class="options-group">
+            <label class="opt-row">
+              <span class="opt-label">Music Volume</span>
+              <input id="opt-music" class="opt-slider" type="range" min="0" max="100" value="42" />
+              <span id="opt-music-val" class="opt-val">42%</span>
+            </label>
+            <label class="opt-row">
+              <span class="opt-label">Sound Effects</span>
+              <input id="opt-sfx" class="opt-slider" type="range" min="0" max="100" value="90" />
+              <span id="opt-sfx-val" class="opt-val">90%</span>
+            </label>
+            <label class="opt-row opt-row-toggle">
+              <span class="opt-label">Mute All</span>
+              <button id="opt-mute" class="opt-toggle" role="switch" aria-checked="false"><span class="opt-knob"></span></button>
+            </label>
+          </div>
+          <div class="options-exits">
+            <button id="btn-exit-menu" class="btn opt-exit-btn">Exit to Menu</button>
+            <button id="btn-exit-game" class="btn opt-exit-btn opt-exit-danger">Exit Game</button>
+          </div>
+          <button id="btn-options-close" class="btn btn-primary">Close</button>
+        </div>
+      </div>
+
+      <!-- ============ CONFIRM DIALOG (overwrite save, etc.) ============ -->
+      <div id="confirm-modal" class="options-modal hidden">
+        <div class="options-panel confirm-panel">
+          <h2 class="options-title" id="confirm-title">Are you sure?</h2>
+          <p class="confirm-text" id="confirm-text"></p>
+          <div class="confirm-actions">
+            <button id="btn-confirm-cancel" class="btn opt-exit-btn">Cancel</button>
+            <button id="btn-confirm-ok" class="btn btn-primary">Confirm</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ DEBUG MENU ============ -->
+      <button id="btn-debug" class="btn-debug" title="Debug menu">🐞 Debug</button>
+      <div id="debug-modal" class="debug-modal hidden">
+        <div class="debug-panel">
+          <h2 class="debug-title">Debug Menu</h2>
+          <p class="debug-sub">Cheats apply to the current battle.</p>
+          <div class="debug-actions">
+            <button class="btn debug-btn" data-debug="heal">❤ 99 Health</button>
+            <button class="btn debug-btn" data-debug="strength">💪 99 Strength</button>
+            <button class="btn debug-btn" data-debug="allGlyphs">🜲 All Glyphs in Hand</button>
+            <button class="btn debug-btn" data-debug="maxSlots">◇ Max Slots (9)</button>
+            <button class="btn debug-btn debug-danger" data-debug="killAll">☠ Kill All Enemies</button>
+          </div>
+          <button id="btn-debug-close" class="btn btn-ghost">Close</button>
+        </div>
+      </div>
+
+      <!-- ============ SOCKET FORGE MODAL ============ -->
+      <div id="socket-modal" class="socket-modal hidden">
+        <div class="socket-modal-panel">
+          <h2 id="socket-modal-title" class="socket-modal-title">A New Socket</h2>
+          <p id="socket-modal-sub" class="socket-modal-sub"></p>
+          <div id="socket-modal-row" class="socket-modal-row"></div>
+          <button id="btn-socket-continue" class="btn btn-primary">Continue</button>
+        </div>
+      </div>
+
+      <!-- ============ EVENT REWARD REVEAL SCENE ============ -->
+      <div id="reveal-modal" class="reveal-modal hidden">
+        <div class="reveal-rays" aria-hidden="true"></div>
+        <div class="reveal-inner">
+          <h2 id="reveal-title" class="reveal-title">You Won</h2>
+          <p id="reveal-sub" class="reveal-sub"></p>
+          <div id="reveal-cards" class="reveal-cards"></div>
+          <button id="btn-reveal-claim" class="btn btn-primary reveal-btn">Claim</button>
+        </div>
+      </div>
+
+      <!-- ============ UPGRADE (FORGE) MODAL ============ -->
+      <div id="upgrade-modal" class="upgrade-modal hidden">
+        <div class="upgrade-panel">
+
+          <!-- VIEW 1: browse the deck like a reward gallery -->
+          <div id="upgrade-gallery" class="upgrade-view">
+            <h2 class="upgrade-title">Forge a Glyph</h2>
+            <p class="upgrade-sub">Choose a glyph to reforge — <b>each copy is tempered on its own</b>.</p>
+            <div id="upgrade-gallery-grid" class="upgrade-gallery-grid"></div>
+            <button id="btn-upgrade-cancel" class="btn btn-ghost">Leave the Forge</button>
+          </div>
+
+          <!-- VIEW 2: the chosen glyph, its tempers, and a before/after -->
+          <div id="upgrade-forge" class="upgrade-view hidden">
+            <button id="btn-forge-back" class="forge-back">‹ Back to your deck</button>
+            <h2 class="upgrade-title">The Anvil</h2>
+            <div id="upgrade-forge-body" class="upgrade-forge-body"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ============ GAME OVER ============ -->
+      <section id="screen-end" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="end-inner">
+          <h1 id="end-title" class="game-title">Undone</h1>
+          <p id="end-sub" class="start-blurb"></p>
+          <button id="btn-restart" class="btn btn-primary">Forge Anew</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- floating layers rendered into stage by JS -->
+  <div id="fx-layer" class="fx-layer"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/scaling.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/battle.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

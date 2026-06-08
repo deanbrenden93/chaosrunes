@@ -1,0 +1,2850 @@
+/* ============================================================
+   CHAOS GLYPHS — The Glyph Forge
+   Theme: obsidian arcane forge, glowing runes, ember + void.
+   ============================================================ */
+
+:root {
+  --red:    #ff5a3c;
+  --red-glow:#ff7a52;
+  --blue:   #4fb6ff;
+  --blue-glow:#7fd0ff;
+  --green:  #57e08f;
+  --green-glow:#86f5b3;
+  --purple: #b07bff;
+  --purple-glow:#cda6ff;
+  --gold:   #f5c969;
+  --gray:   #8a8597;
+  --gray-glow:#b4afc2;
+  --ink:    #0a0810;
+  --panel:  rgba(20, 16, 30, 0.82);
+  --panel-edge: rgba(180, 150, 255, 0.18);
+  --text:   #ece6f5;
+  --text-dim:#9b93b3;
+  --hp:     #e0556b;
+  --shield: #6fb4ff;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: 'Spectral', Georgia, serif;
+  color: var(--text);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Responsive 16:9 stage ---------- */
+#viewport {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 40%, #15101f 0%, #060409 70%, #000 100%);
+}
+#stage {
+  position: absolute;
+  top: 0; left: 0;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: top left;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 0%, #241936 0%, #120c1e 45%, #0a0712 100%);
+}
+
+.fx-layer {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 9000;
+  overflow: hidden;
+}
+
+/* ---------- Screens ---------- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  animation: screen-in 0.5s ease both;
+}
+.screen.is-active { display: block; }
+.screen.overlay.is-active { display: flex; }
+/* outgoing screen fades out over the incoming one instead of cutting away */
+.screen.screen-leaving {
+  display: block; pointer-events: none; z-index: 5;
+  animation: screen-out 0.4s ease both;
+}
+.screen.overlay.screen-leaving { display: flex; }
+@keyframes screen-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes screen-in {
+  from { opacity: 0; transform: scale(1.015); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* drifting rune backdrop */
+.bg-runes {
+  position: absolute; inset: -10%;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(176,123,255,0.10), transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(255,90,60,0.08), transparent 40%),
+    radial-gradient(circle at 60% 20%, rgba(79,182,255,0.06), transparent 35%);
+  background-repeat: no-repeat;
+  filter: blur(2px);
+  animation: drift 24s ease-in-out infinite alternate;
+}
+@keyframes drift {
+  from { transform: translate(-1.5%, -1%) scale(1.02); }
+  to   { transform: translate(1.5%, 1.5%) scale(1.06); }
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  border: 1px solid var(--panel-edge);
+  background: linear-gradient(180deg, rgba(60,46,90,0.8), rgba(30,22,48,0.9));
+  padding: 16px 34px;
+  font-size: 24px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .2s ease, filter .2s ease, opacity .2s;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+.btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.18); box-shadow: 0 10px 28px rgba(120,80,220,0.4); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.5); }
+.btn-primary {
+  background: linear-gradient(180deg, #6b4fb0, #3a2766);
+  border-color: rgba(200,170,255,0.5);
+}
+.btn-ghost { background: rgba(20,16,30,0.6); font-size: 20px; padding: 12px 24px; }
+.hidden { display: none !important; }
+
+/* ============================================================
+   DEBUG MENU
+   ============================================================ */
+.btn-debug {
+  position: absolute; right: 16px; bottom: 14px; z-index: 60;
+  font-family: 'Cinzel'; font-size: 15px; font-weight: 700; letter-spacing: .04em;
+  color: #ffd36b; background: rgba(24,16,34,0.82);
+  border: 1px solid rgba(245,201,105,0.5); border-radius: 10px;
+  padding: 8px 14px; cursor: pointer; opacity: 0.55;
+  transition: opacity .2s, transform .15s, box-shadow .2s;
+}
+.btn-debug:hover { opacity: 1; box-shadow: 0 0 18px rgba(245,201,105,0.35); transform: translateY(-1px); }
+
+.debug-modal {
+  position: absolute; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(4,2,10,0.74); backdrop-filter: blur(3px);
+  animation: screen-in .18s ease;
+}
+.debug-panel {
+  width: 520px; padding: 36px 40px 30px;
+  background: linear-gradient(180deg, rgba(30,22,46,0.98), rgba(16,11,26,0.98));
+  border: 1px solid rgba(200,170,255,0.3); border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08);
+  text-align: center;
+}
+.debug-title { font-family: 'Cinzel'; font-size: 34px; color: #ffd36b; margin-bottom: 4px; }
+.debug-sub { color: var(--text-dim); font-size: 17px; margin-bottom: 24px; }
+.debug-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+.debug-btn {
+  font-size: 18px; padding: 16px 14px;
+  background: rgba(40,30,60,0.7); border-color: rgba(180,150,255,0.35);
+}
+.debug-btn:hover:not(:disabled) { background: rgba(60,45,90,0.85); }
+.debug-btn.debug-danger {
+  grid-column: 1 / -1;
+  background: linear-gradient(180deg, rgba(150,40,50,0.7), rgba(90,20,30,0.7));
+  border-color: rgba(255,120,110,0.5); color: #ffd0cc;
+}
+
+/* ============================================================
+   GAME TITLE (home + game over)
+   ============================================================ */
+.game-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: 120px;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  background: linear-gradient(180deg, #ffd98a, #ff7a52 55%, #b07bff);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 30px rgba(255,120,80,0.45));
+  animation: title-pulse 4s ease-in-out infinite;
+}
+@keyframes title-pulse { 50% { filter: drop-shadow(0 0 48px rgba(176,123,255,0.6)); } }
+.start-blurb { font-size: 26px; color: var(--text-dim); margin-top: 24px; font-style: italic; }
+
+/* ============================================================
+   HOME / MAIN MENU
+   ============================================================ */
+.home-inner {
+  position: relative; z-index: 2;
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+  gap: 8px;
+}
+/* a wash of warm forge-light pooling behind the title */
+#screen-home::before {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    radial-gradient(60% 45% at 50% 34%, rgba(255,140,70,0.16), transparent 70%),
+    radial-gradient(80% 60% at 50% 120%, rgba(120,70,200,0.22), transparent 70%);
+}
+/* slow rising embers */
+.home-embers {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden;
+  background-image:
+    radial-gradient(2px 2px at 20% 80%, rgba(255,190,110,0.8), transparent),
+    radial-gradient(2px 2px at 35% 90%, rgba(255,150,90,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 55% 85%, rgba(255,210,140,0.7), transparent),
+    radial-gradient(2px 2px at 72% 92%, rgba(255,160,100,0.7), transparent),
+    radial-gradient(1.5px 1.5px at 88% 82%, rgba(255,200,130,0.7), transparent);
+  background-repeat: no-repeat;
+  animation: home-embers 9s linear infinite;
+  opacity: 0.7;
+}
+@keyframes home-embers {
+  from { transform: translateY(40px); opacity: 0; }
+  20%  { opacity: 0.7; }
+  to   { transform: translateY(-220px); opacity: 0; }
+}
+.home-title { font-size: 150px; margin-bottom: 26px; }
+.home-logo {
+  width: 880px; max-width: 84%; height: auto; margin-bottom: 20px;
+  animation: logo-pulse 4.5s ease-in-out infinite;
+}
+@keyframes logo-pulse {
+  0%, 100% { filter: drop-shadow(0 10px 26px rgba(0,0,0,0.6)) drop-shadow(0 0 30px rgba(140,70,220,0.4)); }
+  50%      { filter: drop-shadow(0 10px 26px rgba(0,0,0,0.6)) drop-shadow(0 0 52px rgba(176,123,255,0.62)); }
+}
+.home-menu {
+  display: flex; flex-direction: column; gap: 16px;
+  width: 360px;
+}
+.home-btn {
+  font-size: 26px; padding: 16px 24px; width: 100%;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  background: linear-gradient(180deg, rgba(46,34,72,0.85), rgba(22,16,36,0.92));
+  border: 1px solid rgba(180,150,255,0.22);
+  position: relative; overflow: hidden;
+}
+.home-btn::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--gold), #ff7a52);
+  opacity: 0; transition: opacity .2s;
+}
+.home-btn:hover:not(:disabled)::before { opacity: 1; }
+.home-btn:hover:not(:disabled) { letter-spacing: 0.18em; }
+.home-btn-primary {
+  background: linear-gradient(180deg, #6b4fb0, #3a2766);
+  border-color: rgba(200,170,255,0.5);
+}
+
+/* ============================================================
+   CHOOSE YOUR BEAST
+   ============================================================ */
+.start-inner {
+  position: relative; z-index: 2;
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+}
+.choose-head {
+  font-family: 'Cinzel', serif; font-size: 46px; color: var(--text);
+  letter-spacing: 0.06em;
+  background: linear-gradient(180deg, #ffe9c0, #f5c969 60%, #c79a4a);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 10px rgba(0,0,0,0.6));
+}
+.starter-row { display: flex; gap: 34px; margin-top: 38px; }
+.start-actions { display: flex; align-items: center; gap: 22px; margin-top: 42px; }
+.btn-begin { font-size: 28px; padding: 18px 48px; }
+
+/* monster pick card — a forged plaque with art, stats and signature socket */
+.mcard {
+  width: 360px;
+  background:
+    linear-gradient(180deg, rgba(34,24,52,0.92), rgba(16,11,26,0.96));
+  border: 1px solid var(--panel-edge);
+  border-radius: 20px;
+  padding: 0 0 24px;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .2s, box-shadow .25s;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 14px 36px rgba(0,0,0,0.55);
+}
+/* a thin colored crown that reads the beast's element */
+.mcard::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  opacity: 0.85;
+}
+.mcard:hover { transform: translateY(-10px); box-shadow: 0 26px 54px rgba(0,0,0,0.65), 0 0 30px color-mix(in srgb, currentColor 28%, transparent); border-color: color-mix(in srgb, currentColor 55%, var(--panel-edge)); }
+.mcard.selected {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold), 0 0 46px rgba(245,201,105,0.45);
+  transform: translateY(-10px);
+}
+.mcard .m-art-wrap {
+  position: relative;
+  padding: 26px 0 14px;
+  background:
+    radial-gradient(70% 90% at 50% 20%, color-mix(in srgb, currentColor 26%, transparent), transparent 72%);
+}
+.mcard .m-emoji { font-size: 130px; line-height: 1; filter: drop-shadow(0 0 18px currentColor); }
+.mcard .m-art {
+  width: 184px; height: 184px; object-fit: contain;
+  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.6)) drop-shadow(0 0 18px color-mix(in srgb, currentColor 50%, transparent));
+}
+.mcard .m-name { font-family: 'Cinzel', serif; font-size: 34px; margin-top: 2px; }
+.mcard .m-role {
+  font-size: 16px; color: var(--gold); letter-spacing: 0.16em; text-transform: uppercase; margin-top: 2px;
+}
+.mcard .m-stats {
+  display: flex; justify-content: center; gap: 14px; margin: 16px 18px;
+}
+.mcard .m-stat {
+  flex: 1; font-size: 26px; font-family: 'Cinzel', serif; font-weight: 700; color: var(--text);
+  background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px; padding: 8px 6px;
+}
+.mcard .m-stat i { display: block; font-style: normal; font-family: 'Spectral', serif; font-weight: 400; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); margin-top: 2px; }
+/* signature socket callout — the headline feature of each beast */
+.m-signatures { display: flex; flex-direction: column; gap: 8px; margin: 0 18px 14px; }
+.m-sig {
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--sig) 16%, rgba(0,0,0,0.3)), rgba(0,0,0,0.32));
+  border: 1px solid color-mix(in srgb, var(--sig) 45%, transparent);
+  border-radius: 12px; padding: 10px 12px;
+}
+.m-sig-badge {
+  flex: none; width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--sig) 55%, #1a1326), #120c1e);
+  border: 1px solid color-mix(in srgb, var(--sig) 70%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--sig) 45%, transparent);
+  color: #fff;
+}
+.m-sig-text { display: flex; flex-direction: column; line-height: 1.2; }
+.m-sig-name { font-family: 'Cinzel', serif; font-size: 17px; color: color-mix(in srgb, var(--sig) 70%, #fff); letter-spacing: 0.04em; }
+.m-sig-blurb { font-size: 15px; color: var(--text-dim); margin-top: 3px; line-height: 1.35; }
+.mcard .m-desc { font-size: 18px; color: var(--text-dim); line-height: 1.45; font-style: italic; margin: 0 20px; min-height: 66px; }
+.mcard .m-passive { font-size: 16px; color: var(--gold); line-height: 1.42; margin: 10px 20px 0; }
+.m-passive-tag {
+  display: inline-block; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #1a1326; background: var(--gold);
+  border-radius: 5px; padding: 1px 7px; margin-right: 4px; vertical-align: middle;
+}
+
+/* ============================================================
+   OPTIONS — global gear + overlay
+   ============================================================ */
+.btn-options-gear {
+  position: absolute; left: 16px; top: 82px; z-index: 60;
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim);
+  background: rgba(18,12,28,0.7);
+  border: 1px solid var(--panel-edge);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  transition: transform .25s ease, color .2s, border-color .2s, box-shadow .2s;
+}
+.btn-options-gear:hover {
+  color: var(--gold); border-color: var(--gold);
+  transform: rotate(90deg); box-shadow: 0 0 18px rgba(245,201,105,0.4);
+}
+.options-modal {
+  position: absolute; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6,4,12,0.74); backdrop-filter: blur(4px);
+  animation: screen-in 0.25s ease both;
+}
+.options-panel {
+  width: 560px; max-width: 86%;
+  background: linear-gradient(180deg, rgba(30,22,48,0.98), rgba(16,11,26,0.99));
+  border: 1px solid rgba(200,170,255,0.28);
+  border-radius: 20px; padding: 36px 40px 32px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.7);
+  text-align: center;
+}
+.options-title {
+  font-family: 'Cinzel', serif; font-size: 40px; color: var(--gold);
+  margin-bottom: 26px; filter: drop-shadow(0 0 16px rgba(245,201,105,0.35));
+}
+.options-group { display: flex; flex-direction: column; gap: 22px; margin-bottom: 32px; }
+.opt-row { display: flex; align-items: center; gap: 18px; }
+.opt-label {
+  flex: none; width: 168px; text-align: left; font-family: 'Cinzel', serif;
+  font-size: 19px; color: var(--text); letter-spacing: 0.04em;
+}
+.opt-val { flex: none; width: 52px; text-align: right; font-size: 18px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.opt-slider {
+  flex: 1; -webkit-appearance: none; appearance: none; height: 8px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--gold) 0%, var(--gold) 50%, rgba(255,255,255,0.12) 50%);
+  outline: none; cursor: pointer;
+}
+.opt-slider.opt-disabled { filter: grayscale(0.8) brightness(0.7); }
+.opt-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #fff, var(--gold) 70%);
+  border: 2px solid #1a1326; box-shadow: 0 0 10px rgba(245,201,105,0.6); cursor: pointer;
+}
+.opt-slider::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #fff, var(--gold) 70%);
+  border: 2px solid #1a1326; box-shadow: 0 0 10px rgba(245,201,105,0.6); cursor: pointer;
+}
+.opt-row-toggle { justify-content: flex-start; }
+.opt-toggle {
+  position: relative; width: 62px; height: 32px; border-radius: 18px;
+  background: rgba(255,255,255,0.12); border: 1px solid var(--panel-edge);
+  cursor: pointer; transition: background .2s; padding: 0;
+}
+.opt-toggle .opt-knob {
+  position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  background: #cfc7e0; transition: transform .2s, background .2s;
+}
+.opt-toggle.on { background: linear-gradient(90deg, #ff7a52, var(--gold)); }
+.opt-toggle.on .opt-knob { transform: translateX(30px); background: #fff; }
+.options-exits { display: flex; gap: 14px; margin-bottom: 18px; }
+.opt-exit-btn {
+  flex: 1; font-size: 18px; padding: 12px 16px;
+  background: linear-gradient(180deg, rgba(46,34,72,0.85), rgba(22,16,36,0.92));
+  border: 1px solid rgba(180,150,255,0.28);
+}
+.opt-exit-btn.opt-exit-danger {
+  background: linear-gradient(180deg, rgba(120,40,50,0.7), rgba(70,20,30,0.8));
+  border-color: rgba(255,120,110,0.45); color: #ffd0cc;
+}
+.opt-exit-btn.opt-exit-danger:hover:not(:disabled) { box-shadow: 0 10px 28px rgba(220,60,60,0.35); }
+
+/* confirm dialog */
+.confirm-panel { width: 540px; }
+.confirm-text { font-size: 19px; line-height: 1.5; color: var(--text-dim); margin-bottom: 28px; }
+.confirm-text b { color: var(--text); }
+.confirm-actions { display: flex; gap: 14px; justify-content: center; }
+.confirm-actions .btn { flex: 1; font-size: 19px; padding: 14px 18px; }
+.btn-primary.opt-exit-danger {
+  background: linear-gradient(180deg, rgba(150,40,50,0.9), rgba(90,20,30,0.95));
+  border-color: rgba(255,120,110,0.6); color: #ffd0cc;
+}
+
+/* ============================================================
+   MAP SCREEN
+   ============================================================ */
+/* fixed scene behind the scrolling node trail; graded top & bottom so the
+   title bar and node labels stay readable over the art */
+.map-bg {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-color: #070510;
+  background-image:
+    linear-gradient(180deg, rgba(7,5,16,0.78) 0%, rgba(7,5,16,0.22) 22%, rgba(7,5,16,0.30) 70%, rgba(7,5,16,0.82) 100%),
+    radial-gradient(ellipse at 50% -8%, rgba(120,70,200,0.20), transparent 55%),
+    url("../assets/map backdrop.png");
+  background-repeat: no-repeat;
+  background-position: center top;
+  background-size: cover, cover, cover;
+}
+.map-header {
+  position: absolute; top: 68px; left: 0; right: 0; height: 92px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 48px; z-index: 5;
+  background: linear-gradient(180deg, rgba(10,7,18,0.9), transparent);
+}
+.map-title { font-family: 'Cinzel', serif; font-size: 44px; color: var(--gold); filter: drop-shadow(0 0 16px rgba(245,201,105,0.4)); }
+#btn-collection { position: absolute; right: 48px; top: 50%; transform: translateY(-50%); }
+.map-scroll { position: absolute; inset: 160px 0 0 0; overflow-y: auto; overflow-x: hidden; }
+.map-scroll::-webkit-scrollbar { width: 10px; }
+.map-scroll::-webkit-scrollbar-thumb { background: rgba(160,140,210,0.4); border-radius: 6px; }
+.map-canvas { position: relative; width: 1920px; height: 1700px; margin: 0 auto; }
+.map-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.map-nodes { position: absolute; inset: 0; }
+
+.mapnode {
+  position: absolute;
+  width: 96px; height: 96px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 46px;
+  /* deeper, more opaque fill so the token reads as solid over the warm scene */
+  background: radial-gradient(circle at 50% 30%, #38294f, #120b1e 80%);
+  border: 3px solid rgba(180,160,225,0.55);
+  cursor: default;
+  transition: transform .15s, box-shadow .2s, border-color .2s, filter .2s;
+  color: #8a82a6;
+  /* carved inner rim + a real drop shadow to lift it off the textured backdrop */
+  box-shadow: inset 0 2px 12px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(0,0,0,0.4);
+  filter: drop-shadow(0 7px 13px rgba(0,0,0,0.8));
+}
+.mapnode .node-label {
+  position: absolute; bottom: -26px; left: 50%; transform: translateX(-50%);
+  font-size: 15px; font-family: 'Cinzel', serif; color: var(--text); white-space: nowrap;
+  letter-spacing: 0.04em; text-shadow: 0 2px 6px #000, 0 0 4px #000, 0 0 2px #000;
+}
+.mapnode.reachable {
+  cursor: pointer;
+  color: var(--text);
+  border-color: var(--gold);
+  box-shadow: inset 0 2px 12px rgba(0,0,0,0.45), 0 0 22px rgba(245,201,105,0.55);
+  animation: node-bob 1.8s ease-in-out infinite;
+}
+.mapnode.reachable:hover { transform: translate(-50%,-50%) scale(1.14); }
+@keyframes node-bob { 50% { transform: translate(-50%, -58%); } }
+.mapnode.visited { color: #6f6790; border-color: rgba(130,118,165,0.5); opacity: 0.6; filter: drop-shadow(0 5px 9px rgba(0,0,0,0.7)) saturate(0.7); }
+.mapnode.current { border-color: #fff; box-shadow: inset 0 2px 12px rgba(0,0,0,0.4), 0 0 30px rgba(255,255,255,0.6); color: #fff; }
+.mapnode.type-elite { border-width: 4px; }
+.mapnode.type-boss { width: 130px; height: 130px; font-size: 64px; }
+
+/* While a cleared node is paying out its souls, hold the player on the map. */
+#map-nodes.locked .mapnode.reachable {
+  pointer-events: none;
+  filter: saturate(0.55) brightness(0.82);
+  transition: filter 0.25s ease;
+}
+#map-nodes.locked .mapnode.current {
+  box-shadow: 0 0 38px rgba(245,201,105,0.85);
+  border-color: var(--gold);
+}
+
+/* ============================================================
+   BATTLE SCREEN
+   ============================================================ */
+.battle-bg {
+  position: absolute; inset: 0;
+  /* scene art, graded with soft gradients so the lower forge UI stays legible.
+     Top-listed layers paint over the image; the flat color is the fallback. */
+  background-color: #070510;
+  background-image:
+    radial-gradient(ellipse at 50% 118%, rgba(255,90,60,0.14), transparent 55%),
+    radial-gradient(ellipse at 50% -12%, rgba(80,40,140,0.22), transparent 50%),
+    linear-gradient(180deg, rgba(10,7,18,0.20) 0%, rgba(10,7,18,0.06) 42%, rgba(7,5,16,0.72) 100%),
+    url("../assets/test battle backdrop.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover, cover, cover, cover;
+}
+.battle-vignette { position: absolute; inset: 0; box-shadow: inset 0 0 240px 60px rgba(0,0,0,0.8); pointer-events: none; }
+
+/* Dungeon-crawler facing: enemies centered in view, sat ~10% lower so they
+   don't crowd the top HUD */
+.enemy-zone {
+  position: absolute; top: 228px; left: 0; right: 0; height: 470px;
+  display: flex; align-items: center; justify-content: center; gap: 110px;
+  z-index: 3;
+}
+
+/* ---------- Global top HUD (map + battle) ---------- */
+.battle-topbar {
+  position: absolute; top: 0; left: 0; right: 0; height: 68px; z-index: 15;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  padding: 0 28px;
+  background: linear-gradient(180deg, rgba(8,5,14,0.98), rgba(8,5,14,0.72) 72%, rgba(8,5,14,0.4));
+  border-bottom: 1px solid var(--panel-edge);
+}
+.battle-topbar.hidden { display: none; }
+.tb-left { display: flex; align-items: center; gap: 13px; min-width: 320px; }
+.tb-portrait-wrap {
+  width: 48px; height: 48px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 35%, #2a2040, #120c1e);
+  border: 2px solid var(--panel-edge); box-shadow: 0 0 12px rgba(120,80,220,0.3);
+}
+.tb-portrait { font-size: 30px; line-height: 1; filter: drop-shadow(0 0 8px currentColor); }
+.tb-portrait-img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; object-position: 50% 20%; display: block; }
+.tb-id { display: flex; flex-direction: column; gap: 4px; }
+.tb-name { font-family: 'Cinzel', serif; font-size: 21px; line-height: 1; }
+.tb-hpbar {
+  position: relative; width: 210px; height: 16px; border-radius: 8px;
+  background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12); overflow: hidden;
+}
+.tb-hpfill { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(180deg, #ff7a8c, var(--hp)); transition: transform .35s cubic-bezier(.2,.8,.3,1); }
+.tb-hptext { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px #000; letter-spacing: .04em; }
+.tb-mid { display: flex; align-items: center; gap: 40px; }
+.tb-group { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.tb-label { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--text-dim); font-family: 'Cinzel', serif; }
+.tb-blessings { display: flex; gap: 6px; min-height: 30px; align-items: center; }
+.tb-bless { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 17px; background: rgba(176,123,255,0.18); border: 1px solid var(--purple); color: var(--purple-glow); }
+.tb-empty { color: var(--text-dim); font-size: 16px; }
+.tb-items { display: flex; gap: 6px; }
+.item-slot { width: 30px; height: 30px; border-radius: 7px; border: 1px dashed rgba(160,140,210,0.35); background: rgba(20,14,32,0.5); box-shadow: inset 0 0 8px rgba(0,0,0,0.4); }
+.tb-right { display: flex; align-items: center; gap: 26px; min-width: 200px; justify-content: flex-end; }
+.tb-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tb-val { font-family: 'Cinzel', serif; font-size: 25px; color: var(--gold); line-height: 1; filter: drop-shadow(0 0 8px rgba(245,201,105,0.35)); }
+
+/* ---------- shared HUD hover tooltip (blessings / items / badges) ---------- */
+.tb-bless, .item-slot, .bless-badge { position: relative; cursor: help; }
+.hud-tip {
+  position: absolute; top: calc(100% + 8px); left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  width: max-content; max-width: 260px;
+  background: rgba(12,8,20,0.97); border: 1px solid var(--panel-edge); border-radius: 10px;
+  padding: 10px 13px; font-family: 'Spectral', serif; font-size: 15.5px; line-height: 1.45;
+  color: var(--text); text-align: left; white-space: normal; font-style: normal;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.6); pointer-events: none;
+  opacity: 0; visibility: hidden; transition: opacity .14s, transform .14s, visibility .14s;
+  z-index: 80;
+}
+.hud-tip b { color: var(--gold); font-family: 'Cinzel', serif; }
+.tb-bless:hover .hud-tip,
+.item-slot:hover .hud-tip,
+.bless-badge:hover .hud-tip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+/* badges in the collection panel are lower on screen — flip the tip above them */
+.bless-badge .hud-tip { top: auto; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); }
+.bless-badge:hover .hud-tip { transform: translateX(-50%) translateY(0); }
+
+/* ---------- Player emblem (bottom-left, first-person) ---------- */
+/* no rectangular chrome — the ornate disc IS the panel, with a soft
+   vignette behind the details so text stays readable over the battlefield */
+.player-panel {
+  position: absolute; left: 92px; bottom: 26px; z-index: 6;
+  background: none; border: none; padding: 0; box-shadow: none;
+}
+.player-panel::before {
+  content: ''; position: absolute; left: 50%; bottom: -40px; transform: translateX(-50%);
+  width: 360px; height: 500px; z-index: -1; pointer-events: none;
+  background: radial-gradient(58% 52% at 50% 64%,
+    rgba(8,5,14,0.82), rgba(8,5,14,0.36) 48%, transparent 72%);
+}
+.player-combat {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  --pc-color: var(--gold); --disc-s: 1.42;
+}
+
+/* --- the circular portrait disc: rune ring + gear frame + radial HP gauge --- */
+/* drawn at a fixed 160px internally, then scaled up so all the px-based ring
+   geometry stays in proportion; the wrapper reserves the scaled footprint */
+.pc-disc-wrap {
+  width: calc(160px * var(--disc-s)); height: calc(160px * var(--disc-s));
+  flex: none; display: flex; align-items: center; justify-content: center;
+}
+.pc-disc {
+  position: relative; width: 160px; height: 160px; flex: none;
+  transform: scale(var(--disc-s)); transform-origin: center;
+}
+
+/* ornate metallic frame around the outside */
+.pc-disc::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; z-index: 0;
+  background: radial-gradient(circle,
+    transparent 73px, rgba(0,0,0,0.55) 74px,
+    #241a30 75px, #6b5836 76.5px, #f5c969 78px, #b8923f 79px, #4a3a22 80px, transparent 80.5px);
+  filter: drop-shadow(0 0 9px rgba(245,201,105,0.32));
+}
+/* slowly rotating gear teeth just inside the frame */
+.pc-gear {
+  position: absolute; inset: 0; border-radius: 50%; z-index: 0; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, rgba(245,201,105,0.6) 0 1.8deg, transparent 1.8deg 10deg);
+  -webkit-mask: radial-gradient(circle, transparent 69px, #000 70px, #000 74px, transparent 75px);
+  mask: radial-gradient(circle, transparent 69px, #000 70px, #000 74px, transparent 75px);
+  animation: pc-spin 34s linear infinite; opacity: 0.8;
+}
+/* a runic dashed ring hugging the portrait, spinning the other way */
+.pc-rune {
+  position: absolute; inset: 18px; border-radius: 50%; z-index: 2; pointer-events: none;
+  border: 2px dashed color-mix(in srgb, var(--pc-color) 60%, #b07bff 40%);
+  opacity: 0.55; animation: pc-spin-rev 26s linear infinite;
+}
+@keyframes pc-spin { to { transform: rotate(360deg); } }
+@keyframes pc-spin-rev { to { transform: rotate(-360deg); } }
+
+/* radial HP gauge */
+.pc-hp-ring { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; overflow: visible; }
+.pc-hp-ring .hp-track { fill: none; stroke: rgba(0,0,0,0.55); stroke-width: 6; }
+.pc-hp-ring .hp-arc {
+  fill: none; stroke: #5fe07a; stroke-width: 6; stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+  transition: stroke-dashoffset .45s cubic-bezier(.3,.9,.3,1), stroke .3s;
+  filter: drop-shadow(0 0 6px rgba(95,224,122,0.7));
+}
+.pc-hp-ring .hp-arc.low { stroke: #ff5a4a; filter: drop-shadow(0 0 7px rgba(255,90,74,0.8)); }
+
+/* the portrait — a recessed circular "well" the character pops out of for depth */
+.player-combat .pc-portrait {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  width: 118px; height: 118px; border-radius: 50%; z-index: 2; overflow: visible;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+/* the dark inset well sitting behind the sprite */
+.player-combat .pc-portrait::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; z-index: 0;
+  background: radial-gradient(circle at 50% 32%, color-mix(in srgb, var(--pc-color) 30%, transparent), rgba(8,5,16,0.92));
+  box-shadow: inset 0 0 26px rgba(0,0,0,0.7), 0 0 0 2px rgba(0,0,0,0.55);
+}
+/* soft contact shadow grounding the sprite in the well */
+.player-combat .pc-portrait::after {
+  content: ''; position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  width: 86px; height: 18px; border-radius: 50%; z-index: 1; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.6), transparent 72%);
+}
+/* the character art floats up and over the disc, clipped only by nothing (transparent png) */
+.player-combat .pc-portrait img.c-sprite {
+  position: relative; z-index: 3;
+  width: 137px; height: 137px; object-fit: contain; object-position: 50% 100%;
+  transform: translateY(-1px);
+  filter: drop-shadow(0 10px 12px rgba(0,0,0,0.6));
+  animation: pc-portrait-float 3.6s ease-in-out infinite;
+}
+.player-combat .pc-portrait span.c-sprite {
+  position: relative; z-index: 3;
+  font-size: 90px; line-height: 1; transform: translateY(-12px);
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,0.55)) drop-shadow(0 0 14px currentColor);
+  animation: pc-portrait-float 3.2s ease-in-out infinite;
+}
+@keyframes pc-portrait-float {
+  0%, 100% { transform: translateY(-1px); }
+  50%      { transform: translateY(-9px); }
+}
+
+/* HP readout tucked at the base of the ring */
+.pc-hp-num {
+  position: absolute; left: 50%; bottom: -15px; transform: translateX(-50%); z-index: 4;
+  font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; color: var(--text);
+  background: linear-gradient(180deg, rgba(18,12,28,0.96), rgba(8,5,16,0.96));
+  border: 1px solid var(--panel-edge); border-radius: 11px; padding: 1px 11px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6); white-space: nowrap;
+  text-shadow: 0 1px 4px #000;
+}
+/* shield as a faceted badge clinging to the ring */
+.pc-disc .shield-pip {
+  position: absolute; right: 2px; top: 12px; z-index: 4;
+  display: none; align-items: center; gap: 3px;
+  font-family: 'Cinzel', serif; font-weight: 800; font-size: 17px; color: #cfe8ff;
+  background: linear-gradient(160deg, rgba(60,120,210,0.5), rgba(20,40,90,0.85));
+  border: 1px solid #5ab6ff; border-radius: 10px; padding: 2px 8px;
+  box-shadow: 0 0 14px rgba(90,182,255,0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+  text-shadow: 0 1px 3px #000;
+}
+.pc-disc .shield-pip.on { display: inline-flex; }
+.pc-disc .shield-pip .sp-ico { font-size: 13px; }
+
+/* --- stacked identity below the disc --- */
+.pc-name {
+  font-family: 'Cinzel', serif; font-size: 28px; line-height: 1.1; margin-top: 24px;
+  text-align: center; text-shadow: 0 2px 10px #000, 0 0 2px #000;
+}
+.pc-role {
+  font-size: 13px; color: var(--gold); letter-spacing: .14em; text-transform: uppercase;
+  text-align: center; text-shadow: 0 1px 6px #000; margin-top: -1px;
+}
+/* passive condensed into a hover/focus badge instead of a wall of text */
+.pc-passive-badge {
+  position: relative; cursor: help; margin-top: 7px;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .04em; color: #ffe6a8;
+  background: linear-gradient(180deg, rgba(74,56,26,0.55), rgba(28,19,10,0.82));
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 13px; padding: 4px 13px;
+  box-shadow: 0 0 14px rgba(245,201,105,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+  text-shadow: 0 1px 3px #000;
+}
+.pc-passive-badge:hover { border-color: var(--gold); box-shadow: 0 0 18px rgba(245,201,105,0.4), inset 0 1px 0 rgba(255,255,255,0.12); }
+.pc-passive-badge .pcb-icon { color: var(--gold); font-size: 13px; filter: drop-shadow(0 0 4px currentColor); }
+.pc-passive-badge .hud-tip { top: auto; bottom: calc(100% + 8px); transform: translateX(-50%) translateY(4px); }
+.pc-passive-badge:hover .hud-tip,
+.pc-passive-badge:focus .hud-tip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+.player-combat .statuses { display: flex; flex-wrap: nowrap; gap: 10px; margin-top: 8px; min-height: 26px; justify-content: center; }
+.player-combat.hit-flash .c-sprite { animation: hit-shake 0.4s; }
+
+/* combatant block */
+.combatant {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center;
+  transition: transform .12s;
+}
+.combatant .c-sprite {
+  font-size: 150px; line-height: 1;
+  filter: drop-shadow(0 12px 18px rgba(0,0,0,0.7));
+  animation: idle-float 3.2s ease-in-out infinite;
+  cursor: default;
+}
+.combatant.player .c-sprite { font-size: 210px; }
+/* hand-drawn enemy art: free-standing sprite scaled to the emoji footprint */
+.combatant .c-sprite.has-img { font-size: 0; line-height: 0; }
+.combatant .c-sprite.has-img img {
+  display: block; width: auto; height: 230px; object-fit: contain;
+  /* grow ~20% but anchor the feet so the extra size rises upward, not down */
+  transform: scale(1.2); transform-origin: 50% 100%;
+}
+/* imposing-size tiers — bigger the tougher the foe, growing upward from the feet */
+.combatant.tier-elite     .c-sprite.has-img img { transform: scale(1.36); }
+.combatant.tier-floorboss .c-sprite.has-img img { transform: scale(1.58); }
+.combatant.tier-boss      .c-sprite.has-img img { transform: scale(1.7); }
+/* emoji-art fallback foes scale up too */
+.combatant.tier-elite     .c-sprite:not(.has-img) { font-size: 178px; }
+.combatant.tier-floorboss .c-sprite:not(.has-img) { font-size: 200px; }
+.combatant.tier-boss      .c-sprite:not(.has-img) { font-size: 214px; }
+/* those sprites scale UP past their layout box (origin at the feet), so the
+   telegraph — anchored to the box, not the visual silhouette — must lift further
+   to stay clear above the taller head. Scoped to img foes that actually grow. */
+.combatant.tier-elite:has(.c-sprite.has-img) .intent     { bottom: calc(100% + 96px); }
+.combatant.tier-floorboss:has(.c-sprite.has-img) .intent { bottom: calc(100% + 148px); }
+.combatant.tier-boss:has(.c-sprite.has-img) .intent      { bottom: calc(100% + 176px); }
+@keyframes idle-float { 50% { transform: translateY(-12px); } }
+/* death: the SPRITE collapses in place, pivoting from the center of the monster
+   art itself (not the layout box) so big foes implode where they stand instead of
+   lurching upward. Drama scales by tier through the external FX (rings/flash/
+   shake/ash) in deathSpectacle; the sprite motion stays centered and clean. */
+.combatant.dying { pointer-events: none; }
+.combatant.dying .bars,
+.combatant.dying .statuses,
+.combatant.dying .shield-pip,
+.combatant.dying .c-name,
+.combatant.dying .intent { opacity: 0; transition: opacity .18s; }
+/* anchor the implode at the art's VISUAL center. Image foes scale up from their
+   feet, so their center sits higher in the box the bigger they are — these
+   per-tier origins keep the pivot on the monster's midriff. */
+.combatant.dying .c-sprite {
+  animation: enemyDeathSprite 0.62s cubic-bezier(.3,.1,.4,1) forwards;
+  transform-origin: 50% 46%; will-change: transform, opacity;
+}
+.combatant.dying .c-sprite.has-img            { transform-origin: 50% 40%; }
+.combatant.dying.tier-elite .c-sprite.has-img     { transform-origin: 50% 33%; }
+.combatant.dying.tier-floorboss .c-sprite.has-img { transform-origin: 50% 22%; }
+.combatant.dying.tier-boss .c-sprite.has-img      { transform-origin: 50% 16%; }
+@keyframes enemyDeathSprite {
+  0%   { transform: scale(1); opacity: 1; }
+  16%  { transform: scale(1.14); opacity: 1; }
+  100% { transform: scale(.1) rotate(10deg); opacity: 0; }
+}
+/* ELITE — a harder pop and a faster spin-implode */
+.combatant.dying.tier-elite .c-sprite { animation: enemyDeathSpriteElite 0.85s cubic-bezier(.3,.1,.4,1) forwards; }
+@keyframes enemyDeathSpriteElite {
+  0%   { transform: scale(1); opacity: 1; }
+  14%  { transform: scale(1.22) rotate(-3deg); opacity: 1; }
+  100% { transform: scale(.08) rotate(30deg); opacity: 0; }
+}
+/* FLOOR BOSS — a shudder, then a violent implode from center */
+.combatant.dying.tier-floorboss .c-sprite { animation: enemyDeathSpriteFloor 1.05s cubic-bezier(.3,.1,.4,1) forwards; }
+@keyframes enemyDeathSpriteFloor {
+  0%   { transform: scale(1); opacity: 1; }
+  12%  { transform: scale(1.28) rotate(2deg); }
+  30%  { transform: scale(1.16) rotate(-3deg); opacity: 1; }
+  100% { transform: scale(.06) rotate(22deg); opacity: 0; }
+}
+/* FINAL BOSS — a trembling swell that implodes to a point, centered */
+.combatant.dying.tier-boss .c-sprite { animation: enemyDeathSpriteBoss 1.2s cubic-bezier(.25,.1,.3,1) forwards; }
+@keyframes enemyDeathSpriteBoss {
+  0%   { transform: scale(1); opacity: 1; }
+  10%  { transform: scale(1.16); }
+  24%  { transform: scale(1.32) rotate(-2deg); }
+  42%  { transform: scale(1.22) rotate(2deg); }
+  60%  { transform: scale(1.3) rotate(-2deg); opacity: 1; }
+  80%  { transform: scale(1.14) rotate(1deg); }
+  100% { transform: scale(0) rotate(16deg); opacity: 0; }
+}
+.combatant.dead { display: none; }
+/* full-stage light flash for boss-tier deaths */
+.death-flash {
+  position: absolute; inset: 0; z-index: 57; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at 50% 46%, rgba(255,245,220,1), transparent 72%);
+}
+.death-mote {
+  position: absolute; z-index: 58; font-size: 26px; line-height: 1;
+  pointer-events: none; will-change: transform, opacity;
+  filter: drop-shadow(0 0 8px rgba(255,150,70,0.8));
+}
+.combatant.hit-flash .c-sprite { animation: hit-shake 0.4s; }
+@keyframes hit-shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-14px) rotate(-4deg); filter: brightness(2) sepia(1) hue-rotate(-30deg); }
+  40% { transform: translateX(12px) rotate(3deg); }
+  60% { transform: translateX(-8px); }
+  80% { transform: translateX(5px); }
+}
+.combatant.target-glow .c-sprite { filter: drop-shadow(0 0 30px var(--red-glow)) brightness(1.3); }
+
+.c-name { font-family: 'Cinzel', serif; font-size: 24px; margin-top: 4px; text-shadow: 0 2px 6px #000; }
+.combatant.player .c-name { font-size: 30px; }
+
+/* hp + shield bars */
+.bars { width: 200px; margin-top: 6px; }
+.combatant.player .bars { width: 300px; }
+.bar {
+  position: relative; height: 22px; border-radius: 11px;
+  background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12);
+  overflow: hidden; margin-top: 5px;
+}
+.bar .fill { position: absolute; inset: 0; transform-origin: left; transition: transform .35s cubic-bezier(.2,.8,.3,1); }
+.bar.hp .fill { background: linear-gradient(180deg, #ff7a8c, var(--hp)); }
+.bar .label {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 600; color: #fff; text-shadow: 0 1px 3px #000; letter-spacing: 0.04em;
+}
+.shield-pip {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 6px; font-size: 18px; color: var(--shield);
+  font-weight: 600; opacity: 0; transition: opacity .2s;
+}
+.shield-pip.on { opacity: 1; }
+
+/* intent telegraph — an ornate sigil that floats well ABOVE the head,
+   never over the face, with a glowing emblem chip for the icon */
+.intent {
+  position: absolute; bottom: calc(100% + 56px); left: 50%;
+  transform: translate3d(-50%, 0, 0); will-change: transform; backface-visibility: hidden;
+  display: flex; align-items: center; gap: 8px;
+  background: linear-gradient(180deg, rgba(28,20,44,0.96), rgba(12,8,20,0.96));
+  border: 1px solid var(--panel-edge); border-radius: 16px;
+  padding: 6px 14px 6px 7px; font-size: 22px; white-space: nowrap;
+  font-family: 'Cinzel', serif; font-weight: 700; color: var(--text);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
+  animation: intent-float 3.2s ease-in-out infinite;
+  cursor: help; z-index: 16;
+}
+/* a slim stem tethering the floating sigil down toward its caster */
+.intent::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  width: 2px; height: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, currentColor 70%, transparent), transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, currentColor 50%, transparent);
+}
+/* the icon sits in a glowing carved chip */
+.intent .i-icon {
+  font-size: 22px; line-height: 1; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 34%, color-mix(in srgb, currentColor 42%, #1a1326), #110b1c);
+  box-shadow: inset 0 0 9px rgba(0,0,0,0.65), 0 0 12px color-mix(in srgb, currentColor 45%, transparent);
+}
+/* hover/click detail explaining the telegraphed action */
+.intent-tip {
+  position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  width: 240px; white-space: normal; text-align: center;
+  background: rgba(8,5,14,0.97); border: 1px solid var(--panel-edge);
+  border-radius: 10px; padding: 10px 12px; font-size: 15px; line-height: 1.35;
+  color: var(--text-dim); font-family: 'Spectral'; font-weight: 400;
+  opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 70;
+}
+.intent-tip b { color: var(--text); }
+.intent-tip::before {
+  content: ''; position: absolute; top: -6px; left: 50%; transform: translateX(-50%) rotate(45deg);
+  width: 10px; height: 10px; background: rgba(8,5,14,0.97);
+  border-left: 1px solid var(--panel-edge); border-top: 1px solid var(--panel-edge);
+}
+.intent:hover .intent-tip, .intent.tip-open .intent-tip { opacity: 1; pointer-events: auto; }
+.intent.tip-open { box-shadow: 0 0 0 2px var(--gold); }
+.intent.attack { color: var(--red-glow); border-color: rgba(255,90,60,0.5); }
+.intent.defend { color: var(--blue-glow); border-color: rgba(79,182,255,0.5); }
+.intent.buff   { color: var(--purple-glow); border-color: rgba(176,123,255,0.5); }
+.intent.hex    { color: #d98cff; border-color: rgba(200,90,255,0.6); background: rgba(60,20,80,0.6); }
+.intent.mend   { color: var(--green-glow); border-color: rgba(120,224,122,0.5); }
+/* transform-only so the box stays on its own GPU layer and the text inside
+   doesn't re-rasterize (jitter) each frame while it bobs */
+@keyframes intent-float {
+  0%, 100% { transform: translate3d(-50%, 0, 0); }
+  50%      { transform: translate3d(-50%, -4px, 0); }
+}
+
+/* status badges — compact icon + count pills, always a single inline row */
+.statuses { display: flex; gap: 5px; margin-top: 6px; flex-wrap: nowrap; }
+/* enemy status badges hang BELOW the combatant, out of normal flow, so their
+   appearance never grows the (vertically-centered) column and shoves the sprite
+   upward. They stay on one inline row. */
+.combatant .statuses {
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  margin-top: 6px; gap: 10px; justify-content: center; flex-wrap: nowrap; white-space: nowrap;
+}
+/* the enemy's block now lives inline in the status row as an emblem */
+.combatant .shield-pip { display: none; }
+/* clean icon+number emblems (matching the shield pip) — no pill chrome */
+.status-badge {
+  position: relative; cursor: help;
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: 'Cinzel', serif; font-weight: 800;
+  font-size: 20px; line-height: 1; padding: 0; border: none; background: none;
+  color: var(--purple-glow);
+  text-shadow: 0 1px 3px #000, 0 0 9px rgba(0,0,0,0.6);
+}
+.status-badge .sb-icon { font-size: 20px; line-height: 1; filter: drop-shadow(0 0 5px currentColor); }
+.status-badge .sb-num { font-variant-numeric: lining-nums tabular-nums; }
+.status-badge.shield { color: var(--shield); }
+.status-badge.weak  { color: var(--purple-glow); }
+.status-badge.burn  { color: #ffb98c; }
+.status-badge.leech { color: #ff8fa6; }
+.status-badge.scare { color: #c5b0ff; }
+.status-badge.str   { color: #ff9a9a; }
+.status-badge.res   { color: #a8d4ff; }
+/* status tooltips flip ABOVE the badge (enemies sit low, player is at the
+   bottom) and reuse the shared .hud-tip styling */
+.status-badge .hud-tip {
+  top: auto; bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(4px); white-space: normal;
+}
+.status-badge:hover .hud-tip,
+.status-badge:focus .hud-tip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+
+/* ---------- Forge (sockets + hand) ---------- */
+.forge {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 380px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 22px;
+  background: linear-gradient(180deg, transparent, rgba(8,5,14,0.92) 26%);
+  z-index: 4;
+  padding: 0 40px 30px;
+}
+.hand-area { position: relative; width: 100%; display: flex; align-items: flex-end; justify-content: center; min-height: 182px; }
+
+.btn-detonate {
+  position: absolute; right: 70px; bottom: 16px;
+  width: 196px; padding: 18px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  background: radial-gradient(circle at 50% 30%, #ff8a4a, #c4321e 70%);
+  border: 2px solid #ffb074;
+  border-radius: 16px;
+  box-shadow: 0 0 30px rgba(255,90,40,0.5), inset 0 2px 0 rgba(255,255,255,0.25);
+}
+.btn-detonate .det-label { font-size: 34px; font-weight: 900; letter-spacing: 0.1em; text-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+.btn-detonate .det-sub { font-size: 14px; font-family: 'Spectral'; opacity: 0.85; font-style: italic; }
+.btn-detonate:not(:disabled):not(.is-skip) { animation: det-glow 1.6s ease-in-out infinite; }
+@keyframes det-glow { 50% { box-shadow: 0 0 48px rgba(255,120,40,0.85), inset 0 2px 0 rgba(255,255,255,0.25); } }
+
+/* SKIP state: calm, neutral — no fiery glow */
+.btn-detonate.is-skip {
+  background: radial-gradient(circle at 50% 30%, #5a5470, #34304a 70%);
+  border-color: #8b84a8;
+  box-shadow: 0 0 16px rgba(0,0,0,0.4), inset 0 2px 0 rgba(255,255,255,0.12);
+}
+
+.btn-recall { position: absolute; right: 78px; bottom: 132px; font-size: 16px; padding: 8px 16px; }
+
+/* ---------- draw / discard piles ---------- */
+.pile-tray {
+  position: absolute; right: 34px; bottom: 188px; z-index: 7;
+  display: flex; flex-direction: column; gap: 14px; align-items: center;
+}
+.pile {
+  position: relative; width: 96px; height: 92px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: linear-gradient(160deg, rgba(40,30,60,0.95), rgba(14,10,22,0.96));
+  border: 2px solid var(--panel-edge); border-radius: 14px; color: var(--text);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
+  cursor: pointer; transition: transform .14s, border-color .2s, box-shadow .2s;
+}
+.pile:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 14px 30px rgba(0,0,0,0.6), 0 0 18px rgba(245,201,105,0.3); }
+.pile .pile-art { font-size: 36px; line-height: 1; filter: drop-shadow(0 0 8px rgba(180,150,255,0.45)); }
+.pile .pile-label { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-dim); }
+.pile .pile-count {
+  position: absolute; top: -11px; right: -11px; min-width: 28px; height: 28px; padding: 0 6px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gold); color: #1a1020; font-family: 'Cinzel', serif; font-weight: 700; font-size: 16px;
+  border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.55); border: 1.5px solid rgba(0,0,0,0.3);
+}
+.pile-discard .pile-count { background: #b98cff; }
+.pile.pulse { animation: pilePulse .42s cubic-bezier(.2,1.4,.4,1); }
+@keyframes pilePulse {
+  0%   { transform: translateY(0) scale(1); }
+  45%  { transform: translateY(-5px) scale(1.13); border-color: var(--gold);
+         box-shadow: 0 16px 32px rgba(0,0,0,0.6), 0 0 28px rgba(245,201,105,0.6); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+/* pile contents viewer */
+.pile-viewer { position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(6,4,12,0.74); }
+.pile-viewer.hidden { display: none; }
+.pile-viewer-panel {
+  width: 1120px; max-width: 92%; max-height: 80%; overflow-y: auto;
+  background: var(--panel); border: 2px solid var(--panel-edge); border-radius: 18px;
+  padding: 26px 30px; box-shadow: 0 24px 60px rgba(0,0,0,0.7); text-align: center;
+}
+.pile-viewer-title { font-family: 'Cinzel', serif; font-size: 26px; color: var(--gold); margin: 0 0 18px; }
+.pile-viewer-grid { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-bottom: 22px; min-height: 40px; }
+.pile-viewer-empty { color: var(--text-dim); font-style: italic; padding: 24px; }
+.pv-tile {
+  position: relative; width: 104px; padding: 10px 8px 8px;
+  background: linear-gradient(165deg, rgba(36,28,52,0.9), rgba(15,11,23,0.94));
+  border: 1.5px solid var(--panel-edge); border-radius: 12px; color: var(--g-color);
+}
+.pv-tile .pv-art { width: 72px; height: 72px; margin: 0 auto; display: flex; align-items: center; justify-content: center; }
+.pv-tile .pv-art .g-img { width: 100%; height: 100%; object-fit: contain; }
+.pv-tile .pv-art .g-hex { width: 64px; height: 64px; }
+.pv-tile .pv-art .g-rune { font-size: 34px; }
+.pv-tile .pv-name { font-family: 'Cinzel', serif; font-size: 13px; color: var(--text); margin-top: 6px; line-height: 1.15; }
+.pv-tile .pv-count {
+  position: absolute; top: -8px; right: -8px; min-width: 24px; height: 24px; padding: 0 5px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gold); color: #1a1020; font-family: 'Cinzel'; font-weight: 700; font-size: 13px;
+  border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+.pv-tile .pv-up {
+  position: absolute; top: -8px; left: -8px; display: flex; align-items: center; justify-content: center;
+  height: 22px; padding: 0 6px; border-radius: 11px; font-family: 'Cinzel'; font-weight: 700;
+  font-size: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.55); z-index: 2;
+}
+.pv-tile .pv-up-power { background: linear-gradient(160deg, #ffd874, #e8a33a); color: #2a1606; }
+.pv-tile .pv-up-combo { background: linear-gradient(160deg, #8ad7ff, #4aa0e6); color: #06182a; top: 16px; }
+.pv-tile:hover { z-index: 30; }
+/* a single floating tooltip, parented to the overlay so the panel can't clip it */
+.pv-float-tip {
+  position: absolute; left: 0; top: 0; width: 240px; z-index: 80;
+  background: rgba(8,5,14,0.98); border: 1px solid var(--panel-edge);
+  border-radius: 10px; padding: 11px 14px; font-size: 15px; line-height: 1.4;
+  color: var(--text-dim); text-align: center; pointer-events: none; font-family: 'Spectral';
+  box-shadow: 0 14px 34px rgba(0,0,0,0.6);
+  opacity: 0; visibility: hidden; transition: opacity .12s;
+}
+.pv-float-tip.show { visibility: visible; }
+.pv-float-tip b { color: var(--text); }
+.pv-float-tip .dyn-up { color: #8ef58a; text-shadow: 0 0 8px rgba(120,240,120,0.6); }
+.pv-float-tip .gt-up { color: #ffce7a; }
+
+/* ---------- hexagon shapes ---------- */
+/* flat-top hexagon used by glyph tiles (matches the rune art) */
+.hex-flat { clip-path: polygon(25% 2%, 75% 2%, 100% 50%, 75% 98%, 25% 98%, 0 50%); }
+
+/* ---------- sockets (use the Base Rune art) ---------- */
+.socket-row { display: flex; gap: 30px; justify-content: center; min-height: 156px; align-items: center; }
+.socket {
+  width: 152px; height: 152px;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .2s;
+}
+.socket .slot-img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  filter: drop-shadow(0 5px 10px rgba(0,0,0,0.6));
+  transition: filter .3s ease;
+}
+.socket .socket-num {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  font-size: 15px; color: var(--text-dim); font-family: 'Cinzel'; z-index: 3;
+  text-shadow: 0 1px 2px #000;
+}
+.socket.empty.next { animation: socket-beckon 1.6s ease-in-out infinite; }
+.socket.empty.next .slot-img { filter: drop-shadow(0 0 18px var(--gold)) brightness(1.25); }
+@keyframes socket-beckon { 50% { transform: translateY(-6px); } }
+
+/* the placed glyph sits in the slot cavity */
+.socket-glyph {
+  position: absolute; width: 74%; height: 74%; top: 13%; left: 13%;
+  display: flex; align-items: center; justify-content: center; z-index: 2;
+}
+.socket-glyph.seating { animation: socket-seat 0.32s cubic-bezier(.2,1.1,.5,1) both; }
+@keyframes socket-seat {
+  0% { transform: scale(0.45); opacity: 0; }
+  70% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* slot colorizes + glows to match the equipped glyph color */
+.socket.filled .slot-img { filter: drop-shadow(0 0 22px var(--g-color)) brightness(1.06) sepia(0.55) saturate(2.6); }
+.socket.filled.color-red    .slot-img { filter: drop-shadow(0 0 24px var(--red))    brightness(1.05) sepia(0.55) saturate(3)   hue-rotate(-25deg); }
+.socket.filled.color-blue   .slot-img { filter: drop-shadow(0 0 24px var(--blue))   brightness(1.1)  sepia(0.6)  saturate(3.4) hue-rotate(170deg); }
+.socket.filled.color-green  .slot-img { filter: drop-shadow(0 0 24px var(--green))  brightness(1.1)  sepia(0.6)  saturate(3)   hue-rotate(75deg); }
+.socket.filled.color-purple .slot-img { filter: drop-shadow(0 0 24px var(--purple)) brightness(1.1)  sepia(0.55) saturate(3.4) hue-rotate(245deg); }
+.socket.filled.recallable { cursor: pointer; }
+.socket.filled.recallable:hover .slot-img { filter: drop-shadow(0 0 26px var(--gold)) brightness(1.2); }
+.socket.spent { filter: grayscale(0.55) brightness(0.7); opacity: 0.6; transition: filter .3s, opacity .3s; }
+.socket.firing { animation: socket-fire 0.5s ease; z-index: 20; }
+@keyframes socket-fire {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.18) translateY(-8px); filter: brightness(1.7); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- afflicted sockets ---------- */
+.socket.disabled .slot-img { filter: grayscale(1) brightness(0.4); opacity: 0.5; }
+.socket.disabled { cursor: not-allowed; }
+.socket.cursed .slot-img { filter: drop-shadow(0 0 22px #c45cff) brightness(0.9) sepia(0.5) saturate(3) hue-rotate(245deg); }
+.socket.cursed { animation: curse-pulse 1.8s ease-in-out infinite; }
+@keyframes curse-pulse { 50% { filter: drop-shadow(0 0 10px #c45cff); } }
+
+/* ---------- special slot types ---------- */
+.slot-badge {
+  position: absolute; top: 6px; right: 8px; z-index: 4;
+  font-size: 17px; line-height: 1; filter: drop-shadow(0 1px 2px #000);
+}
+.slot-type-name {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 4; font-family: 'Cinzel'; font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-dim); white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+}
+/* tint the empty rune frame so the player reads its purpose at a glance */
+.socket.slot-devil:not(.filled) .slot-img    { filter: drop-shadow(0 0 14px #ff5470) brightness(0.95) sepia(0.5) saturate(3) hue-rotate(-20deg); }
+.socket.slot-clone:not(.filled) .slot-img    { filter: drop-shadow(0 0 14px #8ad0ff) brightness(1) sepia(0.5) saturate(2.6) hue-rotate(150deg); }
+.socket.slot-catalyst:not(.filled) .slot-img { filter: drop-shadow(0 0 14px var(--gold)) brightness(1.05) sepia(0.5) saturate(2.4); }
+.socket.slot-repeat:not(.filled) .slot-img   { filter: drop-shadow(0 0 12px #c9a3ff) brightness(1) sepia(0.4) saturate(2.4) hue-rotate(230deg); }
+.socket.slot-hold:not(.filled) .slot-img     { filter: drop-shadow(0 0 12px #9fd6c0) brightness(1) sepia(0.35) saturate(2) hue-rotate(95deg); }
+.socket.slot-empower:not(.filled) .slot-img  { filter: drop-shadow(0 0 14px #ffd98a) brightness(1.1) sepia(0.55) saturate(2.6) hue-rotate(-8deg); }
+.socket.slot-devil .slot-type-name    { color: #ff8aa0; }
+.socket.slot-clone .slot-type-name    { color: #aee0ff; }
+.socket.slot-catalyst .slot-type-name { color: var(--gold); }
+.socket.slot-empower .slot-type-name  { color: #ffe6a8; }
+
+/* loopback slot is decorative — it never takes a glyph */
+.socket.loopback .slot-img { filter: drop-shadow(0 0 16px #f5c969) brightness(1.1) sepia(0.6) saturate(2.4) hue-rotate(-10deg); opacity: 0.92; }
+.socket.loopback .slot-badge { font-size: 30px; top: 50%; left: 50%; right: auto; transform: translate(-50%,-58%); color: var(--gold); }
+.socket.loopback { animation: socket-beckon 2.4s ease-in-out infinite; }
+
+/* a cloned glyph in hand reads as ethereal */
+.glyph.cloned { filter: drop-shadow(0 0 10px #8ad0ff); }
+.glyph.cloned .g-name::after { content: ' ⧉'; color: #aee0ff; }
+
+/* multi-socket (double) glyphs span two adjacent runes, joined by a link */
+.socket.span-head .slot-img { filter: drop-shadow(0 0 22px var(--g-color)) brightness(1.08) sepia(0.55) saturate(2.8); }
+.socket.span-cont .slot-img { filter: drop-shadow(0 0 20px var(--g-color)) brightness(0.95) sepia(0.5) saturate(2.4); opacity: 0.9; }
+.socket.span-cont .socket-num { opacity: 0.4; }
+.span-link {
+  position: absolute; left: -34px; top: 50%; transform: translateY(-50%);
+  font-size: 40px; line-height: 1; color: var(--g-color); z-index: 6;
+  filter: drop-shadow(0 0 10px var(--g-color));
+}
+.glyph.no-room { outline: 2px dashed rgba(255,90,90,0.6); outline-offset: -4px; border-radius: 10px; }
+
+/* ============================================================
+   ALPHABET COMBOS — letter chips + chain feedback
+   ============================================================ */
+.letter-chip {
+  position: absolute; z-index: 6;
+  width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: 17px; color: #fff;
+  border: 1.5px solid rgba(255,255,255,0.55);
+  text-shadow: 0 1px 2px #000; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+.letter-chip.l-A { background: linear-gradient(180deg,#ff8a5c,#e0502f); }
+.letter-chip.l-B { background: linear-gradient(180deg,#7fd0ff,#3a86c8); }
+.letter-chip.l-C { background: linear-gradient(180deg,#9be38b,#3f9e4d); }
+.letter-chip.wild {
+  background: linear-gradient(180deg,#ffe9a8,#f5c969);
+  color: #4a2e00; border-color: #fff7d6;
+  box-shadow: 0 0 12px rgba(245,201,105,0.7);
+}
+/* on hand cards: tucked into the top-left of the art (inside g-body so it
+   rides along with the lift/scale on hover instead of being covered) */
+.glyph .g-body .letter-chip { top: 6px; left: 6px; z-index: 7; }
+/* on sockets: top-left of the rune */
+.socket .letter-chip { top: 10px; left: 10px; }
+/* reward + collection chips */
+.glyph-reward { position: relative; }
+.glyph-reward .letter-chip { top: 16px; left: 16px; }
+.deck-glyph .letter-chip {
+  width: 22px; height: 22px; font-size: 12px; border-radius: 6px;
+  top: -7px; left: -7px; border-width: 1.5px;
+}
+
+/* preview numbers shift color when buffed/weakened in the live detail */
+.g-tip .dyn-up, .rc-desc .dyn-up, .dd-desc .dyn-up { color: #8ef58a; text-shadow: 0 0 8px rgba(120,240,120,0.6); }
+.g-tip .dyn-down { color: #ff8a8a; text-shadow: 0 0 8px rgba(255,120,120,0.5); }
+
+/* glyphs in hand that would continue the active alphabet chain get a pull */
+.glyph.combo-next .g-body {
+  animation: combo-next 1.15s ease-in-out infinite;
+}
+/* let the hover lift win over the idle combo pulse */
+.hand-row .glyph.combo-next:hover .g-body { animation: none; }
+.glyph.combo-next .letter-chip {
+  box-shadow: 0 0 12px 2px var(--gold), 0 2px 6px rgba(0,0,0,0.5);
+  animation: combo-chip 1.15s ease-in-out infinite;
+}
+.glyph.combo-next::before {
+  content: '▲ combo';
+  position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+  font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: .12em;
+  color: var(--gold); text-shadow: 0 0 8px rgba(245,201,105,0.8), 0 1px 2px #000;
+  pointer-events: none; white-space: nowrap; z-index: 8;
+  animation: combo-next-tag 1.15s ease-in-out infinite;
+}
+@keyframes combo-next {
+  0%, 100% { filter: drop-shadow(0 0 6px var(--gold)) brightness(1); transform: translateY(0); }
+  50% { filter: drop-shadow(0 0 22px var(--gold)) brightness(1.18); transform: translateY(-5px); }
+}
+@keyframes combo-chip {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.14); }
+}
+@keyframes combo-next-tag {
+  0%, 100% { opacity: 0.55; transform: translate(-50%, 2px); }
+  50% { opacity: 1; transform: translate(-50%, -2px); }
+}
+
+/* socket chain tooltips reuse the hand tooltip styling */
+.socket:hover .g-tip { opacity: 1; }
+.socket .g-tip { bottom: 158px; z-index: 55; }
+
+/* the rune snaps when it links a combo */
+.socket.combo-hit { animation: combo-hit 0.42s cubic-bezier(.2,1.3,.4,1); }
+@keyframes combo-hit {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.22) translateY(-10px); filter: brightness(1.8) drop-shadow(0 0 26px var(--gold)); }
+  100% { transform: scale(1); }
+}
+
+/* escalating "×N +power" popup over the rune */
+.combo-pop {
+  position: absolute; z-index: 60; transform: translate(-50%,-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  pointer-events: none; text-align: center;
+  animation: combo-pop 0.9s cubic-bezier(.2,.9,.3,1) forwards;
+  filter: drop-shadow(0 2px 6px #000);
+}
+.combo-pop .cp-x {
+  font-family: 'Cinzel', serif; font-weight: 700; color: var(--gold);
+  font-variant-numeric: lining-nums tabular-nums;
+  text-shadow: 0 0 16px rgba(245,201,105,0.8), 0 2px 4px #000; line-height: 1;
+}
+.combo-pop .cp-b {
+  font-family: 'Cinzel', serif; font-size: 15px; color: #fff;
+  background: rgba(245,201,105,0.22); border: 1px solid var(--gold);
+  border-radius: 8px; padding: 1px 7px;
+}
+.combo-pop.lvl-1 .cp-x, .combo-pop.lvl-2 .cp-x { font-size: 34px; }
+.combo-pop.lvl-3 .cp-x { font-size: 44px; }
+.combo-pop.lvl-4 .cp-x { font-size: 54px; color: #ffd98a; }
+.combo-pop.lvl-5 .cp-x { font-size: 64px; color: #ffe9a8; }
+.combo-pop.lvl-6 .cp-x { font-size: 74px; color: #fff3c8; }
+@keyframes combo-pop {
+  0% { opacity: 0; transform: translate(-50%,-30%) scale(0.4); }
+  25% { opacity: 1; transform: translate(-50%,-55%) scale(1.12); }
+  70% { opacity: 1; transform: translate(-50%,-62%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%,-90%) scale(0.96); }
+}
+
+/* big centered capstone for a long chain */
+.combo-finale {
+  position: absolute; z-index: 80; left: 50%; top: 40%; transform: translate(-50%,-50%);
+  display: flex; align-items: baseline; gap: 18px; pointer-events: none;
+  animation: combo-finale 1.3s cubic-bezier(.15,.9,.25,1) forwards;
+}
+.combo-finale .cf-label {
+  font-family: 'Cinzel', serif; font-weight: 900; font-size: 70px; letter-spacing: .08em;
+  color: #fff; text-shadow: 0 0 30px var(--gold), 0 4px 10px #000;
+}
+.combo-finale .cf-num {
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: 110px;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: #ffd98a;
+  text-shadow: 0 2px 0 rgba(150,80,20,0.7), 0 0 18px rgba(255,214,120,0.95), 0 0 40px rgba(245,201,105,0.7);
+}
+@keyframes combo-finale {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(0.5) rotate(-4deg); }
+  18% { opacity: 1; transform: translate(-50%,-50%) scale(1.12) rotate(1deg); }
+  35% { transform: translate(-50%,-50%) scale(1) rotate(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-58%) scale(1.04); }
+}
+.slot-lock, .slot-curse {
+  position: absolute; z-index: 5; font-size: 34px; line-height: 1;
+  top: 50%; left: 50%; transform: translate(-50%,-50%);
+  filter: drop-shadow(0 2px 3px #000);
+}
+.slot-curse { top: 16%; font-size: 26px; color: #d98cff; }
+.lock-turns {
+  position: absolute; right: -6px; bottom: -4px; font-size: 14px; font-weight: 800;
+  font-family: 'Cinzel'; color: #fff; background: rgba(20,8,30,0.9);
+  border: 1px solid #c45cff; border-radius: 8px; padding: 0 4px;
+}
+
+/* ---------- junk / sticky glyphs forced on you ---------- */
+.glyph.junk { color: var(--gray); filter: saturate(0.6); }
+.glyph.junk .g-hex { filter: grayscale(0.85) brightness(0.72) drop-shadow(0 6px 10px rgba(0,0,0,0.6)); }
+.glyph.junk .g-rune { color: var(--gray-glow); }
+/* multi-socket glyphs keep a normal card footprint in hand — the diagonal
+   stack (not a double-wide tile) is what signals they span sockets */
+.glyph.wide { width: 150px; }
+/* diagonal stack of identical runes = a multi-socket glyph */
+.g-stack { position: relative; width: 100%; height: 100%; }
+.g-stack .g-layer {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: var(--i);
+  opacity: calc(0.5 + var(--i) / (var(--n) - 1) * 0.5);
+  transform:
+    translate(
+      calc((var(--i) - (var(--n) - 1) / 2) * 18px),
+      calc((var(--i) - (var(--n) - 1) / 2) * 18px)
+    )
+    scale(calc(0.74 + var(--i) / (var(--n) - 1) * 0.16));
+}
+/* back layers read as shadowed silhouettes; the front layer pops */
+.g-stack .g-layer .g-img { filter: drop-shadow(0 3px 7px rgba(0,0,0,0.75)); }
+.g-stack .g-layer:not(:last-child) .g-img,
+.g-stack .g-layer:not(:last-child) .g-hex { filter: drop-shadow(0 3px 7px rgba(0,0,0,0.8)) brightness(0.66); }
+.glyph.sticky::after {
+  content: '⛓ jammed'; position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  font-size: 12px; font-family: 'Cinzel'; color: #d98cff; white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* ---------- summoned enemy entrance ---------- */
+.combatant.summoning { animation: summon-in 0.5s cubic-bezier(.2,1.3,.35,1) both; }
+@keyframes summon-in {
+  0%   { transform: translateY(-26px) scale(0.1); opacity: 0; filter: brightness(3) drop-shadow(0 0 24px #b07bff); }
+  40%  { opacity: 1; filter: brightness(2) drop-shadow(0 0 20px #c9a3ff); }
+  70%  { transform: translateY(2px) scale(1.08); filter: brightness(1.3); }
+  100% { transform: none; opacity: 1; filter: none; }
+}
+
+/* ---------- glyph tiles (hand + clones) ---------- */
+.glyph {
+  width: 150px; position: relative; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center;
+  color: var(--g-color);
+}
+.glyph .g-body {
+  width: 150px; height: 150px; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .16s ease, filter .2s;
+}
+.g-img { width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 6px 10px rgba(0,0,0,0.6)); }
+.socket-glyph .g-img { width: 104%; height: 104%; }
+/* backdrop frame for glyphs without bespoke art — the shared "empty glyph"
+   plate, with the rune symbol layered on top */
+.g-hex {
+  width: 100%; height: 100%; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  isolation: isolate;   /* keep the color blend inside the plate only */
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,0.6));
+}
+/* the carved stone plate, lifted a touch so the color tint reads as a stone */
+.g-hex::before {
+  content: ''; position: absolute; inset: 0; z-index: 0;
+  background: url("../assets/empty glyph.png") center/contain no-repeat;
+  filter: brightness(1.34) contrast(1.02);
+}
+/* wash the plate in the glyph's type color, confined to its silhouette by the
+   same art used as a mask. `color` blend keeps the carved texture + rim. */
+.g-hex::after {
+  content: ''; position: absolute; inset: 0; z-index: 1;
+  background: var(--g-color, var(--gray));
+  -webkit-mask: url("../assets/empty glyph.png") center/contain no-repeat;
+          mask: url("../assets/empty glyph.png") center/contain no-repeat;
+  mix-blend-mode: color;
+  opacity: 0.6;
+}
+.g-hex .g-rune {
+  position: relative; z-index: 2; font-size: 64px; line-height: 1;
+  color: var(--g-color); filter: drop-shadow(0 0 12px currentColor);
+}
+.socket-glyph .g-hex .g-rune { font-size: 48px; }
+.glyph .g-name {
+  font-family: 'Cinzel', serif; font-size: 16px; color: var(--text);
+  margin-top: 4px; letter-spacing: 0.02em; text-shadow: 0 2px 4px #000;
+  /* fixed two-line box so a long name never pushes the rune up out of place */
+  width: 150px; height: 40px; line-height: 1.12;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+}
+.hand-row .glyph:hover .g-body { transform: translateY(-16px) scale(1.08); filter: drop-shadow(0 0 26px var(--g-color)) brightness(1.12); z-index: 10; }
+
+/* glyph tooltip */
+.g-tip {
+  position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
+  width: 240px; background: rgba(8,5,14,0.97); border: 1px solid var(--panel-edge);
+  border-radius: 10px; padding: 12px 14px; font-size: 17px; line-height: 1.35;
+  color: var(--text-dim); text-align: center; pointer-events: none; opacity: 0;
+  transition: opacity .15s; z-index: 50; font-family: 'Spectral';
+}
+.glyph:hover .g-tip { opacity: 1; }
+.g-tip b { color: var(--text); }
+
+/* gap is applied per-card in JS (layoutHand) so the hand compresses to fit */
+/* sits above the socket chain so hand tooltips overlay placed glyphs */
+.hand-row { display: flex; gap: 0; justify-content: center; min-height: 176px; align-items: flex-end; max-width: 100%; position: relative; z-index: 12; }
+.hand-row .glyph { transition: margin .18s ease; }
+
+/* enter / exit / fly animations */
+.glyph.dealing { animation: deal-in 0.42s cubic-bezier(.2,.85,.3,1) both; }
+@keyframes deal-in {
+  0% { opacity: 0; transform: translateY(120px) scale(0.5) rotate(-10deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+.glyph.discarding { animation: discard-out 0.3s ease forwards; pointer-events: none; }
+@keyframes discard-out {
+  0% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+  100% { opacity: 0; transform: translateY(90px) scale(0.55) rotate(9deg); }
+}
+.glyph.returning { animation: return-in 0.38s cubic-bezier(.2,.85,.3,1) both; }
+@keyframes return-in {
+  0% { opacity: 0; transform: translateY(-40px) scale(0.7); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* flying clone used when placing/recalling */
+.fly-clone {
+  position: absolute; width: 150px; height: 150px; z-index: 9600;
+  pointer-events: none; transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 22px var(--g-color));
+}
+.fly-clone .g-body { width: 150px; height: 150px; }
+.fly-clone .g-name, .fly-clone .g-tip { display: none; }
+
+/* floating combat text */
+.float-text {
+  position: absolute; font-family: 'Cinzel', serif; font-weight: 900;
+  font-size: 56px; pointer-events: none;
+  text-shadow: 0 2px 8px #000, 0 0 16px currentColor;
+  animation: float-up 1.1s ease-out forwards;
+  z-index: 9500;
+}
+.float-text.dmg { color: #ff6a55; }
+.float-text.heal { color: var(--green-glow); }
+.float-text.shield { color: var(--blue-glow); }
+.float-text.status { color: var(--purple-glow); font-size: 40px; }
+@keyframes float-up {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(0.5); }
+  20% { opacity: 1; transform: translate(-50%, -30px) scale(1.2); }
+  100% { opacity: 0; transform: translate(-50%, -110px) scale(1); }
+}
+
+/* projectile bolt */
+.bolt {
+  position: absolute; width: 26px; height: 26px; border-radius: 50%;
+  background: radial-gradient(circle, #fff, var(--g-color) 60%, transparent);
+  box-shadow: 0 0 24px var(--g-color); z-index: 9400; pointer-events: none;
+}
+
+/* ============================================================
+   COMBAT FX — themed action flourishes
+   ============================================================ */
+.cfx {
+  position: absolute; pointer-events: none; z-index: 9450;
+  transform: translate(-50%, -50%);
+  --fx-color: #ffffff;
+  will-change: transform, opacity;
+}
+
+/* expanding shock ring */
+.fx-ring {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 4px solid var(--fx-color);
+  box-shadow: 0 0 22px var(--fx-color), inset 0 0 14px var(--fx-color);
+  animation: fx-ring .72s cubic-bezier(.2,.7,.3,1) forwards;
+}
+.fx-ring.fx-ring-soft { border-width: 3px; opacity: .85; }
+.fx-ring.fx-ring-shock { border-width: 6px; }
+@keyframes fx-ring {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(.2); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(2.7); }
+}
+
+/* scattering motes / sparks / rising embers */
+.fx-mote {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: radial-gradient(circle, #fff, var(--fx-color) 65%, transparent);
+  box-shadow: 0 0 12px var(--fx-color);
+  animation: fx-mote .85s ease-out forwards;
+}
+.fx-mote.fx-mote-spark { width: 9px; height: 9px; }
+@keyframes fx-mote {
+  0% { opacity: 0; transform: translate(-50%,-50%); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); }
+}
+.fx-mote.fx-mote-rise { animation: fx-mote-rise .95s ease-out forwards; }
+@keyframes fx-mote-rise {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(1); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx) * .5), -120%) scale(.6); }
+}
+
+/* shared icon pop (most status applications) */
+.fx-burn, .fx-weak, .fx-scare, .fx-leech, .fx-heal,
+.fx-strength, .fx-resil, .fx-curse, .fx-banish {
+  font-size: 46px; font-weight: 900; line-height: 1;
+  text-shadow: 0 2px 10px #000;
+  animation: fx-pop .82s cubic-bezier(.2,.8,.3,1) forwards;
+}
+@keyframes fx-pop {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(.3) rotate(-8deg); }
+  28%  { opacity: 1; transform: translate(-50%,-58%) scale(1.3) rotate(5deg); }
+  68%  { opacity: 1; transform: translate(-50%,-92%) scale(1) rotate(0); }
+  100% { opacity: 0; transform: translate(-50%,-150%) scale(.9); }
+}
+.fx-burn     { filter: drop-shadow(0 0 14px #ff7a2a); }
+.fx-scare    { color: #d49bff; filter: drop-shadow(0 0 14px #b35cff); }
+.fx-leech    { filter: drop-shadow(0 0 14px #ff3a48); }
+.fx-heal     { color: #8ef58a; filter: drop-shadow(0 0 16px #5ce05c); }
+.fx-strength { color: #ff7a55; filter: drop-shadow(0 0 14px #ff4a2a); }
+.fx-resil    { color: #aee1ff; filter: drop-shadow(0 0 14px #5ab6ff); }
+.fx-curse    { color: #d49bff; font-size: 56px; filter: drop-shadow(0 0 20px #c45cff); animation-duration: .92s; }
+.fx-banish   { color: #c9ccd4; filter: drop-shadow(0 0 14px #8b8f99) grayscale(1); }
+
+/* Weak droops downward as the foe sags */
+.fx-weak { color: #aedd76; filter: drop-shadow(0 0 12px #74b53a); animation: fx-weak .84s ease-out forwards; }
+@keyframes fx-weak {
+  0%   { opacity: 0; transform: translate(-50%,-95%) scale(.6); }
+  30%  { opacity: 1; transform: translate(-50%,-72%) scale(1.25); }
+  100% { opacity: 0; transform: translate(-50%,6%) scale(.8); }
+}
+
+/* Shield: a faceted plate snaps up around the beast */
+.fx-shield {
+  width: 124px; height: 138px;
+  background: linear-gradient(160deg, rgba(160,216,255,.6), rgba(60,130,230,.12));
+  clip-path: polygon(50% 0, 100% 25%, 100% 68%, 50% 100%, 0 68%, 0 25%);
+  filter: drop-shadow(0 0 20px #5ab6ff);
+  animation: fx-shield .78s ease-out forwards;
+}
+@keyframes fx-shield {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(.5) rotate(-6deg); }
+  35%  { opacity: .95; transform: translate(-50%,-50%) scale(1.06) rotate(0); }
+  62%  { opacity: .8; transform: translate(-50%,-50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.14); }
+}
+
+/* Heal cross floats up */
+.fx-heal { animation: fx-heal .92s cubic-bezier(.2,.8,.3,1) forwards; }
+@keyframes fx-heal {
+  0%   { opacity: 0; transform: translate(-50%,-40%) scale(.4); }
+  30%  { opacity: 1; transform: translate(-50%,-55%) scale(1.25); }
+  100% { opacity: 0; transform: translate(-50%,-130%) scale(.85); }
+}
+
+/* TROLL — a katana-style crescent blade slash that arcs across the foe */
+.fx-slash {
+  width: 190px; height: 190px;
+  animation: fx-slash .42s cubic-bezier(.2,.8,.3,1) forwards;
+}
+.fx-slash i { position: absolute; inset: 0; border-radius: 50%; }
+/* a wider soft motion-blur trail behind the cut */
+.fx-slash .trail {
+  border: 16px solid transparent;
+  border-top-color: rgba(200,230,255,.5);
+  border-right-color: rgba(200,230,255,.18);
+  filter: blur(4px);
+}
+/* the bright thin blade edge (top arc of a ring = crescent) */
+.fx-slash .edge {
+  border: 5px solid transparent;
+  border-top-color: #fff;
+  border-right-color: rgba(255,255,255,.55);
+  filter: drop-shadow(0 0 6px #fff) drop-shadow(0 0 16px #bfe3ff);
+}
+@keyframes fx-slash {
+  0%   { opacity: 0; transform: translate(-50%,-50%) rotate(calc(var(--ang, -34deg) - 62deg)) scale(.55); }
+  35%  { opacity: 1; transform: translate(-50%,-50%) rotate(var(--ang, -34deg)) scale(1.05); }
+  100% { opacity: 0; transform: translate(-50%,-50%) rotate(calc(var(--ang, -34deg) + 46deg)) scale(1.18); }
+}
+
+/* GHOUL — two fang rows snap shut in a bite */
+.fx-bite {
+  width: 150px; height: 152px;
+  transform: translate(-50%,-50%) rotate(var(--ang, 0deg));
+}
+.fx-bite .jaw {
+  position: absolute; left: 0; width: 100%; height: 66px;
+  background: linear-gradient(#f4f8ec, #c8dcb4);
+  filter: drop-shadow(0 0 7px #9be86a);
+}
+.fx-bite .jaw.top {
+  top: 6px;
+  clip-path: polygon(0 0,100% 0,100% 30%,92% 100%,84% 30%,76% 100%,68% 30%,60% 100%,52% 30%,44% 100%,36% 30%,28% 100%,20% 30%,12% 100%,4% 30%,0 56%);
+  animation: fx-bite-top .52s cubic-bezier(.3,1.5,.5,1) forwards;
+}
+.fx-bite .jaw.bot {
+  bottom: 6px;
+  clip-path: polygon(0 100%,100% 100%,100% 70%,92% 0,84% 70%,76% 0,68% 70%,60% 0,52% 70%,44% 0,36% 70%,28% 0,20% 70%,12% 0,4% 70%,0 44%);
+  animation: fx-bite-bot .52s cubic-bezier(.3,1.5,.5,1) forwards;
+}
+@keyframes fx-bite-top {
+  0%   { opacity: 0; transform: translateY(-74px); }
+  42%  { opacity: 1; transform: translateY(0); }
+  58%  { transform: translateY(-7px); }
+  100% { opacity: 0; transform: translateY(-32px); }
+}
+@keyframes fx-bite-bot {
+  0%   { opacity: 0; transform: translateY(74px); }
+  42%  { opacity: 1; transform: translateY(0); }
+  58%  { transform: translateY(7px); }
+  100% { opacity: 0; transform: translateY(32px); }
+}
+.fx-bite .chomp {
+  position: absolute; inset: 28% 18%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(140,220,110,.55), transparent 70%);
+  opacity: 0; animation: fx-chomp .52s ease-out forwards;
+}
+@keyframes fx-chomp {
+  0%, 36% { opacity: 0; transform: scale(.6); }
+  48%     { opacity: 1; transform: scale(1.1); }
+  100%    { opacity: 0; transform: scale(1.35); }
+}
+
+/* KITSUNE — clean, all-warm foxfire burst */
+.fx-foxfire { width: 108px; height: 108px; animation: fx-foxfire .6s ease-out forwards; }
+.fx-foxfire i { position: absolute; inset: 0; border-radius: 50%; }
+.fx-foxfire i:nth-child(1) {
+  background: radial-gradient(circle at 50% 58%, #fff, #ffd27a 28%, #ff7a3a 55%, transparent 74%);
+  filter: drop-shadow(0 0 16px #ff7a2a);
+}
+.fx-foxfire i:nth-child(2) {
+  background: radial-gradient(circle at 50% 54%, #fff7e0, #ffb347 40%, transparent 70%);
+  mix-blend-mode: screen; animation: fx-spin .6s linear;
+}
+@keyframes fx-foxfire {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(.3) rotate(0); }
+  35%  { opacity: 1; transform: translate(-50%,-50%) scale(1.15) rotate(50deg); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.3) rotate(120deg); }
+}
+@keyframes fx-spin { to { transform: rotate(180deg); } }
+
+/* ---- real-fire particle system (used by burn apply/tick) ---------------- */
+/* Each ember is a soft blurred blob that COOLS as it rises: white-hot at the
+   base → yellow → orange → red → dark ember. Many of them overlap with screen
+   blending to bloom into a continuous, turbulent flame body. */
+.fx-fp {
+  width: var(--fs, 18px); height: var(--fs, 18px);
+  border-radius: 50%;
+  filter: blur(var(--fb, 4px));
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+  background: radial-gradient(circle at 50% 50%, #ffffff 0%, #ffe27a 60%, transparent 72%);
+  animation: fx-fp var(--fd, 0.9s) cubic-bezier(.22,.55,.3,1) forwards;
+}
+@keyframes fx-fp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(.55);
+    background: radial-gradient(circle at 50% 50%, #ffffff 0%, #fff0b4 60%, transparent 72%);
+  }
+  12% { opacity: 1; }
+  38% {
+    transform: translate(calc(-50% + var(--wx, 0px)), calc(-50% + var(--ry, -90px) * .42)) scale(1);
+    background: radial-gradient(circle at 50% 50%, #ffe88a 0%, #ff9d22 60%, transparent 72%);
+  }
+  68% {
+    opacity: .82;
+    transform: translate(calc(-50% + var(--wx2, 0px)), calc(-50% + var(--ry, -90px) * .76)) scale(.82);
+    background: radial-gradient(circle at 50% 50%, #ff7a1e 0%, #c92c0a 60%, transparent 72%);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--wx2, 0px)), calc(-50% + var(--ry, -90px))) scale(.5);
+    background: radial-gradient(circle at 50% 50%, #5a1e08 0%, #1c0a04 60%, transparent 72%);
+  }
+}
+
+/* low, flickering heat-glow pooled at the base of the fire */
+.fx-fglow {
+  width: var(--gs, 62px); height: calc(var(--gs, 62px) * .82);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 68%, rgba(255,176,70,.72), rgba(255,96,24,.34) 46%, transparent 72%);
+  filter: blur(5px); mix-blend-mode: screen;
+  animation: fx-fglow .72s ease-out forwards;
+}
+@keyframes fx-fglow {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(.6); }
+  18%  { opacity: 1; transform: translate(-50%,-52%) scale(1.06); }
+  40%  { opacity: .85; transform: translate(-50%,-56%) scale(.94); }
+  62%  { opacity: .9; transform: translate(-50%,-60%) scale(1.02); }
+  100% { opacity: 0; transform: translate(-50%,-72%) scale(.7); }
+}
+
+/* tiny bright sparks that pop up out of the flame */
+.fx-spark {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, #ffd680 55%, transparent 75%);
+  box-shadow: 0 0 7px 2px rgba(255,196,110,.9);
+  mix-blend-mode: screen;
+  animation: fx-spark var(--fd, .8s) cubic-bezier(.2,.6,.35,1) forwards;
+}
+@keyframes fx-spark {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(1.1); }
+  14%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--wx, 0px)), calc(-50% + var(--ry, -150px))) scale(.35); }
+}
+
+/* a wisp of smoke lifting off the top */
+.fx-smoke {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(90,80,80,0.46), rgba(40,36,40,0.24) 60%, transparent 72%);
+  filter: blur(3px); mix-blend-mode: normal;
+  animation: fx-smoke 1.2s ease-out forwards;
+}
+@keyframes fx-smoke {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(.4); }
+  25%  { opacity: 0.42; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--sdx,0px)),-240%) scale(2.4); }
+}
+
+/* --- target tints (applied to the struck combatant) --- */
+.combatant.fx-burnflash .c-sprite, .pc-portrait.fx-burnflash .c-sprite { animation: fx-tint-burn .42s; }
+@keyframes fx-tint-burn { 50% { filter: brightness(1.45) sepia(.7) hue-rotate(-25deg) saturate(3); } }
+.combatant.fx-weakflash .c-sprite, .pc-portrait.fx-weakflash .c-sprite { animation: fx-tint-weak .6s; }
+@keyframes fx-tint-weak { 50% { filter: grayscale(.6) brightness(.8) sepia(.5) hue-rotate(40deg); } }
+.combatant.fx-scareflash .c-sprite, .pc-portrait.fx-scareflash .c-sprite { animation: fx-tint-scare .5s; }
+@keyframes fx-tint-scare { 30% { filter: brightness(.6) saturate(1.6) hue-rotate(40deg); transform: translateX(-4px); } 60% { transform: translateX(4px); } }
+.pc-portrait.fx-strflash .c-sprite { animation: fx-tint-str .5s; }
+@keyframes fx-tint-str { 50% { filter: brightness(1.4) sepia(.6) hue-rotate(-30deg) saturate(2.4); } }
+
+/* --- slot effects on the socket itself --- */
+.socket.fx-curseflash { animation: fx-slot-curse .76s ease-out; }
+@keyframes fx-slot-curse {
+  0% { box-shadow: none; }
+  40% { box-shadow: 0 0 34px #c45cff, inset 0 0 26px #c45cff; }
+  100% { box-shadow: none; }
+}
+.socket.fx-banishflash { animation: fx-slot-banish .64s ease-out; }
+@keyframes fx-slot-banish {
+  0% { filter: none; }
+  30% { filter: grayscale(1) brightness(.5); box-shadow: 0 0 20px #555; }
+  100% { filter: none; }
+}
+
+/* runes dissolve into embers when a chain ends */
+.socket-glyph.rune-spend-out { animation: rune-spend-out .5s ease-in forwards; }
+@keyframes rune-spend-out {
+  0%   { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1); }
+  40%  { opacity: 1; transform: translateY(-6px) scale(1.08); filter: brightness(1.7); }
+  100% { opacity: 0; transform: translateY(-42px) scale(.55) rotate(8deg); filter: brightness(2.2); }
+}
+
+/* the runes materialize one-by-one at battle start (the centerpiece reveal) */
+.socket.rune-appear { animation: rune-appear .72s cubic-bezier(.2,.9,.3,1.25) backwards; animation-delay: calc(var(--ri, 0) * .09s); }
+@keyframes rune-appear {
+  0%   { opacity: 0; transform: translateY(26px) scale(.35) rotate(-26deg); filter: brightness(2.6) drop-shadow(0 0 22px var(--gold)); }
+  55%  { opacity: 1; transform: translateY(-5px) scale(1.13) rotate(5deg); filter: brightness(1.6) drop-shadow(0 0 16px var(--gold)); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); filter: none; }
+}
+
+/* ============================================================
+   DIRECTIONAL ENERGY STRIKES — themed "move" projectiles
+   (replaces the old thrown orb; one comet per elemental type)
+   ============================================================ */
+.atk-proj {
+  position: absolute; z-index: 9420; pointer-events: none;
+  width: 78px; height: 16px;
+  transform: translate(-50%, -50%) rotate(var(--ang, 0deg));
+  --atk-color: #ffffff;
+}
+/* tapered energy trail */
+.atk-proj::before {
+  content: ''; position: absolute; left: 0; top: 50%;
+  width: 100%; height: 8px; transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, var(--atk-color));
+  border-radius: 50%;
+  filter: blur(1px) drop-shadow(0 0 8px var(--atk-color));
+  opacity: .92;
+}
+/* bright comet head at the leading edge */
+.atk-proj::after {
+  content: ''; position: absolute; right: -4px; top: 50%;
+  width: 22px; height: 22px; transform: translate(0, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 10%, var(--atk-color) 60%, transparent 76%);
+  box-shadow: 0 0 16px var(--atk-color), 0 0 30px var(--atk-color);
+}
+
+/* BLADE — Troll's steel slash-wave (sharp white-blue streak + diamond edge) */
+.atk-proj.k-blade { width: 88px; }
+.atk-proj.k-blade::before { height: 5px; background: linear-gradient(90deg, transparent, #9ec8ff 58%, #ffffff); }
+.atk-proj.k-blade::after {
+  width: 17px; height: 17px; border-radius: 2px;
+  transform: translate(0, -50%) rotate(45deg);
+  background: linear-gradient(135deg, #fff, #cfe2ff 60%, #8fb4e8);
+  box-shadow: 0 0 14px #cfe2ff, 0 0 24px #9ec8ff;
+}
+
+/* GNAW — Ghoul's murky bone-green strike */
+.atk-proj.k-gnaw::before { background: linear-gradient(90deg, transparent, #6aa83a 56%, #cdeeb0); }
+.atk-proj.k-gnaw::after { background: radial-gradient(circle, #fff 8%, #cdeeb0 40%, #4f8a2a 70%, transparent 82%); box-shadow: 0 0 14px #9be86a; }
+
+/* FIRE — long flickering flame lance */
+.atk-proj.k-fire { width: 96px; }
+.atk-proj.k-fire::before { height: 12px; background: linear-gradient(90deg, transparent, #ff5a1a 58%, #ffcf6a); animation: atk-fire-flick .18s infinite; }
+.atk-proj.k-fire::after { background: radial-gradient(circle, #fff 8%, #ffcf6a 34%, #ff5a1a 66%, transparent 80%); }
+@keyframes atk-fire-flick { 50% { transform: translateY(-50%) scaleY(1.45); } }
+
+/* FROST — sharp crystalline shard */
+.atk-proj.k-frost { width: 72px; }
+.atk-proj.k-frost::before { height: 6px; background: linear-gradient(90deg, transparent, #5ab6ff 70%, #d7f3ff); }
+.atk-proj.k-frost::after {
+  width: 20px; height: 20px; border-radius: 3px;
+  transform: translate(0, -50%) rotate(45deg);
+  background: linear-gradient(135deg, #fff, #7fd0ff 60%, #2f7fe0);
+  box-shadow: 0 0 16px #5ab6ff;
+}
+
+/* VENOM — sickly green bolt */
+.atk-proj.k-venom::before { background: linear-gradient(90deg, transparent, #3aa83a 58%, #aef58a); }
+.atk-proj.k-venom::after { background: radial-gradient(circle, #fff 8%, #aef58a 40%, #2faa2f 70%, transparent 82%); }
+
+/* SHADOW — violet bolt with a void core */
+.atk-proj.k-shadow::before { background: linear-gradient(90deg, transparent, #7b2fd0 58%, #d49bff); }
+.atk-proj.k-shadow::after { background: radial-gradient(circle, #2a0a3a 0%, #6a1aa0 26%, #c45cff 58%, transparent 80%); box-shadow: 0 0 18px #b35cff, 0 0 30px #7b2fd0; }
+
+/* HOLY — bright gold lance (combo sparks) */
+.atk-proj.k-holy::before { background: linear-gradient(90deg, transparent, #ffd27a 58%, #fff); }
+.atk-proj.k-holy::after { background: radial-gradient(circle, #fff 20%, #ffe9a8 55%, transparent 82%); box-shadow: 0 0 20px #ffd27a, 0 0 34px #ffb347; }
+
+/* impact core flash */
+.atk-impact {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, var(--atk-color) 45%, transparent 72%);
+  filter: drop-shadow(0 0 18px var(--atk-color));
+  animation: atk-impact .36s ease-out forwards;
+}
+.atk-impact.k-blade { background: radial-gradient(circle, #fff 0%, #cfe2ff 42%, #6a90c8 68%, transparent 82%); }
+.atk-impact.k-gnaw  { background: radial-gradient(circle, #fff 0%, #cdeeb0 40%, #4f8a2a 68%, transparent 82%); }
+.atk-impact.k-fire  { background: radial-gradient(circle, #fff 0%, #ffcf6a 34%, #ff5a1a 62%, transparent 78%); }
+.atk-impact.k-frost { background: radial-gradient(circle, #fff 0%, #aee1ff 40%, #2f7fe0 66%, transparent 80%); }
+.atk-impact.k-venom { background: radial-gradient(circle, #fff 0%, #c4f59a 38%, #2faa2f 66%, transparent 80%); }
+.atk-impact.k-shadow { background: radial-gradient(circle, #fff 0%, #c45cff 40%, #4a1080 70%, transparent 82%); }
+.atk-impact.k-holy  { background: radial-gradient(circle, #fff 0%, #ffe9a8 45%, #ffb347 70%, transparent 82%); }
+@keyframes atk-impact {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(.2); }
+  30%  { opacity: 1; transform: translate(-50%,-50%) scale(1.18); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.55); }
+}
+
+/* shard motes (frost impact) */
+.fx-mote.fx-mote-shard {
+  width: 7px; height: 16px; border-radius: 2px;
+  background: linear-gradient(180deg, #fff, var(--fx-color));
+  box-shadow: 0 0 10px var(--fx-color);
+}
+
+/* battle banner (turn / victory) */
+.battle-banner {
+  position: absolute; top: 38%; left: 50%; transform: translate(-50%,-50%);
+  font-family: 'Cinzel', serif; font-weight: 900; font-size: 110px;
+  color: var(--gold); text-shadow: 0 0 40px rgba(245,201,105,0.6), 0 6px 12px #000;
+  opacity: 0; pointer-events: none; z-index: 8000; text-align: center;
+}
+.battle-banner.show { animation: banner-flash 1.4s ease; }
+@keyframes banner-flash {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(1.5); }
+  25% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(0.95); }
+}
+
+/* screen shake */
+.stage-shake { animation: shake-hard 0.4s ease; }
+.stage-shake-2 { animation: shake-hard-2 0.5s ease; }
+.stage-shake-3 { animation: shake-hard-3 0.62s ease; }
+.bolt { transform: translate(-50%, -50%); }
+@keyframes shake-hard {
+  0%,100% { transform: var(--stage-tf) translate(0,0); }
+  20% { transform: var(--stage-tf) translate(-10px, 6px); }
+  40% { transform: var(--stage-tf) translate(8px, -6px); }
+  60% { transform: var(--stage-tf) translate(-6px, 4px); }
+  80% { transform: var(--stage-tf) translate(4px, -3px); }
+}
+@keyframes shake-hard-2 {
+  0%,100% { transform: var(--stage-tf) translate(0,0); }
+  15% { transform: var(--stage-tf) translate(-17px, 10px) rotate(-0.4deg); }
+  33% { transform: var(--stage-tf) translate(15px, -11px) rotate(0.4deg); }
+  52% { transform: var(--stage-tf) translate(-12px, 8px); }
+  71% { transform: var(--stage-tf) translate(9px, -6px); }
+  88% { transform: var(--stage-tf) translate(-5px, 3px); }
+}
+@keyframes shake-hard-3 {
+  0%,100% { transform: var(--stage-tf) translate(0,0); }
+  12% { transform: var(--stage-tf) translate(-27px, 15px) rotate(-0.7deg); }
+  27% { transform: var(--stage-tf) translate(24px, -18px) rotate(0.7deg); }
+  43% { transform: var(--stage-tf) translate(-20px, 13px) rotate(-0.5deg); }
+  60% { transform: var(--stage-tf) translate(16px, -11px); }
+  77% { transform: var(--stage-tf) translate(-11px, 7px); }
+  90% { transform: var(--stage-tf) translate(6px, -4px); }
+}
+
+/* ============================================================
+   REWARD + REST
+   ============================================================ */
+.reward-inner, .end-inner {
+  position: relative; z-index: 2; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+/* reward + rest share the global top bar — clear its 68px so content centers below it */
+.reward-inner { box-sizing: border-box; padding-top: 68px; }
+.reward-head { font-family: 'Cinzel', serif; font-size: 68px; color: var(--gold); filter: drop-shadow(0 0 24px rgba(245,201,105,0.5)); }
+.reward-sub { font-size: 24px; color: var(--text-dim); font-style: italic; margin: 6px 0 26px; }
+.reward-row { display: flex; gap: 30px; }
+#btn-skip-reward, #btn-leave-rest { margin-top: 34px; }
+
+/* souls badge on the reward screen */
+.reward-souls-badge {
+  position: absolute; top: 84px; right: 56px;
+  font-family: 'Cinzel', serif; font-size: 30px; color: var(--gold);
+  background: rgba(20,16,30,0.8); border: 1px solid var(--panel-edge);
+  padding: 10px 22px; border-radius: 30px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5), 0 0 22px rgba(245,201,105,0.25);
+}
+.reward-souls-badge .rsb-label { font-size: 18px; color: var(--text-dim); letter-spacing: .1em; text-transform: uppercase; }
+
+/* flying souls (coins) + counter pop */
+.soul-coin {
+  position: absolute; z-index: 60; font-size: 30px; line-height: 1;
+  pointer-events: none; will-change: transform, opacity;
+  filter: drop-shadow(0 0 8px rgba(245,201,105,0.85));
+}
+.soul-pop { display: inline-block; animation: soulPop .34s cubic-bezier(.2,1.5,.4,1); }
+@keyframes soulPop {
+  0%   { transform: scale(1); }
+  42%  { transform: scale(1.34); color: #fff3c4; text-shadow: 0 0 18px var(--gold), 0 0 6px #fff; }
+  100% { transform: scale(1); }
+}
+
+/* claimable spoils (souls / blessing / evolution) */
+.reward-claims { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; margin-bottom: 30px; min-height: 10px; }
+.claim-card {
+  position: relative; width: 360px; display: flex; align-items: center; gap: 16px;
+  background: var(--panel); border: 2px solid var(--panel-edge); border-radius: 14px;
+  padding: 16px 20px; cursor: pointer;
+  transition: transform .14s, border-color .2s, box-shadow .2s, opacity .25s, filter .25s;
+}
+.claim-card:hover { transform: translateY(-4px); border-color: var(--gold); box-shadow: 0 12px 28px rgba(0,0,0,0.5), 0 0 22px rgba(245,201,105,0.25); }
+.claim-card .cc-icon { font-size: 48px; flex: none; filter: drop-shadow(0 0 12px currentColor); }
+.claim-card .cc-body { flex: 1; text-align: left; min-width: 0; }
+.claim-card .cc-kind { font-family: 'Cinzel'; font-size: 17px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+.claim-card .cc-desc { font-size: 17px; color: var(--text-dim); line-height: 1.3; margin-top: 3px; }
+.claim-card .cc-desc b { color: var(--text); }
+.claim-card .cc-bonus { color: var(--gold); font-style: italic; font-size: 0.82em; opacity: 0.9; }
+.claim-card .cc-check {
+  position: absolute; top: 10px; right: 12px; font-size: 22px; color: var(--green-glow);
+  opacity: 0; transform: scale(0.4); transition: opacity .2s, transform .25s cubic-bezier(.2,1.4,.5,1);
+}
+.claim-card.claimed { opacity: 0.55; filter: grayscale(0.4); cursor: default; border-color: rgba(120,200,140,0.5); }
+.claim-card.claimed:hover { transform: none; box-shadow: none; }
+.claim-card.claimed .cc-check { opacity: 1; transform: scale(1); }
+
+/* glyph-of-three choice cards */
+.reward-choose-head { font-family: 'Cinzel', serif; font-size: 30px; color: var(--text); margin-bottom: 18px; letter-spacing: .04em; }
+.glyph-reward { width: 270px; min-height: 380px; }
+.glyph-reward .rc-kind { text-transform: uppercase; color: var(--g-color); }
+.glyph-reward:hover { border-color: var(--g-color); box-shadow: 0 18px 44px rgba(0,0,0,0.6), 0 0 30px var(--g-color); }
+.gr-art { width: 150px; height: 150px; margin: 14px 0 6px; display: flex; align-items: center; justify-content: center; position: relative; }
+.rc-slots {
+  font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: .08em;
+  color: var(--g-color); text-transform: uppercase; margin: 2px 0 4px;
+  text-shadow: 0 0 8px var(--g-color);
+}
+.gr-art .g-img { width: 100%; height: 100%; }
+.gr-art .g-hex { width: 130px; height: 130px; }
+.glyph-reward.locked { opacity: 0.32; filter: grayscale(0.7); pointer-events: none; transform: scale(0.94); }
+.glyph-reward.chosen { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 0 36px var(--g-color); transform: translateY(-6px); }
+
+.reward-card {
+  width: 300px; min-height: 360px;
+  background: var(--panel); border: 2px solid var(--panel-edge); border-radius: 18px;
+  padding: 26px 22px; cursor: pointer; text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+  transition: transform .16s, border-color .2s, box-shadow .2s;
+}
+.reward-card:hover { transform: translateY(-10px); border-color: var(--gold); box-shadow: 0 18px 44px rgba(0,0,0,0.6), 0 0 30px rgba(245,201,105,0.3); }
+.reward-card .rc-kind { font-family: 'Cinzel'; font-size: 18px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); }
+.reward-card .rc-icon { font-size: 90px; margin: 14px 0; filter: drop-shadow(0 0 16px currentColor); }
+.reward-card .rc-name { font-family: 'Cinzel'; font-size: 28px; }
+.reward-card .rc-desc { font-size: 19px; color: var(--text-dim); line-height: 1.4; margin-top: 10px; font-style: italic; }
+
+/* the elite "upgrade instead" choice card */
+.reward-card.upgrade-choice .rc-kind { color: var(--gold); }
+.reward-card.upgrade-choice.chosen { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 0 36px rgba(245,201,105,0.5); transform: translateY(-6px); }
+.uc-redo { color: var(--gold); font-size: 14px; font-style: normal; }
+.reward-card.upgrade-choice .uc-pick b { color: var(--gold); font-style: normal; }
+
+/* deck Combo-up badge (mirrors the empower badge, but on the right) */
+.deck-glyph-combo {
+  position: absolute; right: -6px; top: -7px; min-width: 20px; height: 18px;
+  padding: 0 4px; border-radius: 9px; font-size: 10px; line-height: 18px;
+  font-family: 'Cinzel'; color: #0d1a12; background: linear-gradient(180deg,#9be7b0,#4fd07a);
+  border: 1px solid #1e6a3a; text-align: center; font-weight: 700;
+  box-shadow: 0 0 10px rgba(79,208,122,0.7);
+}
+
+/* per-card upgrade markers on hand / socket glyphs */
+.g-up {
+  position: absolute; right: 8px; z-index: 8;
+  min-width: 22px; height: 20px; padding: 0 5px; border-radius: 10px;
+  font-family: 'Cinzel'; font-weight: 700; font-size: 12px; line-height: 20px;
+  text-align: center; pointer-events: none;
+}
+.g-up-power { top: 6px; color: #1a120a; background: linear-gradient(180deg,#ffe39a,#f5c969); border: 1px solid #8a6a1e; box-shadow: 0 0 10px rgba(245,201,105,0.75); }
+.g-up-combo { top: 30px; color: #0d1a12; background: linear-gradient(180deg,#9be7b0,#4fd07a); border: 1px solid #1e6a3a; box-shadow: 0 0 10px rgba(79,208,122,0.75); }
+.g-tip .gt-up { display: inline-block; margin-top: 2px; color: #ffd36b; font-size: 12px; letter-spacing: .04em; }
+/* a forged stack glows faintly in the collection */
+.deck-glyph.forged { box-shadow: 0 0 0 1px rgba(245,201,105,0.4), 0 0 16px rgba(245,201,105,0.25); }
+
+/* ---------- Upgrade (forge) modal ---------- */
+.upgrade-modal {
+  position: absolute; inset: 0; z-index: 210;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 38%, rgba(70,28,14,0.5), rgba(4,2,10,0.86) 70%);
+  backdrop-filter: blur(4px);
+  animation: screen-in .18s ease;
+}
+/* fullscreen forge — fills the whole stage so nothing feels cramped */
+.upgrade-panel {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; overflow: hidden;
+  padding: 34px 72px 28px;
+  background: linear-gradient(180deg, rgba(28,20,34,0.985), rgba(11,8,16,0.99));
+  text-align: center;
+}
+.upgrade-title {
+  font-family: 'Cinzel'; font-size: 46px; font-weight: 900; letter-spacing: .04em;
+  color: #ffce7a; margin: 0 0 6px;
+  text-shadow: 0 0 26px rgba(245,160,70,0.55);
+}
+.upgrade-title::before, .upgrade-title::after { content: '⚒'; color: #c8702f; margin: 0 18px; font-size: 32px; vertical-align: middle; filter: drop-shadow(0 0 12px rgba(220,120,50,0.6)); }
+.upgrade-sub { color: var(--text); font-size: 21px; margin: 0 0 24px; opacity: 0.9; }
+.upgrade-sub b { color: #ffce7a; }
+
+.upgrade-empty { color: var(--text-dim); font-style: italic; padding: 40px; text-align: center; font-size: 22px; }
+
+/* each view fills the panel and rises in when shown */
+.upgrade-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.upgrade-view.hidden { display: none; }
+.view-rise { animation: forge-rise .32s cubic-bezier(.22,1,.36,1); }
+@keyframes forge-rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ----- VIEW 1: browse gallery ----- */
+.upgrade-gallery-grid {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-wrap: wrap; align-content: flex-start; justify-content: center;
+  gap: 22px; padding: 14px 10px 10px; margin-bottom: 18px;
+  scrollbar-width: thin; scrollbar-color: #8a5a30 rgba(0,0,0,0.28);
+}
+.upgrade-gallery-grid::-webkit-scrollbar { width: 12px; }
+.upgrade-gallery-grid::-webkit-scrollbar-track { background: rgba(0,0,0,0.28); border-radius: 8px; }
+.upgrade-gallery-grid::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5a30, #4a3040); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+.upgrade-gallery-grid::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #d98a34, #8a5a30); background-clip: padding-box; }
+
+.forge-gal-card {
+  position: relative; width: 244px; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 20px 18px 18px; cursor: pointer;
+  background: linear-gradient(180deg, rgba(40,30,56,0.66), rgba(16,11,24,0.82));
+  border: 2px solid var(--panel-edge); border-radius: 18px;
+  transition: transform .16s, border-color .2s, box-shadow .2s;
+}
+.forge-gal-card:hover { transform: translateY(-8px); border-color: var(--g-color); box-shadow: 0 20px 46px rgba(0,0,0,0.6), 0 0 32px var(--g-color); }
+.forge-gal-card.forged { border-color: rgba(245,201,105,0.55); box-shadow: 0 0 0 1px rgba(245,201,105,0.3), 0 0 22px rgba(245,201,105,0.18); }
+.forge-gal-card .rc-kind { font-family: 'Cinzel'; font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: var(--g-color); }
+.forge-gal-card .gr-art { width: 132px; height: 132px; margin: 12px 0 8px; }
+.forge-gal-card .gr-art .g-hex { width: 100%; height: 100%; }
+.forge-gal-card .gr-art .g-hex .g-rune { font-size: 66px; }
+.forge-gal-card .gr-art .g-stack { width: 100%; height: 100%; }
+.forge-gal-card .rc-name { font-family: 'Cinzel'; font-size: 22px; color: var(--text); margin-bottom: 6px; }
+.forge-gal-card .rc-slots { font-size: 14px; color: var(--blue); margin-bottom: 6px; }
+.forge-gal-card .rc-desc { font-size: 15.5px; line-height: 1.42; color: var(--text-dim); }
+.forge-gal-card .fpv-note { font-size: 14px; color: #8ad7ff; font-style: italic; margin-top: 7px; }
+.forge-gal-card .fgc-cta {
+  margin-top: auto; padding-top: 12px; font-family: 'Cinzel'; font-size: 15px; letter-spacing: .08em;
+  color: var(--gold); opacity: 0; transform: translateY(4px); transition: opacity .18s, transform .18s;
+}
+.forge-gal-card:hover .fgc-cta { opacity: 1; transform: translateY(0); }
+.forge-gal-card .letter-chip { top: 12px; left: 12px; right: auto; z-index: 3; }
+.forge-gal-card .deck-glyph-emp, .forge-gal-card .deck-glyph-combo { left: auto; right: 10px; top: 10px; z-index: 3; }
+.forge-gal-card .deck-glyph-combo { top: 34px; }
+
+/* ----- VIEW 2: the anvil ----- */
+.forge-back {
+  position: absolute; top: 30px; left: 40px; z-index: 4;
+  font-family: 'Cinzel'; font-size: 18px; color: var(--text-dim); letter-spacing: .04em;
+  background: rgba(0,0,0,0.3); border: 1px solid var(--panel-edge); border-radius: 999px;
+  padding: 9px 20px; cursor: pointer; transition: all .16s;
+}
+.forge-back:hover { color: var(--text); border-color: var(--gold); background: rgba(245,201,105,0.1); transform: translateX(-3px); }
+.upgrade-forge-body { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ud-name { font-family: 'Cinzel'; font-size: 38px; color: #ffce7a; margin-bottom: 22px; text-shadow: 0 0 16px rgba(245,160,70,0.4); }
+.ud-toggle { display: inline-flex; background: rgba(0,0,0,0.4); border: 1px solid var(--panel-edge); border-radius: 999px; padding: 5px; gap: 5px; }
+.ud-tab {
+  font-family: 'Cinzel'; font-size: 19px; color: var(--text-dim); cursor: pointer;
+  background: transparent; border: 0; border-radius: 999px; padding: 11px 30px; transition: all .16s;
+}
+.ud-tab:hover:not(.disabled):not(.active) { color: var(--text); background: rgba(255,255,255,0.05); }
+.ud-tab.active { background: linear-gradient(160deg, #ffce7a, #d98a34); color: #2a1606; font-weight: 700; box-shadow: 0 2px 12px rgba(220,120,50,0.45); }
+.ud-tab.disabled { opacity: 0.32; cursor: not-allowed; }
+.ud-hint { font-size: 19px; color: var(--text-dim); margin: 18px 0 8px; min-height: 26px; text-align: center; }
+.ud-hint b { color: #8ef0a8; }
+
+/* before -> after card comparison */
+.ud-cmp { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 28px; width: 100%; }
+.ud-arrow { font-size: 46px; color: #c8702f; filter: drop-shadow(0 0 10px rgba(220,120,50,0.6)); flex: 0 0 auto; }
+.forge-pv {
+  position: relative; width: 380px; height: 484px; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; padding: 24px 24px 20px;
+  background: linear-gradient(180deg, rgba(40,30,56,0.72), rgba(18,12,26,0.82));
+  border: 2px solid var(--panel-edge); border-radius: 20px; text-align: center;
+}
+.forge-pv.is-after { border-color: var(--g-color, var(--gold)); box-shadow: 0 0 34px var(--g-color, rgba(245,201,105,0.3)), inset 0 0 28px rgba(245,180,90,0.08); }
+.forge-pv .fpv-tag {
+  font-family: 'Cinzel'; font-size: 15px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 10px;
+}
+.forge-pv.is-after .fpv-tag { color: #ffce7a; }
+.forge-pv .gr-art { width: 172px; height: 172px; margin: 2px 0 10px; display: flex; align-items: center; justify-content: center; position: relative; }
+.forge-pv .gr-art .g-img { width: 100%; height: 100%; object-fit: contain; }
+.forge-pv .gr-art .g-hex { width: 100%; height: 100%; }
+.forge-pv .gr-art .g-hex .g-rune { font-size: 84px; }
+.forge-pv .gr-art .g-stack { width: 100%; height: 100%; }
+.forge-pv .rc-name { font-family: 'Cinzel'; font-size: 26px; color: var(--text); margin-bottom: 8px; }
+.forge-pv .rc-slots { font-size: 16px; color: var(--blue); margin-bottom: 8px; }
+.forge-pv .rc-desc {
+  flex: 1; min-height: 0; width: 100%; overflow-y: auto;
+  font-size: 18px; line-height: 1.5; color: var(--text-dim);
+  scrollbar-width: thin; scrollbar-color: #6a4a30 transparent;
+}
+.forge-pv .rc-desc::-webkit-scrollbar { width: 8px; }
+.forge-pv .rc-desc::-webkit-scrollbar-track { background: transparent; }
+.forge-pv .rc-desc::-webkit-scrollbar-thumb { background: #6a4a30; border-radius: 6px; }
+.forge-pv.is-after .rc-desc .dyn-up { color: #8ef0a8; font-weight: 700; }
+.forge-pv .fpv-note { font-size: 16px; color: #8ad7ff; font-style: italic; margin-top: 10px; }
+.forge-pv .letter-chip { top: 12px; left: 12px; right: auto; z-index: 3; transform: scale(1.3); transform-origin: top left; }
+.forge-pv .deck-glyph-emp, .forge-pv .deck-glyph-combo { left: auto; right: 12px; top: 12px; z-index: 3; transform: scale(1.3); transform-origin: top right; }
+.forge-pv .deck-glyph-combo { top: 42px; }
+.ud-forge { margin-top: 22px; font-size: 23px; padding: 15px 44px; }
+#btn-upgrade-cancel { align-self: center; margin-top: 4px; }
+
+/* ---- the forge "strike": confirm animation ---- */
+.upgrade-forge-body.forging { pointer-events: none; }
+.upgrade-forge-body.forging .ud-name,
+.upgrade-forge-body.forging .ud-toggle,
+.upgrade-forge-body.forging .ud-hint,
+.upgrade-forge-body.forging .ud-forge,
+.upgrade-forge-body.forging .ud-arrow { opacity: 0; transition: opacity .3s ease; }
+.upgrade-forge-body.forging .forge-pv:not(.is-after) { opacity: 0.12; transform: scale(0.86); transition: opacity .4s ease, transform .4s ease; }
+.upgrade-forge-body.forging .forge-pv.is-after { z-index: 5; }
+.forge-bloom {
+  position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  background: radial-gradient(circle at 50% 52%, rgba(255,205,120,0.6), rgba(255,150,60,0.2) 36%, transparent 64%);
+  animation: forgeBloom .92s ease-out forwards;
+}
+@keyframes forgeBloom { 0% { opacity: 0; } 16% { opacity: 1; } 100% { opacity: 0; } }
+.forge-spark {
+  position: absolute; left: 50%; top: 44%; width: 7px; height: 7px; border-radius: 50%;
+  background: radial-gradient(circle, #fff3c8, #ffac3c); box-shadow: 0 0 10px 2px rgba(255,180,80,0.9);
+  pointer-events: none; z-index: 7; animation: forgeSpark .72s ease-out forwards;
+}
+@keyframes forgeSpark {
+  0%   { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%,-50%) translate(var(--dx), var(--dy)) scale(0.2); opacity: 0; }
+}
+/* graceful exit once the strike settles — fade the forge out, lift the forged card */
+.upgrade-modal.forge-exit { animation: forgeExit .48s ease-in forwards; }
+@keyframes forgeExit { from { opacity: 1; } to { opacity: 0; } }
+.upgrade-modal.forge-exit .upgrade-panel { animation: forgeExitPanel .48s cubic-bezier(.4,0,.6,1) forwards; }
+@keyframes forgeExitPanel { from { transform: scale(1); } to { transform: scale(1.035); } }
+.upgrade-modal.forge-exit .forge-pv.is-after { animation: forgedLift .48s cubic-bezier(.25,0,.35,1) forwards; }
+@keyframes forgedLift {
+  from { transform: translateY(0) scale(1); filter: brightness(1.15) drop-shadow(0 0 0 transparent); }
+  to   { transform: translateY(-30px) scale(1.08); filter: brightness(1.9) drop-shadow(0 0 26px var(--g-color, #ffce7a)); }
+}
+
+/* ---------- Socket forge modal ---------- */
+.socket-modal {
+  position: absolute; inset: 0; z-index: 215;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 42%, rgba(80,52,16,0.5), rgba(4,2,10,0.88) 70%);
+  backdrop-filter: blur(4px); animation: screen-in .2s ease;
+}
+.socket-modal.hidden { display: none; }
+.socket-modal.closing { animation: socketModalOut 0.3s ease both; pointer-events: none; }
+@keyframes socketModalOut { from { opacity: 1; } to { opacity: 0; } }
+.socket-modal-panel {
+  width: auto; max-width: 92%; padding: 34px 56px 30px;
+  background: linear-gradient(180deg, rgba(34,24,40,0.99), rgba(15,10,22,0.99));
+  border: 1px solid rgba(245,200,120,0.4); border-radius: 22px; text-align: center;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.75), inset 0 1px 0 rgba(255,220,180,0.12), 0 0 70px rgba(220,140,50,0.22);
+}
+.socket-modal-title {
+  font-family: 'Cinzel'; font-size: 36px; font-weight: 900; letter-spacing: .04em;
+  color: #ffce7a; margin-bottom: 6px; text-shadow: 0 0 24px rgba(245,160,70,0.55);
+}
+.socket-modal-sub { color: var(--text); font-size: 18px; margin-bottom: 26px; opacity: 0.92; }
+.socket-modal-sub b { color: #ffce7a; }
+.socket-modal-row { display: flex; gap: 30px; justify-content: center; align-items: center; margin-bottom: 28px; min-height: 124px; }
+.socket-modal-row .modal-socket { width: 118px; height: 118px; transition: none; }
+.socket-modal-row .modal-socket .socket-num { top: 4px; font-size: 12px; }
+.socket-modal-row .modal-socket .slot-badge { font-size: 15px; top: 4px; right: 6px; }
+.socket-modal-row .modal-socket .slot-type-name { font-size: 10px; bottom: 6px; }
+#btn-socket-continue { margin-top: 4px; }
+
+/* a forged socket bursts into being */
+.socket-modal-row .modal-socket.socket-incoming { animation: socketForgeIn .72s cubic-bezier(.2,1.25,.4,1) both; }
+@keyframes socketForgeIn {
+  0%   { transform: scale(0.15) rotate(-28deg); opacity: 0; filter: brightness(3); }
+  55%  { transform: scale(1.2) rotate(7deg); opacity: 1; filter: brightness(1.9); }
+  78%  { transform: scale(0.94) rotate(-3deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; filter: brightness(1); }
+}
+.forge-shake { animation: forgeShake .46s ease; }
+@keyframes forgeShake {
+  0%,100% { transform: translateX(0) rotate(0); }
+  20% { transform: translateX(-5px) rotate(-2.5deg); }
+  50% { transform: translateX(5px) rotate(2.5deg); }
+  80% { transform: translateX(-3px) rotate(-1.5deg); }
+}
+
+/* ============================================================
+   TRAIN ROULETTE — case-opening style permanent boon at the campfire
+   ============================================================ */
+.train-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 38%, rgba(20,14,32,0.86), rgba(4,3,8,0.96));
+  animation: train-in .25s ease both;
+}
+.train-overlay.closing { animation: train-out .3s ease both; }
+@keyframes train-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes train-out { from { opacity: 1; } to { opacity: 0; } }
+.train-panel {
+  width: 680px; max-width: 92vw; text-align: center;
+  background: linear-gradient(160deg, rgba(32,24,48,0.96), rgba(12,8,20,0.98));
+  border: 2px solid var(--panel-edge); border-radius: 22px; padding: 30px 34px 34px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.train-kicker { font-family: 'Cinzel'; letter-spacing: .4em; color: var(--gold); font-size: 16px; text-indent: .4em; }
+.train-title { font-family: 'Cinzel'; font-size: 34px; margin: 4px 0 22px; }
+.train-viewport {
+  position: relative; height: 150px; overflow: hidden; border-radius: 14px;
+  background: rgba(6,4,12,0.7); border: 1px solid var(--panel-edge);
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.7);
+  -webkit-mask: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+.train-strip { display: flex; height: 100%; will-change: transform; }
+.train-cell {
+  flex: 0 0 176px; width: 176px; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border-right: 1px solid rgba(255,255,255,0.05); color: var(--tc, var(--gold));
+}
+.train-cell .tc-icon { font-size: 54px; line-height: 1; filter: drop-shadow(0 0 14px currentColor); }
+.train-cell .tc-name { font-family: 'Cinzel'; font-size: 16px; color: var(--text); }
+.train-cell.won { background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--tc) 32%, transparent), transparent 70%); }
+.train-cell.won .tc-icon { animation: train-won .6s ease; }
+@keyframes train-won { 0%,100% { transform: scale(1); } 40% { transform: scale(1.35); } }
+.train-pointer {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 0; transform: translateX(-50%);
+  border-left: 3px solid var(--gold); box-shadow: 0 0 16px rgba(245,201,105,0.85); z-index: 3;
+}
+.train-pointer::before, .train-pointer::after {
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%); border: 9px solid transparent;
+}
+.train-pointer::before { top: -2px; border-top-color: var(--gold); }
+.train-pointer::after { bottom: -2px; border-bottom-color: var(--gold); }
+.train-result { min-height: 54px; margin-top: 20px; opacity: 0; transform: translateY(8px); transition: opacity .3s, transform .3s; }
+.train-result.show { opacity: 1; transform: none; }
+.train-result .tr-name { font-family: 'Cinzel'; font-size: 26px; filter: drop-shadow(0 0 12px currentColor); }
+.train-result .tr-desc { font-size: 17px; color: var(--text-dim); margin-top: 4px; font-style: italic; }
+.train-claim { margin-top: 18px; }
+/* an expanding ring of forge-light */
+.forge-ring {
+  position: absolute; inset: -6px; border-radius: 18px; pointer-events: none; z-index: 6;
+  animation: forgeRing .65s ease-out forwards;
+}
+@keyframes forgeRing {
+  0%   { transform: scale(0.55); opacity: 0.95; box-shadow: 0 0 34px 8px rgba(255,170,70,0.9); }
+  100% { transform: scale(1.55); opacity: 0; box-shadow: 0 0 70px 26px rgba(255,170,70,0); }
+}
+.forge-ring-gold { animation-name: forgeRingGold; }
+@keyframes forgeRingGold {
+  0%   { transform: scale(0.6); opacity: 1; box-shadow: 0 0 40px 10px rgba(245,201,105,0.95); }
+  100% { transform: scale(1.7); opacity: 0; box-shadow: 0 0 80px 30px rgba(245,201,105,0); }
+}
+
+/* ============================================================
+   EVENTS / BLESSING DRAFT / SHOP
+   ============================================================ */
+.event-emoji {
+  font-size: 96px; line-height: 1; margin-bottom: 6px;
+  filter: drop-shadow(0 0 26px rgba(180,140,255,0.55));
+  animation: eventFloat 3.4s ease-in-out infinite;
+}
+@keyframes eventFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+.event-blurb { max-width: 1040px; font-size: 23px; line-height: 1.5; }
+.event-blurb b { color: var(--gold); font-style: normal; }
+.reward-card.event-choice .rc-kind,
+.reward-card.bless-draft .rc-kind { color: var(--g-color, var(--gold)); }
+.reward-card.event-choice:hover,
+.reward-card.bless-draft:hover { border-color: var(--g-color, var(--gold)); box-shadow: 0 18px 44px rgba(0,0,0,0.6), 0 0 34px var(--g-color, rgba(245,201,105,0.3)); }
+#event-row .btn-primary { margin-top: 12px; }
+
+/* shop grid */
+.shop-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 22px; width: min(1500px, 94vw); margin-top: 6px;
+}
+.shop-card {
+  position: relative; background: var(--panel);
+  border: 2px solid var(--panel-edge); border-radius: 16px;
+  padding: 18px 16px 14px; cursor: pointer; text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+  min-height: 232px;
+  transition: transform .15s, border-color .2s, box-shadow .2s, opacity .2s;
+}
+.shop-card:hover { transform: translateY(-8px); border-color: var(--g-color); box-shadow: 0 16px 38px rgba(0,0,0,0.6), 0 0 26px var(--g-color); }
+.shop-card .sc-kind { font-family: 'Cinzel'; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--g-color); }
+.shop-card .sc-icon { font-size: 56px; margin: 6px 0; filter: drop-shadow(0 0 12px currentColor); }
+.shop-card .sc-art { position: relative; width: 96px; height: 110px; display: flex; align-items: center; justify-content: center; margin: 4px 0; }
+.shop-card .sc-art .g-img { width: 86px; height: 86px; }
+.shop-card .sc-art .g-hex { width: 86px; height: 86px; display: flex; align-items: center; justify-content: center; }
+.shop-card .sc-art .g-hex .g-rune { font-size: 46px; }
+.shop-card .sc-art .g-stack { width: 86px; height: 86px; }
+.shop-card > .letter-chip { top: 14px; left: 14px; right: auto; z-index: 6; }
+.shop-card .sc-name { font-family: 'Cinzel'; font-size: 21px; margin-top: 2px; }
+.shop-card .sc-desc { font-size: 15px; color: var(--text-dim); line-height: 1.35; margin-top: 6px; flex: 1; }
+.shop-card .sc-price {
+  margin-top: 10px; font-family: 'Cinzel'; font-size: 22px; color: var(--gold);
+  background: rgba(10,7,16,0.7); border: 1px solid var(--panel-edge);
+  border-radius: 20px; padding: 4px 16px;
+}
+.shop-card.sold { opacity: 0.42; filter: grayscale(0.7); cursor: default; pointer-events: none; }
+.shop-card.sold .sc-price { color: var(--text-dim); }
+.shop-card.cant-afford { opacity: 0.6; }
+.shop-card.cant-afford .sc-price { color: #c0506a; border-color: #6a2c3c; }
+.shop-card.shake-no { animation: shakeNo .34s; }
+@keyframes shakeNo { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+#btn-leave-shop { margin-top: 26px; margin-bottom: 8px; }
+
+/* The bazaar can hold many cards. Top-align + scroll so the header clears the
+   global top bar and the Leave button is always reachable (centering caused the
+   content to overflow off both ends). */
+#screen-shop .reward-inner {
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding-top: 84px;
+  padding-bottom: 44px;
+}
+#screen-shop .reward-head { margin-top: 0; }
+#screen-shop .reward-sub { margin-bottom: 18px; }
+
+/* empower marker on a collected glyph */
+.deck-glyph-emp {
+  position: absolute; left: -6px; top: -7px; min-width: 18px; height: 18px;
+  padding: 0 4px; border-radius: 9px; font-size: 11px; line-height: 18px;
+  font-family: 'Cinzel'; color: #1a120a; background: linear-gradient(180deg,#ffe39a,#f5c969);
+  border: 1px solid #8a6a1e; text-align: center; font-weight: 700;
+  box-shadow: 0 0 10px rgba(245,201,105,0.7);
+}
+
+/* ============================================================
+   COLLECTION OVERLAY
+   ============================================================ */
+.screen.overlay {
+  background: rgba(4,2,8,0.85);
+  align-items: center; justify-content: center;
+  z-index: 20;
+}
+.collection-panel {
+  width: 1400px; max-height: 940px; overflow-y: auto;
+  background: var(--panel); border: 2px solid var(--panel-edge);
+  border-radius: 22px; padding: 40px 50px; text-align: center;
+}
+.collection-panel h3 { font-family: 'Cinzel'; font-size: 26px; color: var(--gold); margin: 30px 0 14px; }
+.collection-row { display: flex; gap: 26px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+.collection-deck { position: relative; }
+.collection-glyphs, .collection-blessings-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.collection-panel .btn-primary { margin-top: 36px; }
+
+.mini-monster {
+  width: 200px; background: rgba(30,22,46,0.7); border: 2px solid var(--panel-edge);
+  border-radius: 14px; padding: 16px;
+}
+.mini-monster.dead { opacity: 0.4; filter: grayscale(1); }
+.mini-monster.active { border-color: var(--gold); box-shadow: 0 0 22px rgba(245,201,105,0.35); }
+.mini-monster .mm-emoji { font-size: 70px; }
+.mini-monster .mm-name { font-family: 'Cinzel'; font-size: 22px; }
+.mini-monster .mm-hp { font-size: 18px; color: var(--text-dim); margin-top: 4px; }
+
+.deck-glyph {
+  position: relative;
+  width: 64px; height: 64px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; font-size: 30px;
+  border: 2px solid var(--g-color, #888); color: var(--g-color);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--g-color) 30%, #1a1426), #120d1e);
+  cursor: pointer; transition: transform .14s ease, box-shadow .14s ease;
+}
+.deck-glyph:hover { transform: translateY(-4px); box-shadow: 0 0 18px var(--g-color); }
+.deck-glyph.selected { transform: translateY(-4px); box-shadow: 0 0 0 2px var(--gold), 0 0 20px var(--g-color); }
+.deck-glyph-img { width: 90%; height: 90%; object-fit: contain; pointer-events: none; }
+.deck-glyph-rune { pointer-events: none; }
+.deck-glyph-count {
+  position: absolute; right: -6px; bottom: -6px; min-width: 20px; height: 20px;
+  padding: 0 5px; border-radius: 10px; font-size: 13px; line-height: 20px;
+  font-family: 'Cinzel'; color: #fff; background: rgba(10,7,16,0.92);
+  border: 1px solid var(--g-color); text-align: center;
+}
+
+/* glyph inspector — overlays below the pool; never reflows the layout
+   (in-flow positioning caused a hover flicker loop) */
+.deck-detail {
+  position: absolute; top: calc(100% + 12px); left: 50%; transform: translateX(-50%);
+  z-index: 60;
+  display: flex; align-items: center; gap: 18px; text-align: left;
+  width: min(560px, 92vw);
+  background: rgba(10,7,16,0.97); border: 1px solid var(--g-color, var(--panel-edge));
+  border-left: 4px solid var(--g-color, var(--panel-edge));
+  border-radius: 12px; padding: 16px 20px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.6), 0 0 26px color-mix(in srgb, var(--g-color) 35%, transparent);
+  opacity: 1; transition: opacity .12s ease;
+}
+.deck-detail.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.deck-detail .dd-art {
+  flex: 0 0 76px; width: 76px; height: 76px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; font-size: 40px;
+  color: var(--g-color); border: 2px solid var(--g-color);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--g-color) 30%, #1a1426), #120d1e);
+}
+.deck-detail .dd-img { width: 90%; height: 90%; object-fit: contain; }
+.deck-detail .dd-body { flex: 1; }
+.deck-detail .dd-name { font-family: 'Cinzel'; font-size: 22px; color: var(--text); }
+.deck-detail .dd-count { color: var(--gold); font-size: 17px; }
+.deck-detail .dd-meta { display: flex; gap: 10px; align-items: center; margin: 4px 0 8px; }
+.deck-detail .dd-kind {
+  font-size: 13px; font-family: 'Cinzel'; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--g-color); border: 1px solid var(--g-color); border-radius: 6px; padding: 2px 8px;
+}
+.deck-detail .dd-letter {
+  font-size: 13px; font-family: 'Cinzel'; font-weight: 700; letter-spacing: .05em;
+  border-radius: 6px; padding: 2px 9px; color: #fff; border: 1px solid rgba(255,255,255,0.4);
+}
+.deck-detail .dd-letter.l-A { background: linear-gradient(180deg,#ff8a5c,#e0502f); }
+.deck-detail .dd-letter.l-B { background: linear-gradient(180deg,#7fd0ff,#3a86c8); }
+.deck-detail .dd-letter.l-C { background: linear-gradient(180deg,#9be38b,#3f9e4d); }
+.deck-detail .dd-letter.wild { background: linear-gradient(180deg,#ffe9a8,#f5c969); color: #4a2e00; }
+.deck-detail .dd-owner { font-size: 14px; color: var(--text-dim); font-style: italic; }
+.deck-detail .dd-desc { font-family: 'Spectral'; font-size: 17px; line-height: 1.4; color: var(--text-dim); }
+.deck-detail .dd-desc b { color: var(--text); }
+.deck-detail .dd-tags { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+.deck-detail .dd-tags span {
+  font-size: 12px; font-family: 'Cinzel'; letter-spacing: .04em;
+  color: var(--gold); border: 1px solid rgba(245,201,105,0.5); border-radius: 6px; padding: 2px 8px;
+}
+.bless-badge {
+  padding: 10px 18px; border-radius: 12px; font-size: 20px; font-family: 'Cinzel';
+  background: rgba(176,123,255,0.18); border: 1px solid var(--purple); color: var(--purple-glow);
+}
+
+/* scrollbar */
+.collection-panel::-webkit-scrollbar { width: 10px; }
+.collection-panel::-webkit-scrollbar-thumb { background: rgba(160,140,210,0.4); border-radius: 6px; }
+
+/* ============================================================
+   SPECIAL SOCKET TOOLTIP (hover the badge icon)
+   ============================================================ */
+.slot-badge { cursor: help; }
+.slot-tip {
+  position: absolute; bottom: calc(100% + 14px); left: 50%; transform: translateX(-50%) translateY(6px);
+  width: 230px; white-space: normal; text-align: left;
+  background: rgba(8,5,14,0.98); border: 1px solid var(--panel-edge);
+  border-radius: 10px; padding: 11px 13px; font-size: 14px; line-height: 1.4;
+  color: var(--text-dim); font-family: 'Spectral'; font-weight: 400;
+  opacity: 0; pointer-events: none; transition: opacity .14s ease, transform .14s ease; z-index: 80;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+}
+.slot-tip b { color: var(--text); }
+.slot-tip .st-name { display: block; font-family: 'Cinzel'; color: var(--gold); font-size: 15px; margin-bottom: 4px; }
+.slot-tip::after {
+  content: ''; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%) rotate(45deg);
+  width: 11px; height: 11px; background: rgba(8,5,14,0.98);
+  border-right: 1px solid var(--panel-edge); border-bottom: 1px solid var(--panel-edge);
+}
+.slot-badge:hover .slot-tip { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; z-index: 95; }
+/* when a glyph fills the socket, hovering the slot icon shows the SLOT tip and
+   suppresses the glyph tip, so the two never fight over the same space */
+.socket .slot-badge { z-index: 9; }
+.socket .slot-badge:hover ~ .g-tip { opacity: 0 !important; }
+
+/* tooltips for cursed / sealed sockets — reuse the slot-tip look, and never
+   fight an equipped glyph's tip (the curse badge sits before .g-tip so the
+   sibling suppression below applies even when a glyph fills the socket) */
+.fx-badge { cursor: help; pointer-events: auto; z-index: 9; }
+.slot-fx-tip {
+  position: absolute; bottom: calc(100% + 14px); left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  width: 232px; white-space: normal; text-align: left;
+  background: rgba(8,5,14,0.98); border: 1px solid var(--panel-edge);
+  border-radius: 10px; padding: 11px 13px; font-size: 14px; line-height: 1.42;
+  color: var(--text-dim); font-family: 'Spectral'; font-weight: 400;
+  opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 96;
+}
+.slot-fx-tip b { color: var(--text); }
+.slot-fx-tip .st-name { display: block; font-family: 'Cinzel'; font-size: 15px; margin-bottom: 4px; }
+.slot-curse .st-name { color: #d98cff; }
+.slot-lock .st-name { color: #c3cad6; }
+.slot-fx-tip .sft-turns { display: block; margin-top: 7px; font-family: 'Cinzel'; font-size: 13px; color: #c9a3ff; }
+.slot-fx-tip::after {
+  content: ''; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%) rotate(45deg);
+  width: 11px; height: 11px; background: rgba(8,5,14,0.98);
+  border-right: 1px solid var(--panel-edge); border-bottom: 1px solid var(--panel-edge);
+}
+.fx-badge:hover .slot-fx-tip { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; z-index: 96; }
+.socket .slot-curse.fx-badge:hover ~ .g-tip { opacity: 0 !important; }
+
+/* ============================================================
+   LIVE COMBO METER (right of the field, ticks up mid-chain)
+   ============================================================ */
+.combo-meter {
+  position: absolute; right: 70px; top: 300px; z-index: 30;
+  width: 220px; text-align: center; pointer-events: none;
+  opacity: 0; transform: scale(0.6) translateY(20px);
+  transition: opacity .3s ease, transform .3s cubic-bezier(.2,1.6,.4,1);
+  filter: drop-shadow(0 0 26px rgba(245,201,105,0.5));
+}
+.combo-meter.show { opacity: 1; transform: scale(1) translateY(0); }
+.combo-meter.fade { opacity: 0; transform: scale(1.25) translateY(-26px); transition: opacity .5s ease, transform .5s ease; }
+.combo-meter .cm-label {
+  font-family: 'Cinzel'; font-weight: 900; letter-spacing: .42em; font-size: 20px;
+  color: var(--gold); text-indent: .42em; text-shadow: 0 0 16px rgba(245,201,105,0.7);
+}
+.combo-meter .cm-num { font-family: 'Cinzel'; font-weight: 700; line-height: 0.92; color: #ffe9a8; font-variant-numeric: lining-nums tabular-nums; }
+.combo-meter .cm-x { font-size: 46px; opacity: 0.8; }
+.combo-meter .cm-val {
+  font-size: 110px; color: #ffce5e;
+  /* solid fill + layered glow — avoids the background-clip:text rectangle glitch
+     that appeared when the bump animation transformed this element */
+  text-shadow: 0 2px 0 rgba(150,80,20,0.7), 0 0 16px rgba(255,214,120,0.9), 0 0 42px rgba(255,160,70,0.6);
+}
+.combo-meter .cm-bonus {
+  margin-top: 2px; font-family: 'Cinzel'; font-size: 19px; color: #ffd98a;
+  letter-spacing: .06em; text-shadow: 0 0 12px rgba(245,201,105,0.6);
+}
+.combo-meter .cm-flames {
+  position: absolute; inset: -30px -10px -10px; z-index: -1; border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 60%, rgba(255,150,50,0.28), transparent 70%);
+  opacity: 0; transition: opacity .3s;
+}
+.combo-meter.show .cm-flames { opacity: 1; animation: cm-flicker 0.9s ease-in-out infinite; }
+@keyframes cm-flicker { 50% { transform: scale(1.08); opacity: 0.7; } }
+.combo-meter.bump .cm-num { animation: cm-bump .32s cubic-bezier(.2,1.8,.4,1); }
+@keyframes cm-bump { 0% { transform: scale(1.4); } 60% { transform: scale(0.92); } 100% { transform: scale(1); } }
+.combo-meter.lvl-3 .cm-val { font-size: 124px; }
+.combo-meter.lvl-4 .cm-val { font-size: 138px; color: #ffe08a; }
+.combo-meter.lvl-5 .cm-val { font-size: 150px; }
+.combo-meter.lvl-6 .cm-val { font-size: 162px; color: #ffd0f0; text-shadow: 0 2px 0 rgba(120,40,90,0.7), 0 0 18px rgba(255,180,240,0.9), 0 0 46px rgba(255,90,200,0.6); }
+.combo-meter.lvl-5 .cm-flames, .combo-meter.lvl-6 .cm-flames {
+  background: radial-gradient(ellipse at 50% 60%, rgba(255,110,40,0.4), transparent 72%);
+}
+
+/* ============================================================
+   HAND GLYPH: fade emblems on hover, re-collect them in the tip
+   ============================================================ */
+.hand-row .glyph:hover .g-body .letter-chip,
+.hand-row .glyph:hover > .g-up { opacity: 0; transition: opacity .14s ease; }
+.hand-row .glyph .g-body .letter-chip,
+.hand-row .glyph > .g-up { transition: opacity .16s ease .04s; }
+.g-tip-emblems { display: flex; justify-content: center; gap: 8px; margin-bottom: 8px; }
+.g-tip-emblems:empty { display: none; }
+.g-tip-emblems .te-chip {
+  width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+  font-family: 'Cinzel'; font-weight: 700; font-size: 18px; color: #fff; border: 1px solid rgba(255,255,255,0.35);
+}
+.g-tip-emblems .te-chip.l-A { background: linear-gradient(180deg,#ff8a5c,#e0502f); }
+.g-tip-emblems .te-chip.l-B { background: linear-gradient(180deg,#7fd0ff,#3a86c8); }
+.g-tip-emblems .te-chip.l-C { background: linear-gradient(180deg,#9be38b,#3f9e4d); }
+.g-tip-emblems .te-chip.wild { background: linear-gradient(180deg,#ffe9a8,#f5c969); color: #4a2e00; }
+.g-tip-emblems .te-up {
+  height: 30px; padding: 0 9px; border-radius: 8px; display: inline-flex; align-items: center;
+  font-family: 'Cinzel'; font-weight: 700; font-size: 14px;
+}
+.g-tip-emblems .te-up-power { color: #1a120a; background: linear-gradient(180deg,#ffe39a,#f5c969); border: 1px solid #8a6a1e; }
+.g-tip-emblems .te-up-combo { color: #0d1a12; background: linear-gradient(180deg,#9be7b0,#4fd07a); border: 1px solid #1e6a3a; }
+
+/* ============================================================
+   MULTI-ACTION ENEMY TELEGRAPH (two chained intents)
+   ============================================================ */
+.intent.multi { gap: 4px; border-color: rgba(245,201,105,0.55); }
+.intent.multi .i-part { display: inline-flex; align-items: center; gap: 5px; }
+.intent.multi .i-part.i-attack { color: var(--red-glow); }
+.intent.multi .i-part.i-defend { color: var(--blue-glow); }
+.intent.multi .i-part.i-buff   { color: var(--purple-glow); }
+.intent.multi .i-part.i-hex    { color: #d98cff; }
+.intent.multi .i-part.i-mend   { color: var(--green-glow); }
+.intent .i-amp { color: var(--gold); font-size: 18px; opacity: 0.8; margin: 0 1px; }
+.intent-tip .tip-then { color: var(--gold); font-style: italic; font-size: 13px; }
+
+/* ============================================================
+   EVENT REVEAL SCENE (won glyphs / blessings / forge)
+   ============================================================ */
+.reveal-modal {
+  position: absolute; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 40%, rgba(30,18,50,0.82), rgba(4,2,10,0.94));
+  opacity: 0; transition: opacity .35s ease;
+}
+.reveal-modal.show { opacity: 1; }
+.reveal-modal.hidden { display: none; }
+.reveal-rays {
+  position: absolute; width: 1300px; height: 1300px; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(245,201,105,0.0) 0deg, rgba(245,201,105,0.16) 12deg, rgba(245,201,105,0.0) 24deg,
+    rgba(245,201,105,0.0) 30deg, rgba(245,201,105,0.16) 42deg, rgba(245,201,105,0.0) 54deg);
+  /* feather the disc so it dissolves into the backdrop instead of a hard ring */
+  -webkit-mask-image: radial-gradient(circle, #000 22%, rgba(0,0,0,0.5) 45%, transparent 66%);
+  mask-image: radial-gradient(circle, #000 22%, rgba(0,0,0,0.5) 45%, transparent 66%);
+  animation: reveal-spin 18s linear infinite; opacity: 0; transition: opacity .5s;
+}
+.reveal-modal.show .reveal-rays { opacity: 0.5; }
+/* a soft golden bloom behind the cards (no hard circle edge) */
+.reveal-inner::before {
+  content: ''; position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%);
+  width: 760px; height: 760px; border-radius: 50%; z-index: -1; pointer-events: none;
+  background: radial-gradient(circle, rgba(245,201,105,0.22), rgba(245,201,105,0.07) 38%, transparent 64%);
+  opacity: 0; transition: opacity .5s ease;
+}
+.reveal-modal.show .reveal-inner::before { opacity: 1; }
+.reveal-modal.bad .reveal-inner::before { background: radial-gradient(circle, rgba(220,70,60,0.22), rgba(160,40,40,0.07) 38%, transparent 64%); }
+.reveal-modal.bad .reveal-rays { opacity: 0 !important; }
+.reveal-modal.bad .reveal-title { color: #ff7a6a; text-shadow: 0 0 26px rgba(220,70,60,0.6); }
+@keyframes reveal-spin { to { transform: rotate(360deg); } }
+.reveal-inner { position: relative; text-align: center; z-index: 1; }
+.reveal-title {
+  font-family: 'Cinzel'; font-weight: 900; font-size: 40px; color: var(--gold);
+  letter-spacing: .08em; text-shadow: 0 0 26px rgba(245,201,105,0.6); margin-bottom: 8px;
+  opacity: 0; transform: translateY(-14px); transition: opacity .4s ease .1s, transform .4s ease .1s;
+}
+.reveal-modal.show .reveal-title { opacity: 1; transform: translateY(0); }
+.reveal-sub {
+  font-family: 'Spectral'; font-size: 19px; color: var(--text-dim); margin-bottom: 26px;
+  opacity: 0; transition: opacity .4s ease .2s;
+}
+.reveal-modal.show .reveal-sub { opacity: 1; }
+.reveal-cards { display: flex; gap: 28px; justify-content: center; align-items: stretch; min-height: 280px; }
+.reveal-card {
+  position: relative; width: 200px; padding: 18px 16px 20px; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(26,18,40,0.96), rgba(14,9,24,0.96));
+  border: 2px solid var(--g-color, var(--gold));
+  box-shadow: 0 16px 40px rgba(0,0,0,0.6), 0 0 30px color-mix(in srgb, var(--g-color, var(--gold)) 35%, transparent);
+  opacity: 0; transform: translateY(40px) scale(0.7) rotate(-6deg);
+}
+.reveal-modal.show .reveal-card { animation: reveal-pop .7s cubic-bezier(.2,1.5,.4,1) forwards; }
+@keyframes reveal-pop {
+  0% { opacity: 0; transform: translateY(40px) scale(0.7) rotate(-6deg); }
+  60% { opacity: 1; transform: translateY(-8px) scale(1.06) rotate(2deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+.reveal-card .rv-kind {
+  font-family: 'Cinzel'; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--g-color, var(--gold)); margin-bottom: 10px;
+}
+.reveal-card .rv-art {
+  width: 132px; height: 132px; margin: 0 auto 12px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center; font-size: 72px;
+  color: var(--g-color, var(--gold)); border: 2px solid var(--g-color, var(--gold));
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--g-color, var(--gold)) 28%, #1a1426), #110c1d);
+}
+.reveal-card .rv-art img { width: 90%; height: 90%; object-fit: contain; }
+.reveal-card .rv-name { font-family: 'Cinzel'; font-size: 22px; color: var(--text); margin-bottom: 6px; }
+.reveal-card .rv-desc { font-family: 'Spectral'; font-size: 15px; line-height: 1.4; color: var(--text-dim); }
+.reveal-card .rv-up {
+  position: absolute; top: -12px; right: -12px; font-family: 'Cinzel'; font-weight: 700; font-size: 15px;
+  padding: 4px 10px; border-radius: 10px; color: #1a120a;
+  background: linear-gradient(180deg,#ffe39a,#f5c969); border: 1px solid #8a6a1e;
+  box-shadow: 0 0 14px rgba(245,201,105,0.8);
+  opacity: 0; transform: scale(0.4);
+}
+.reveal-modal.show .reveal-card .rv-up { animation: reveal-stamp .5s cubic-bezier(.2,1.8,.4,1) .7s forwards; }
+@keyframes reveal-stamp { 0% { opacity: 0; transform: scale(2) rotate(12deg); } 100% { opacity: 1; transform: scale(1) rotate(-8deg); } }
+/* the "forging" treatment — card glows and strikes */
+.reveal-card.forging { animation: reveal-pop .7s cubic-bezier(.2,1.5,.4,1) forwards, reveal-forge 1s ease .8s; }
+@keyframes reveal-forge {
+  0% { filter: brightness(1); } 30% { filter: brightness(2.4) drop-shadow(0 0 30px var(--gold)); }
+  60% { filter: brightness(1.3); } 100% { filter: brightness(1); }
+}
+.reveal-forge-ring {
+  position: absolute; inset: -10px; border-radius: 18px; border: 3px solid var(--gold);
+  opacity: 0; pointer-events: none;
+}
+.reveal-modal.show .reveal-card.forging .reveal-forge-ring { animation: reveal-ring 1s ease .8s; }
+@keyframes reveal-ring {
+  0% { opacity: 0.9; transform: scale(0.7); } 100% { opacity: 0; transform: scale(1.5); }
+}
+.reveal-btn {
+  margin-top: 30px; opacity: 0; transform: translateY(12px); transition: opacity .4s ease .9s, transform .4s ease .9s;
+}
+.reveal-modal.show .reveal-btn { opacity: 1; transform: translateY(0); }
+.reveal-modal.claiming .reveal-btn { opacity: 0; pointer-events: none; transition: opacity .15s; }
+
+/* "bad" (negative) reveals read as a cracked, red omen */
+.reveal-card.bad { border-color: #c8463c; box-shadow: 0 16px 40px rgba(0,0,0,0.6), 0 0 30px rgba(200,70,60,0.4); }
+.reveal-card.bad .rv-kind { color: #ff8a7a; }
+.reveal-card.bad .rv-art { color: #ff8a7a; border-color: #c8463c;
+  background: radial-gradient(circle at 50% 30%, rgba(120,40,36,0.5), #160c0c); }
+.reveal-modal.show .reveal-card.bad { animation: reveal-drop .55s cubic-bezier(.3,.9,.3,1.2) forwards; }
+@keyframes reveal-drop {
+  0% { opacity: 0; transform: translateY(-50px) scale(0.8) rotate(4deg); }
+  70% { opacity: 1; transform: translateY(6px) scale(1.02) rotate(-1deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+
+/* CLAIM: the prize pulls toward you, flares, and is absorbed ("it's yours now") */
+.reveal-modal.claiming .reveal-title,
+.reveal-modal.claiming .reveal-sub { opacity: 0; transition: opacity .25s ease; }
+.reveal-modal.claiming .reveal-rays { opacity: 0 !important; transition: opacity .3s; }
+.reveal-modal.claiming .reveal-card {
+  animation: reveal-claim .6s cubic-bezier(.4,0,.6,1) forwards !important;
+}
+@keyframes reveal-claim {
+  0%   { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1); }
+  28%  { opacity: 1; transform: translateY(-14px) scale(1.12); filter: brightness(1.9) drop-shadow(0 0 26px var(--g-color, var(--gold))); }
+  100% { opacity: 0; transform: translateY(-120px) scale(0.18); filter: brightness(2.4); }
+}
+.reveal-modal.bad.claiming .reveal-card {
+  animation: reveal-claim-bad .55s cubic-bezier(.5,0,.7,1) forwards !important;
+}
+@keyframes reveal-claim-bad {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(80px) scale(0.5) rotate(8deg); }
+}
+
+/* ============================================================
+   MAP UNFURL — the node screen unrolls like a parchment scroll
+   ============================================================ */
+/* the map viewport is clip-revealed from top to bottom */
+#screen-map.unfurling .map-scroll {
+  animation: mapUnroll 1100ms cubic-bezier(.22,.7,.25,1) both;
+  transform-origin: top center;
+}
+@keyframes mapUnroll {
+  0%   { clip-path: inset(0 0 100% 0); filter: brightness(0.66) saturate(0.8); }
+  18%  { filter: brightness(0.8); }
+  100% { clip-path: inset(0 0 0 0); filter: brightness(1) saturate(1); }
+}
+/* a faint parchment warmth that blooms as it opens, then fades */
+#screen-map.unfurling .map-canvas::before {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(180deg, rgba(64,44,20,0.0), rgba(40,26,10,0.22));
+  animation: mapWarmth 1100ms ease-out both;
+}
+@keyframes mapWarmth { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+
+/* overlay holding the rolling rod; JS sizes it to the scroll viewport */
+.unfurl-rod-layer {
+  position: absolute; pointer-events: none; z-index: 40; overflow: hidden; opacity: 0;
+}
+#screen-map.unfurling .unfurl-rod-layer { opacity: 1; }
+.unfurl-rod {
+  position: absolute; left: -1.5%; right: -1.5%; top: 0; height: 20px; border-radius: 11px;
+  background: linear-gradient(180deg, #2a1c0d 0%, #6e4c24 26%, #c79a51 46%, #f3d79a 52%, #b07e38 62%, #5c3f1d 82%, #241708 100%);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.65), 0 0 18px rgba(245,201,105,0.5), inset 0 1px 0 rgba(255,240,200,0.5);
+}
+/* turned end-caps on the rod */
+.unfurl-rod::before, .unfurl-rod::after {
+  content: ''; position: absolute; top: 50%; width: 22px; height: 30px; transform: translateY(-50%);
+  border-radius: 6px; background: radial-gradient(circle at 40% 40%, #f3d79a, #8a5f2c 60%, #3a2814);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.6);
+}
+.unfurl-rod::before { left: -16px; }
+.unfurl-rod::after  { right: -16px; }
+/* the soft shadow the rolled-away paper casts just ahead of the rod */
+.unfurl-rod-shadow {
+  position: absolute; left: 0; right: 0; top: 0; height: 90px; pointer-events: none;
+  background: linear-gradient(180deg, rgba(6,4,10,0.55), rgba(6,4,10,0.0));
+}
+#screen-map.unfurling .unfurl-rod {
+  animation: rodSweep 1100ms cubic-bezier(.22,.7,.25,1) both;
+}
+#screen-map.unfurling .unfurl-rod-shadow {
+  animation: rodShadowSweep 1100ms cubic-bezier(.22,.7,.25,1) both;
+}
+@keyframes rodSweep {
+  0%   { top: -2px; filter: brightness(1.25); }
+  100% { top: 100%; filter: brightness(1); }
+}
+@keyframes rodShadowSweep {
+  0% { top: 0; opacity: 0.0; }
+  10% { opacity: 1; }
+  100% { top: calc(100% - 2px); opacity: 1; }
+}
