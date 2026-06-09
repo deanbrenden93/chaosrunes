@@ -1745,10 +1745,10 @@
       }
     }
 
-    // Mirror twist: if EVERY glyph played this turn is Mirror, the chain instead
-    // replays your previous turn's genuine actions.
+    // Mirror twist: only when EVERY socket on the board holds a Mirror —
+    // a full board of mirrors replays your previous turn's genuine actions.
     const isMirror = s => baseOf(glyph(s.id).cloneOf || s.id) === 'mirror';
-    const allMirror = seq.length > 0 && seq.every(isMirror);
+    const allMirror = seq.length > 0 && seq.every(isMirror) && freeSocketCount() === 0;
     let runSeq = seq;
     let recordPlays = true;
     if (allMirror && B.lastTurnPlays.length) {
@@ -2179,10 +2179,12 @@
   function simulateChain(extraId) {
     const board = fcVirtualBoard(extraId);
     let seq = fcBuildSeq(board.sockets, board.spanHead);
-    // Hall of Mirrors twist — an all-Mirror chain replays last turn instead
+    // Hall of Mirrors twist — fires only when EVERY usable socket holds a Mirror
     const isMir = s => baseOf(glyph(s.id).cloneOf || s.id) === 'mirror';
+    const vFree = board.sockets.reduce((n, s, i) =>
+      n + (s == null && board.spanHead[i] == null && slotTakesGlyph(i) && !slotDisabled(i) ? 1 : 0), 0);
     let mirrorTurn = false;
-    if (seq.length && seq.every(isMir) && B.lastTurnPlays.length) {
+    if (seq.length && seq.every(isMir) && vFree === 0 && B.lastTurnPlays.length) {
       mirrorTurn = true;
       seq = B.lastTurnPlays.map(id => ({ id, slot: -1, covered: [], replay: true }));
     }
@@ -2190,7 +2192,9 @@
     const T = {
       foes: B.enemies.filter(e => e.alive).map(e => ({
         ref: e, hp: e.hp, shield: e.shield, burn: e.burn || 0, scare: e.scare || 0,
-        leech: e.leech || 0, alive: true, dmg: 0, burnAdd: 0
+        leech: e.leech || 0, alive: true,
+        dmg: 0, burnAdd: 0, scareAdd: 0, leechAdd: 0,      // certain
+        pdmg: 0, pburn: 0, pscare: 0, pleech: 0            // possible (random / chance)
       })),
       rndDmg: 0, rndSwings: 0,
       shield: B.playerShield, shieldGain: 0,
@@ -2200,7 +2204,8 @@
       frail: B.playerFrail > 0, weak: B.playerWeak > 0,
       burnTotal: 0, scareTotal: 0, leechTotal: 0,
       husks: 0, clones: 0, holds: 0, devours: 0,
-      everRamp: 0, approx: false, mirrorTurn, steps: seq.length
+      everRamp: 0, approx: false, mirrorTurn, steps: seq.length,
+      handFx: []   // end-of-turn effects from glyphs left in hand, with sources
     };
 
     const A = () => T.foes.filter(f => f.alive);
@@ -2223,9 +2228,17 @@
       let dmg = base;
       if (T.weak) dmg = Math.max(1, Math.round(dmg * 0.6));
       if (t === 'random') {
-        const amt = Math.max(0, Math.round(dmg + (opts.strength === false ? 0 : T.strength)));
-        T.rndDmg += amt; T.rndSwings++; T.approx = true;
-        return amt;
+        const pool = A();
+        if (!pool.length) return 0;
+        // a lone survivor makes "random" a sure thing — resolve it exactly
+        if (pool.length === 1) t = pool[0];
+        else {
+          const amt = Math.max(0, Math.round(dmg + (opts.strength === false ? 0 : T.strength)));
+          T.rndDmg += amt; T.rndSwings++; T.approx = true;
+          // every foe alive right now is in this strike's pool
+          pool.forEach(f => { f.pdmg += amt; });
+          return amt;
+        }
       }
       if (!t || !t.alive) return 0;
       let amt = dmg;
@@ -2272,7 +2285,16 @@
     function fcBurn(t, n) {
       if (n <= 0) return;
       if (stepCursed && !stepBurnMirrored) { stepBurnMirrored = true; T.playerBurn += n; }
-      if (t === 'random') { T.burnTotal += n; T.approx = true; return; }
+      if (t === 'random') {
+        const pool = A();
+        if (!pool.length) return;
+        if (pool.length === 1) t = pool[0];
+        else {
+          T.burnTotal += n; T.approx = true;
+          pool.forEach(f => { f.pburn += n; });
+          return;
+        }
+      }
       if (!t || !t.alive) return;
       t.burn += n; t.burnAdd += n; T.burnTotal += n;
     }
@@ -2359,15 +2381,24 @@
         }
         case 'juggernaut': fcShield(Math.ceil(B.monster.maxHp / 2) + gt); break;
         /* -------- GHOUL -------- */
-        case 'leech': { const t = tCenter(); fcVolley([t], 3 + gt + E); if (t && t.alive) { t.leech = 3; T.leechTotal++; } break; }
+        case 'leech': { const t = tCenter(); fcVolley([t], 3 + gt + E); if (t && t.alive) { t.leech = 3; t.leechAdd++; T.leechTotal++; } break; }
         case 'rake': {
           for (let n = 0; n < 2; n++) fcVolley(['random'], 2 + gt + E);
-          if (ctx.isLast && ctx.totalRed === 1) { T.leechTotal++; T.approx = true; }
+          if (ctx.isLast && ctx.totalRed === 1) {
+            A().forEach(f => { f.pleech++; });
+            T.leechTotal++; T.approx = true;
+          }
           break;
         }
         case 'vigor': fcStr(1 + (ctx.redAfter || 0) + Math.round(gtx)); break;
         case 'blood_harden': fcShield(2 + A().filter(f => f.leech > 0).length + gt); break;
-        case 'snarl': { T.scareTotal += (1 + Math.round(gtx)) * A().length; T.approx = true; break; }
+        case 'snarl': {
+          const stacks = 1 + Math.round(gtx);
+          // each foe rolls its own ~50% resist — a chance, not a promise
+          A().forEach(f => { f.pscare += stacks; });
+          T.scareTotal += stacks * A().length; T.approx = true;
+          break;
+        }
         case 'gnaw': fcVolley([tFirst()], 4 + gt + E); fcHeal(2 + gtx); break;
         case 'grave_rot': {
           const all = A();
@@ -2381,13 +2412,13 @@
         case 'exsanguinate': {
           const t = tCenter();
           fcVolley([t], 5 + gt + E);
-          if (t && t.alive) { t.leech = 3; T.leechTotal++; }
+          if (t && t.alive) { t.leech = 3; t.leechAdd++; T.leechTotal++; }
           fcHeal(3 + gtx);
           break;
         }
         case 'dread_howl': {
           const stacks = 1 + Math.round(gtx) + (B.monster.hp < B.monster.maxHp / 2 ? 1 : 0);
-          A().forEach(f => { f.scare += stacks; });
+          A().forEach(f => { f.scare += stacks; f.scareAdd += stacks; });
           T.scareTotal += stacks * A().length;
           break;
         }
@@ -2398,7 +2429,7 @@
           break;
         }
         case 'glutton': fcVolley([tFirst()], Math.max(2, 2 * ((B.monster.devoured || 0) + T.devours)) + gt + E); break;
-        case 'plague': { A().forEach(f => { f.leech = 3; }); T.leechTotal += A().length; fcHeal(2 + gtx); break; }
+        case 'plague': { A().forEach(f => { f.leech = 3; f.leechAdd++; }); T.leechTotal += A().length; fcHeal(2 + gtx); break; }
         case 'mass_grave': T.husks += 3; fcVolley(tAll(), 2 + gt + E); break;
         case 'lich_ascendant': fcHeal(8 + gtx); fcStr(2 + Math.round(gtx)); break;
         case 'husk': fcVolley(['random'], 1 + gt + E); break;
@@ -2497,17 +2528,24 @@
       if (!A().length) break;
     }
 
-    // glyphs that would stay in hand fire their end-of-turn effects too
+    // glyphs that would stay in hand fire their end-of-turn effects too —
+    // tracked with their source name so the panel can say WHY
     if (A().length) {
       stepCursed = false;
       let skippedExtra = false;
+      const agg = {};
       B.hand.forEach(id => {
         if (extraId && id === extraId && !skippedExtra) { skippedExtra = true; return; }
-        const ou = glyph(id).onUnplayed;
+        const g = glyph(id), ou = g.onUnplayed;
         if (!ou) return;
-        if (ou.kind === 'damageRandom') fcVolley(['random'], ou.value);
-        else if (ou.kind === 'block') fcShield(ou.value);
+        let amt = 0;
+        if (ou.kind === 'damageRandom') { fcVolley(['random'], ou.value); amt = ou.value; }
+        else if (ou.kind === 'block') amt = fcShield(ou.value);
+        const k = g.name + '|' + ou.kind;
+        agg[k] = agg[k] || { name: g.name, kind: ou.kind, n: 0, amt: 0 };
+        agg[k].n++; agg[k].amt += amt;
       });
+      T.handFx = Object.values(agg);
     }
     return T;
   }
@@ -2544,29 +2582,25 @@
     if (!B) return;
     const bar = fcEnsureBar();
     const placedAny = B.sockets.some(Boolean);
-    if (B.ended || B.resolving || (!placedAny && !hoverId)) {
+    if (B.ended || B.resolving) {
       bar.classList.remove('show');
       clearForecastMarks();
       return;
     }
+    // one unambiguous projection per view: hover = "you play this card";
+    // otherwise = "you Act now" — which, on an empty board, is purely the
+    // end-of-turn effects of the cards sitting in hand
     const sim = simulateChain(hoverId || null);
-    const base = hoverId ? simulateChain(null) : null;
     const sumDmg = s => s.foes.reduce((n, f) => n + f.dmg, 0) + s.rndDmg;
     const dmgAll = sumDmg(sim);
     const lethal = sim.foes.filter(f => !f.alive).length;
-    const delta = (cur, b) => {
-      if (!base) return '';
-      const d = cur - b;
-      if (!d) return '';
-      return ' <i class="fc-delta' + (d < 0 ? ' down' : '') + '">' + (d > 0 ? '+' : '') + d + '</i>';
-    };
     const rows = [];
-    if (dmgAll > 0) rows.push(fcRow('dmg', '⚔', (sim.approx ? '~' : '') + dmgAll + delta(dmgAll, base ? sumDmg(base) : 0), 'damage'));
-    if (sim.rndDmg > 0) rows.push(fcRow('rnd', '🎲', sim.rndDmg, sim.rndSwings + ' random strike' + (sim.rndSwings === 1 ? '' : 's')));
+    if (dmgAll > 0) rows.push(fcRow('dmg', '⚔', (sim.approx ? '~' : '') + dmgAll, 'damage'));
+    if (sim.rndDmg > 0) rows.push(fcRow('rnd', '🎲', sim.rndDmg, 'random damage, ' + sim.rndSwings + ' hit' + (sim.rndSwings === 1 ? '' : 's')));
     if (lethal > 0) rows.push(fcRow('lethal', '💀', lethal, lethal === 1 ? 'killing blow' : 'killing blows'));
-    if (sim.shieldGain > 0) rows.push(fcRow('shield', '◆', sim.shieldGain + delta(sim.shieldGain, base ? base.shieldGain : 0), 'block'));
-    if (sim.heal > 0) rows.push(fcRow('heal', '♥', sim.heal + delta(sim.heal, base ? base.heal : 0), 'healing'));
-    if (sim.burnTotal > 0) rows.push(fcRow('burn', '🔥', sim.burnTotal + delta(sim.burnTotal, base ? base.burnTotal : 0), 'burn applied'));
+    if (sim.shieldGain > 0) rows.push(fcRow('shield', '◆', sim.shieldGain, 'block'));
+    if (sim.heal > 0) rows.push(fcRow('heal', '♥', sim.heal, 'healing'));
+    if (sim.burnTotal > 0) rows.push(fcRow('burn', '🔥', sim.burnTotal, 'burn applied'));
     if (sim.scareTotal > 0) rows.push(fcRow('scare', '☠', '~' + sim.scareTotal, 'scare'));
     if (sim.leechTotal > 0) rows.push(fcRow('leech', '🩸', sim.leechTotal, 'leeched'));
     if (sim.strGain > 0) rows.push(fcRow('str', '✦', '+' + sim.strGain, 'Strength'));
@@ -2582,25 +2616,47 @@
       clearForecastMarks();
       return;
     }
+    // explain end-of-turn effects from glyphs that would stay in hand
+    let handNote = '';
+    if (sim.handFx.length) {
+      const bits = sim.handFx.map(h =>
+        h.name + (h.n > 1 ? ' ×' + h.n : '') + ' ' +
+        (h.kind === 'block' ? '<i class="fn-shield">◆' + h.amt + '</i>' : '<i class="fn-dmg">🎲⚔' + h.amt + '</i>'));
+      handNote = '<div class="fc-note hand">✋ left in hand at turn\u2019s end: ' + bits.join(' · ') + '</div>';
+    }
+    const sub = hoverId ? 'playing ' + glyph(hoverId).name
+      : sim.mirrorTurn ? 'Hall of Mirrors — last turn echoes'
+      : placedAny ? 'if you Act now'
+      : 'cards waiting in hand';
     bar.innerHTML =
       '<div class="fc-head">Forecast</div>' +
-      '<div class="fc-sub">' + (hoverId
-        ? '+ ' + glyph(hoverId).name
-        : (sim.mirrorTurn ? 'Hall of Mirrors — last turn echoes' : 'if you Act now')) + '</div>' +
+      '<div class="fc-sub">' + sub + '</div>' +
       rows.join('') +
-      (sim.approx ? '<div class="fc-note">🎲 random targets — totals are estimates</div>' : '');
+      handNote +
+      (sim.approx ? '<div class="fc-note">~ marks over foes — possible shares of random effects</div>' : '');
     bar.classList.add('show');
 
-    // floating per-foe projections: solid numbers where the chain WILL land
+    // floating per-foe projections: solid numbers for what WILL land,
+    // dimmed "~" shares for each random/chance effect the foe might catch
     B.enemies.forEach(en => {
       const f = sim.foes.find(x => x.ref === en);
       let m = en.dom && en.dom.querySelector('.fc-mark');
-      const want = en.alive && f && (f.dmg > 0 || f.burnAdd > 0);
-      if (!want) { if (m) m.remove(); return; }
+      const sure = f && (f.dmg > 0 || f.burnAdd > 0 || f.scareAdd > 0 || f.leechAdd > 0);
+      const maybe = f && (f.pdmg > 0 || f.pburn > 0 || f.pscare > 0 || f.pleech > 0);
+      if (!en.alive || !f || (!sure && !maybe)) { if (m) m.remove(); return; }
       if (!m) { m = el('div', 'fc-mark'); en.dom.appendChild(m); }
       m.classList.toggle('lethal', !f.alive);
-      m.innerHTML = (!f.alive ? '💀 ' : '⚔ ') + f.dmg +
-        (f.burnAdd > 0 ? ' <i class="fm-burn">🔥' + f.burnAdd + '</i>' : '');
+      m.classList.toggle('maybe', !sure);
+      let html = '';
+      if (f.dmg > 0 || !f.alive) html += (!f.alive ? '💀 ' : '⚔ ') + f.dmg;
+      if (f.burnAdd > 0) html += ' <i class="fm-burn">🔥' + f.burnAdd + '</i>';
+      if (f.scareAdd > 0) html += ' <i class="fm-scare">☠+' + f.scareAdd + '</i>';
+      if (f.leechAdd > 0) html += ' <i class="fm-leech">🩸</i>';
+      if (f.pdmg > 0) html += ' <i class="fm-maybe">🎲~' + f.pdmg + '</i>';
+      if (f.pburn > 0) html += ' <i class="fm-maybe fm-burn">🔥~' + f.pburn + '</i>';
+      if (f.pscare > 0) html += ' <i class="fm-maybe fm-scare">☠~' + f.pscare + '</i>';
+      if (f.pleech > 0) html += ' <i class="fm-maybe fm-leech">🩸?</i>';
+      m.innerHTML = html.trim();
     });
 
     // matching projection over the beast — block / heal / buffs / recoil

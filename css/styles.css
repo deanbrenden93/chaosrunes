@@ -3174,12 +3174,14 @@ html, body {
 .chain-forecast .fc-row.res .fc-val    { color: #9fd8ff; }
 .chain-forecast .fc-row.warn .fc-val   { color: #ff5470; }
 .chain-forecast .fc-row.lethal { animation: fc-lethal-pulse 1.1s ease-in-out infinite; }
-.chain-forecast .fc-delta { font-style: normal; font-size: 16px; color: #8ef0a8; margin-left: 2px; }
-.chain-forecast .fc-delta.down { color: #ff7b88; }
 .chain-forecast .fc-note {
   margin-top: 10px; padding-top: 8px; font-size: 14.5px; font-style: italic; color: var(--text-dim);
   border-top: 1px solid rgba(255,255,255,0.1);
 }
+/* "left in hand" attribution — explains shield/damage from unplayed glyphs */
+.chain-forecast .fc-note.hand i { font-style: normal; white-space: nowrap; }
+.chain-forecast .fc-note.hand .fn-shield { color: #8fd4ff; }
+.chain-forecast .fc-note.hand .fn-dmg    { color: #ffc06a; }
 
 /* floating "incoming" mark over each projected target */
 .fc-mark {
@@ -3191,7 +3193,19 @@ html, body {
   box-shadow: 0 6px 18px rgba(0,0,0,0.5), 0 0 14px rgba(255,90,60,0.22);
   animation: fc-mark-in .22s cubic-bezier(.2,1.4,.4,1) both;
 }
-.fc-mark .fm-burn { font-style: normal; color: #ffab52; font-size: 18px; margin-left: 4px; }
+.fc-mark .fm-burn  { font-style: normal; color: #ffab52; font-size: 18px; margin-left: 4px; }
+.fc-mark .fm-scare { font-style: normal; color: #d9a0ff; font-size: 18px; margin-left: 4px; }
+.fc-mark .fm-leech { font-style: normal; color: #ff7b88; font-size: 18px; margin-left: 4px; }
+/* the dice share — what this foe COULD take from random / chance effects */
+.fc-mark .fm-maybe { font-style: normal; color: #ffc06a; font-size: 17px; opacity: .9; margin-left: 4px; }
+.fc-mark .fm-maybe.fm-burn  { color: #cf9a64; }
+.fc-mark .fm-maybe.fm-scare { color: #b394cf; }
+.fc-mark .fm-maybe.fm-leech { color: #cf7d86; }
+.fc-mark.maybe {
+  color: #ffc06a; border-style: dashed; border-color: rgba(255,192,106,0.45);
+  background: rgba(10,6,16,0.78);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45), 0 0 12px rgba(255,180,90,0.14);
+}
 .fc-mark.lethal {
   color: #ffe08a; border-color: rgba(255,210,110,0.75);
   box-shadow: 0 6px 18px rgba(0,0,0,0.5), 0 0 20px rgba(255,200,90,0.5);

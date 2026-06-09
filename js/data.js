@@ -341,7 +341,7 @@
       id: 'mirror', name: 'Mirror', color: 'red', rune: '🜟',
       character: 'kitsune', letter: 'wild', rarity: 'common',
       dyn: [{ kind: 'echo', base: 0 }],
-      desc: 'Repeat the effect of the previous glyph played this turn, with <b>+{0}</b> bonus power. (Nothing if played first.)<br><i>If every glyph played this turn is Mirror, instead copy your previous turn\'s actions.</i>'
+      desc: 'Repeat the effect of the previous glyph played this turn, with <b>+{0}</b> bonus power. (Nothing if played first.)<br><i>If EVERY socket is filled with a Mirror, instead copy your previous turn\'s actions.</i>'
     },
     spark: {
       id: 'spark', name: 'Spark', color: 'red', rune: '🜂',
