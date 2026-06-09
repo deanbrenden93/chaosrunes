@@ -45,10 +45,19 @@
       <section id="screen-start" class="screen">
         <div class="bg-runes" aria-hidden="true"></div>
         <div class="start-inner">
-          <h2 class="choose-head">Choose Your Beast</h2>
-          <div id="starter-row" class="starter-row"><!-- starter cards injected --></div>
+          <header class="choose-banner">
+            <h2 class="choose-head">Choose Your Beast</h2>
+            <p class="choose-sub">Three souls answer the forge-call. Only one climbs the Spire.</p>
+          </header>
+          <!-- the bestiary: one full-page spread per beast, with turnable pages -->
+          <div class="beast-pager">
+            <button id="beast-prev" class="page-arrow" aria-label="Previous beast">‹</button>
+            <div id="beast-page" class="beast-page"><!-- page injected --></div>
+            <button id="beast-next" class="page-arrow" aria-label="Next beast">›</button>
+          </div>
           <div class="start-actions">
             <button id="btn-start-back" class="btn btn-ghost">‹ Back</button>
+            <div id="beast-tabs" class="beast-tabs"><!-- beast tabs injected --></div>
             <button id="btn-begin" class="btn btn-primary btn-begin" disabled>Begin the Descent</button>
           </div>
         </div>
@@ -84,7 +93,7 @@
         <div class="map-bg" aria-hidden="true"></div>
         <div class="bg-runes" aria-hidden="true"></div>
         <header class="map-header">
-          <h2 class="map-title">The Spire of Chaos</h2>
+          <h2 id="map-title" class="map-title">The Spire of Chaos</h2>
           <button id="btn-collection" class="btn btn-ghost">Collection</button>
         </header>
         <div class="map-scroll">
@@ -102,6 +111,9 @@
 
         <!-- enemies centered, dungeon-crawler facing -->
         <div class="enemy-zone" id="enemy-zone"></div>
+
+        <!-- universal combat tooltip — one large readable panel, left of the enemies -->
+        <aside id="combat-tip" class="combat-tip" aria-live="polite"></aside>
 
         <!-- player represented bottom-left (first-person) -->
         <div id="player-panel" class="player-panel">
@@ -123,12 +135,12 @@
 
         <!-- draw + discard piles -->
         <div id="pile-tray" class="pile-tray">
-          <button id="pile-deck" class="pile pile-deck" title="Draw pile — cards left to draw">
+          <button id="pile-deck" class="pile pile-deck" data-tip="Your draw pile — the cards left to draw this battle. Click to view.">
             <span class="pile-art">🂠</span>
             <span class="pile-label">Deck</span>
             <span class="pile-count" id="pile-deck-count">0</span>
           </button>
-          <button id="pile-discard" class="pile pile-discard" title="Discard pile — click to view">
+          <button id="pile-discard" class="pile pile-discard" data-tip="Your discard pile — spent cards reshuffle into the draw pile when it empties. Click to view.">
             <span class="pile-art">♺</span>
             <span class="pile-label">Discard</span>
             <span class="pile-count" id="pile-discard-count">0</span>

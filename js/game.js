@@ -76,7 +76,34 @@
   // ---- Run state (rebuilt each run) ----
   let State = null;
   let pendingMonsterPick = null;
-  let pendingVictory = false;   // boss cleared -> victory after the reward screen
+  let pendingVictory = false;    // FINAL boss cleared -> victory after the reward screen
+  let pendingNextFloor = false;  // floor boss cleared -> climb to the next act after rewards
+
+  // ---- The Spire is climbed in 3 floors (acts), each barred by its own boss.
+  // Floors 1 and 2 roll one of three bosses; floor 3 is always the end-boss.
+  const SPIRE_FLOORS = 3;
+  const FLOOR_BOSSES = {
+    1: ['voidIdol', 'hollowChoir', 'mawMother'],
+    2: ['gravetideColossus', 'cinderQueen', 'hollowShepherd'],
+    3: ['chaosIncarnate']
+  };
+  // each boss brings its own court into the arena
+  const BOSS_ESCORTS = {
+    voidIdol: ['cinderling'],
+    hollowChoir: ['hexweaver'],
+    mawMother: ['cinderling'],
+    gravetideColossus: ['gravewarden'],
+    cinderQueen: ['cinderling', 'cinderling'],
+    hollowShepherd: ['gravewarden'],
+    chaosIncarnate: ['maledict', 'hexweaver']
+  };
+  function pickFloorBoss(act) {
+    const pool = FLOOR_BOSSES[act] || FLOOR_BOSSES[1];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  function currentBoss() {
+    return (State && State.bossId && ENEMIES[State.bossId]) || ENEMIES.voidIdol;
+  }
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, html) {
@@ -162,52 +189,157 @@
     repeat:   { icon: '×2', name: 'Repeat', blurb: 'The glyph placed here resolves twice.', color: '#c9a3ff' }
   };
   // pull out a beast's distinctive (non-normal) socket type(s) for its card
+  // (hybrid sockets store arrays — flatten them into unique types)
   function signatureSockets(m) {
     const seen = [];
-    (m.slotTypes || []).forEach(t => { if (t && t !== 'normal' && seen.indexOf(t) === -1) seen.push(t); });
+    (m.slotTypes || []).forEach(t => {
+      slotListOf(t).forEach(x => { if (seen.indexOf(x) === -1) seen.push(x); });
+    });
     return seen;
   }
 
-  function buildStart() {
-    const row = $('starter-row');
-    row.innerHTML = '';
-    pendingMonsterPick = null;
-    $('btn-begin').disabled = true;
+  // per-beast presentation flair for the bestiary: a roman numeral watermark
+  // and an honest 1-3 skull challenge rating
+  const BEAST_FLAIR = {
+    troll:   { numeral: 'I',   challenge: 1, challengeWord: 'Forgiving' },
+    ghoul:   { numeral: 'II',  challenge: 2, challengeWord: 'Tactical' },
+    kitsune: { numeral: 'III', challenge: 3, challengeWord: 'Brutal' }
+  };
 
-    Object.values(MONSTERS).forEach(m => {
-      const card = el('div', 'mcard');
-      card.style.color = m.color;
-      const sigs = signatureSockets(m);
-      const sigHTML = sigs.map(t => {
-        const s = SLOT_SIGNATURE[t] || { icon: '◇', name: t, blurb: '', color: 'var(--gold)' };
-        return `<div class="m-sig" style="--sig:${s.color}">
-            <span class="m-sig-badge">${s.icon}</span>
-            <span class="m-sig-text"><b class="m-sig-name">${s.name} Socket</b><span class="m-sig-blurb">${s.blurb}</span></span>
-          </div>`;
-      }).join('');
-      card.innerHTML = `
-        <div class="m-art-wrap">
-          <div class="m-emoji">${m.img ? `<img class="m-art" src="${m.img}" alt="">` : m.emoji}</div>
-        </div>
-        <div class="m-name">${m.name}</div>
-        <div class="m-role">${m.role}</div>
-        <div class="m-stats">
-          <span class="m-stat"><b>${m.maxHp}</b> <i>HP</i></span>
-          <span class="m-stat"><b>${m.sockets}</b> <i>Sockets</i></span>
-        </div>
-        <div class="m-signatures">${sigHTML}</div>
-        <div class="m-desc">${m.desc}</div>
-        <div class="m-passive"><span class="m-passive-tag">Passive</span> ${m.passiveText}</div>`;
-      card.addEventListener('mouseenter', () => SFX.hover());
-      card.addEventListener('click', () => {
+  // ---- Choose Your Beast: a bestiary with one full-page spread per beast.
+  // The open page IS the selection; arrows / tabs / ← → keys turn the pages.
+  let beastIds = [];
+  let beastIdx = 0;
+
+  function buildStart() {
+    beastIds = Object.keys(MONSTERS);
+    beastIdx = 0;
+    const prev = $('beast-prev'), next = $('beast-next');
+    if (prev) prev.onclick = () => flipBeast(-1);
+    if (next) next.onclick = () => flipBeast(1);
+    buildBeastTabs();
+    renderBeastPage(1);
+  }
+
+  function flipBeast(dir) {
+    SFX.click();
+    beastIdx = (beastIdx + dir + beastIds.length) % beastIds.length;
+    renderBeastPage(dir);
+  }
+
+  function buildBeastTabs() {
+    const tabs = $('beast-tabs');
+    if (!tabs) return;
+    tabs.innerHTML = '';
+    beastIds.forEach((id, i) => {
+      const m = MONSTERS[id];
+      const t = el('button', 'beast-tab');
+      t.style.setProperty('--beast', m.color);
+      t.title = m.name;
+      t.innerHTML = m.img ? '<img src="' + m.img + '" alt="' + m.name + '">' : '<span>' + m.emoji + '</span>';
+      t.addEventListener('mouseenter', () => SFX.hover());
+      t.addEventListener('click', () => {
+        if (i === beastIdx) return;
         SFX.click();
-        row.querySelectorAll('.mcard').forEach(c => c.classList.remove('selected'));
-        card.classList.add('selected');
-        pendingMonsterPick = m.id;
-        $('btn-begin').disabled = false;
+        const dir = i > beastIdx ? 1 : -1;
+        beastIdx = i;
+        renderBeastPage(dir);
       });
-      row.appendChild(card);
+      tabs.appendChild(t);
     });
+  }
+
+  function renderBeastPage(dir) {
+    const m = MONSTERS[beastIds[beastIdx]];
+    const flair = BEAST_FLAIR[m.id] || { numeral: '✦', challenge: 2, challengeWord: 'Tactical' };
+    const page = $('beast-page');
+    if (!page || !m) return;
+    page.style.setProperty('--beast', m.color);
+    page.style.setProperty('--dir', dir >= 0 ? 1 : -1);
+
+    // glanceable gauges: a vitality bar, the actual socket chain (special
+    // slots show their icon), and a 3-skull challenge rating
+    const maxHpAcross = Math.max.apply(null, Object.values(MONSTERS).map(x => x.maxHp));
+    const hpPct = Math.round((m.maxHp / maxHpAcross) * 100);
+    const pips = (m.slotTypes || []).map(t => {
+      const list = slotListOf(t);
+      if (!list.length) return '<span class="bc-pip">⬡</span>';
+      const info = SLOT_INFO[list[0]];
+      return '<span class="bc-pip special">' + (info ? info.icon : '◇') + '</span>';
+    }).join('');
+    const skulls = [0, 1, 2].map(i =>
+      '<span class="bc-skull' + (i < flair.challenge ? ' lit' : '') + '">☠</span>').join('');
+
+    // split "Stonehide: reduce all incoming damage…" into name + meaning
+    // (the sliced half starts mid-sentence, so re-capitalize it)
+    const pf = m.passiveText || '';
+    const ci = pf.indexOf(':');
+    const pName = ci > 0 ? pf.slice(0, ci).trim() : 'Passive';
+    let pDesc = ci > 0 ? pf.slice(ci + 1).trim() : pf;
+    pDesc = pDesc.charAt(0).toUpperCase() + pDesc.slice(1);
+
+    // signature socket(s) — the beast's headline trick
+    const sigHTML = signatureSockets(m).map(t => {
+      const s = SLOT_SIGNATURE[t] || { icon: '◇', name: t, blurb: '', color: 'var(--gold)' };
+      return `<div class="bc-feature bc-sig" style="--sig:${s.color}">
+          <span class="bcf-badge">${s.icon}</span>
+          <span class="bcf-text"><b>${s.name} Socket</b>${s.blurb}</span>
+        </div>`;
+    }).join('');
+
+    // the opening deck, told in glyph-color runestones
+    const dots = (m.deck || []).map(id =>
+      '<span class="bc-dot" style="--c:var(--' + ((GLYPHS[id] && GLYPHS[id].color) || 'gold') + ')"></span>').join('');
+
+    // a fresh .bp-content node each turn — its entrance animation IS the page turn
+    page.innerHTML = `
+      <div class="bp-content">
+        <div class="bc-aura" aria-hidden="true"></div>
+        <div class="bc-numeral" aria-hidden="true">${flair.numeral}</div>
+        <div class="bp-art-col">
+          ${m.img ? `<img class="bp-art" src="${m.img}" alt="">` : `<span class="bp-art bp-art-emoji">${m.emoji}</span>`}
+          <div class="bc-role">${m.role}</div>
+          <h3 class="bc-name">${m.name}</h3>
+        </div>
+        <div class="bp-info-col">
+          <div class="bc-gauges">
+            <div class="bc-gauge">
+              <span class="bcg-label">Vitality</span>
+              <span class="bcg-bar"><span class="bcg-fill" style="width:${hpPct}%"></span></span>
+              <span class="bcg-val">${m.maxHp} HP</span>
+            </div>
+            <div class="bc-gauge">
+              <span class="bcg-label">Sockets</span>
+              <span class="bcg-pips">${pips}</span>
+            </div>
+            <div class="bc-gauge">
+              <span class="bcg-label">Challenge</span>
+              <span class="bcg-skulls">${skulls}</span>
+              <span class="bcg-word">${flair.challengeWord}</span>
+            </div>
+          </div>
+          <div class="bc-feature bc-passive">
+            <span class="bcf-badge">✦</span>
+            <span class="bcf-text"><b>${pName}</b>${pDesc}</span>
+          </div>
+          ${sigHTML}
+          <p class="bc-tactic">${m.desc}</p>
+          <div class="bc-deck">
+            <span class="bcg-label">Opening deck</span>
+            <span class="bc-dots">${dots}</span>
+            <span class="bcg-val">${(m.deck || []).length} glyphs</span>
+          </div>
+        </div>
+      </div>`;
+
+    // tab states + the open page is the live choice
+    const tabs = $('beast-tabs');
+    if (tabs) Array.from(tabs.children).forEach((t, i) => t.classList.toggle('active', i === beastIdx));
+    pendingMonsterPick = m.id;
+    const begin = $('btn-begin');
+    begin.disabled = false;
+    begin.classList.add('armed');
+    begin.innerHTML = 'Descend with <b>' + m.name + '</b>';
   }
 
   // ============================================================
@@ -230,11 +362,14 @@
 
   function startRun(monsterId) {
     pendingVictory = false;
+    pendingNextFloor = false;
     State = {
       monsters: [ makeMonster(monsterId) ],
       activeIndex: 0,
       pool: (MONSTERS[monsterId].deck || []).slice(),
       souls: 0,
+      act: 1,                    // which Spire floor (act) we're climbing
+      bossId: pickFloorBoss(1),  // the boss barring this floor
       blessings: {},
       empower: {},               // per-CARD +N power (keyed by instance id)
       runEmpower: {},            // per-TYPE +N power that ALL copies share (keyed by base id; e.g. Everflame)
@@ -357,7 +492,15 @@
   // MAP RENDER
   // ============================================================
   const NODE_ICON = { battle: '⚔️', elite: '☠️', reward: '🎁', rest: '🔥', boss: '👑', event: '❔', shop: '🛒' };
-  const NODE_NAME = { battle: 'Battle', elite: 'Elite', reward: 'Cache', rest: 'Rest', boss: 'Chaos Idol', event: 'Event', shop: 'Bazaar' };
+  const NODE_NAME = { battle: 'Battle', elite: 'Elite', reward: 'Cache', rest: 'Rest', boss: 'Boss', event: 'Event', shop: 'Bazaar' };
+  // boss nodes are named after the boss actually waiting on this floor
+  function nodeLabel(node) {
+    if (node.type === 'boss') {
+      const b = currentBoss();
+      return b ? b.name.replace(/^The /, '') : NODE_NAME.boss;
+    }
+    return NODE_NAME[node.type];
+  }
 
   function mapLayout() {
     const W = 1920, H = 200 + FLOORS * 170;   // grows with floor count so a long run never crowds
@@ -376,6 +519,8 @@
   function renderMap() {
     const nodesC = $('map-nodes');
     const edges = $('map-edges');
+    const title = $('map-title');
+    if (title) title.textContent = 'The Spire of Chaos — Floor ' + (State.act || 1);
     nodesC.innerHTML = '';
     const L = mapLayout();
     edges.setAttribute('viewBox', `0 0 ${L.W} ${L.H}`);
@@ -410,7 +555,7 @@
       const n = el('div', 'mapnode type-' + node.type);
       n.style.left = p.x + 'px';
       n.style.top = p.y + 'px';
-      n.innerHTML = `<span>${NODE_ICON[node.type]}</span><span class="node-label">${NODE_NAME[node.type]}</span>`;
+      n.innerHTML = `<span>${NODE_ICON[node.type]}</span><span class="node-label">${nodeLabel(node)}</span>`;
       if (node.id === curId) n.classList.add('current');
       else if (node.visited) n.classList.add('visited');
       if (reachIds.indexOf(node.id) !== -1) {
@@ -446,11 +591,15 @@
   // poses a small puzzle (kill-order, burst windows, hit discipline) rather than a
   // bag of random foes. Tuned spicy — a real step up, still fair with good play.
   function enemyFormation(node) {
-    const f = node.floor;                       // 0-based
+    // effective depth folds in the current act, so floor 2/3 reuse the meaner
+    // group compositions (their stat scaling rides on Battle's depth knob)
+    const f = node.floor + ((State.act || 1) - 1) * 4;
     const E = ENEMIES;
 
     if (node.type === 'boss') {
-      return [ E.voidIdol, E.cinderling ];
+      const boss = currentBoss();
+      const escort = (BOSS_ESCORTS[boss.id] || []).map(id => E[id]).filter(Boolean);
+      return [ boss ].concat(escort);
     }
 
     if (node.type === 'elite') {
@@ -514,7 +663,8 @@
       root.CG.Battle.start({
         enemies: enemies,
         isBoss: node.type === 'boss',
-        depth: node.floor || 0,
+        // acts stack on top of node depth so floor 2/3 enemies hit and soak harder
+        depth: ((State.act || 1) - 1) * 10 + (node.floor || 0),
         onWin: () => onBattleWin(node),
         onLose: () => gameOver(false)
       });
@@ -530,12 +680,25 @@
   function onBattleWin(node) {
     State.cleared++;
     if (node.type === 'boss') {
-      pendingVictory = true;       // claim boss spoils, then the run is won
+      if ((State.act || 1) >= SPIRE_FLOORS) {
+        pendingVictory = true;     // the end-boss falls — claim spoils, then the run is won
+      } else {
+        pendingNextFloor = true;   // floor boss down — climb to the next act after rewards
+      }
       buildReward('boss');
     } else {
       buildReward(node.type === 'elite' ? 'elite' : 'normal');
     }
     show('screen-reward');
+  }
+
+  // the floor boss is beaten: roll the next act's boss and unfurl a fresh map
+  function advanceFloor() {
+    State.act = (State.act || 1) + 1;
+    State.bossId = pickFloorBoss(State.act);
+    State.map = genMap();
+    State.pos = { floor: -1, idx: null };
+    saveGame();
   }
 
   // ============================================================
@@ -611,6 +774,21 @@
       const bless = pickBlessing(tier);
       claims.appendChild(claimCard(bless.icon, tier === 'boss' ? 'Powerful Blessing' : 'Blessing',
         '<b>' + bless.name + '</b> — ' + bless.desc, 'var(--purple)', () => applyBlessing(bless)));
+    }
+
+    // --- Rare socket find (elites only): sockets otherwise come from bosses.
+    // 15% for one, an exceedingly rare 3% for two. ---
+    if (tier === 'elite') {
+      const roll = Math.random();
+      if (roll < 0.03) {
+        claims.appendChild(claimCard('🜨', 'Twin Sockets',
+          'An exceedingly rare find — <b>TWO</b> extra glyph sockets for <b>' + activeMonster().name + '</b>.',
+          'var(--blue)', () => gainSocket(2)));
+      } else if (roll < 0.18) {
+        claims.appendChild(claimCard('🜨', 'Extra Socket',
+          'A rare find — one extra glyph socket for <b>' + activeMonster().name + '</b>.',
+          'var(--blue)', () => gainSocket(1)));
+      }
     }
 
     // --- Evolution + guaranteed socket (boss only) ---
@@ -833,7 +1011,8 @@
   function pickBlessing(tier) {
     if (tier === 'boss') {
       const power = Object.values(POWER_BLESSINGS).filter(b => !(b.scope === 'run' && State.blessings[b.id]));
-      return rng(power.length ? power : Object.values(POWER_BLESSINGS));
+      if (power.length) return rng(power);
+      // power pool exhausted (multi-floor runs) — fall back to the standard pool
     }
     const choices = Object.values(BLESSINGS).filter(b => b.scope === 'run' ? !State.blessings[b.id] : true);
     return rng(choices.length ? choices : Object.values(BLESSINGS));
@@ -881,6 +1060,7 @@
     const hp = $('tb-hp'); if (hp) hp.textContent = Math.max(0, Math.round(m.hp)) + ' / ' + m.maxHp;
     const fill = $('tb-hpfill'); if (fill) fill.style.transform = 'scaleX(' + Math.max(0, m.hp / m.maxHp) + ')';
     const fl = $('tb-floor'); if (fl) fl.textContent = (State.pos.floor < 0 ? 1 : State.pos.floor + 1);
+    const fn = $('tb-floornum'); if (fn) fn.textContent = State.act || 1;
     const sv = $('tb-souls'); if (sv) sv.textContent = State.souls;
     const blEl = $('tb-blessings');
     if (blEl) {
@@ -1032,6 +1212,7 @@
     pendingClaims.forEach(fn => fn());
     pendingClaims = [];
     if (pendingVictory) { pendingVictory = false; gameOver(true); return; }
+    if (pendingNextFloor) { pendingNextFloor = false; advanceFloor(); }
     renderMap();
     show('screen-map');
     // pay out the souls from the node we just cleared, gating the map until they land
@@ -1394,7 +1575,7 @@
   // ============================================================
   // SHARED RUN-EFFECT HELPERS  (used by events, shop, rest)
   // ============================================================
-  const SLOT_NAME = { devil: 'Devil', catalyst: 'Catalyst', repeat: 'Repeat', hold: 'Hold', clone: 'Clone' };
+  const SLOT_NAME = { devil: 'Devil', catalyst: 'Catalyst', repeat: 'Repeat', hold: 'Hold', clone: 'Clone', empower: 'Empower', loopback: 'Loop' };
   // icon + label per slot type (mirrors battle's SLOT_META) for the forge modal
   const SLOT_INFO = {
     normal: null,
@@ -1407,16 +1588,40 @@
     empower: { icon: '⊕', label: 'Empower' }
   };
 
+  // ---- hybrid sockets: a slotTypes entry is 'normal', a plain special string,
+  // or an ARRAY of up to 3 special types (duplicates allowed; Devil never mixes)
+  function slotListOf(v) {
+    if (Array.isArray(v)) return v;
+    if (!v || v === 'normal') return [];
+    return [v];
+  }
+  function slotLabelOf(v) {
+    const list = slotListOf(v);
+    if (!list.length) return 'Normal';
+    const order = [], counts = {};
+    list.forEach(t => { if (!counts[t]) { counts[t] = 0; order.push(t); } counts[t]++; });
+    return order.map(t => (SLOT_INFO[t] ? SLOT_INFO[t].label : t) + (counts[t] > 1 ? ' ×' + counts[t] : '')).join(' · ');
+  }
+
   // ============================================================
   // SOCKET FORGE MODAL — celebrate a new socket / a reforged slot
   // ============================================================
   function paintSocketTile(t, type, num) {
-    const meta = SLOT_INFO[type];
-    t.className = 'socket modal-socket slot-' + type;
+    const list = slotListOf(type);
+    const primary = list.length ? list[0] : 'normal';
+    t.className = 'socket modal-socket slot-' + primary + (list.length > 1 ? ' slot-hybrid' : '');
+    let badge = '';
+    if (list.length) {
+      const order = [], counts = {};
+      list.forEach(x => { if (!counts[x]) { counts[x] = 0; order.push(x); } counts[x]++; });
+      const icons = order.map(x =>
+        '<span class="sb-ic">' + SLOT_INFO[x].icon + (counts[x] > 1 ? '<i>×' + counts[x] + '</i>' : '') + '</span>').join('');
+      badge = '<div class="slot-badge' + (order.length > 1 ? ' multi' : '') + '">' + icons + '</div>' +
+        '<div class="slot-type-name">' + slotLabelOf(type) + '</div>';
+    }
     t.innerHTML =
       '<img class="slot-img" src="assets/Base Rune.png" alt="">' +
-      '<span class="socket-num">' + num + '</span>' +
-      (meta ? '<div class="slot-badge">' + meta.icon + '</div><div class="slot-type-name">' + meta.label + '</div>' : '');
+      '<span class="socket-num">' + num + '</span>' + badge;
   }
 
   function showSocketModal(opts) {
@@ -1443,10 +1648,9 @@
         (opts.count > 1 ? '<b>' + opts.count + '</b> new sockets' : 'a new socket') +
         ' — more room to chain glyphs each turn.';
     } else {
-      const info = SLOT_INFO[opts.toType];
       $('socket-modal-title').textContent = 'A Socket Reshapes';
       $('socket-modal-sub').innerHTML = 'Socket <b>' + (opts.index + 1) + '</b> of <b>' + m.name +
-        '</b> is reforged into a <b>' + (info ? info.label : opts.toType) + '</b> slot' +
+        '</b> is reforged into a <b>' + slotLabelOf(opts.toType) + '</b> slot' +
         (opts.reorder ? ' — and is drawn to the <b>back</b> of the chain.' : '.');
     }
 
@@ -1625,27 +1829,43 @@
     m.slotTypes = order.map(i => types[i]);
     return { changed: changed, map: map, order: order };
   }
-  // turn one of the active beast's NORMAL sockets into a random special slot
+  // forge a special power onto one of the active beast's sockets. A normal
+  // socket takes its first type (possibly Devil); already-special sockets can
+  // take ANOTHER type on top — hybrids of up to 3, duplicates allowed and they
+  // stack. Devil never mixes: it only claims a fully normal socket, whole.
   function forgeRandomSlot() {
     const m = activeMonster();
     while (m.slotTypes.length < m.sockets) m.slotTypes.push('normal');
-    const normals = [];
-    m.slotTypes.forEach((t, i) => { if (t === 'normal') normals.push(i); });
-    if (!normals.length) return null;
-    const i = rng(normals);
-    const nt = rng(['devil', 'catalyst', 'repeat', 'hold', 'clone']);
-    m.slotTypes[i] = nt;
+    const open = [];
+    m.slotTypes.forEach((t, i) => {
+      if (t === 'devil') return;                  // devil sockets are sealed deals
+      if (slotListOf(t).length < 3) open.push(i); // room for one more type
+    });
+    if (!open.length) return null;
+    const i = rng(open);
+    const cur = slotListOf(m.slotTypes[i]);
+    // Devil is only on the table for a fully normal socket; Empower joins the
+    // pool so hybrids can stack boosts. (Pure Loop stays a born trait — forging
+    // one would eat a glyph slot, which feels like a downgrade.)
+    const pool = cur.length
+      ? ['catalyst', 'repeat', 'hold', 'clone', 'empower']
+      : ['devil', 'catalyst', 'repeat', 'hold', 'clone', 'empower'];
+    const nt = rng(pool);
     if (nt === 'devil') {
+      m.slotTypes[i] = 'devil';
       // render the morph in place, commit the devil-to-back reorder now, then
       // let the modal slide it to the end so data + visuals stay in lockstep.
       const preTypes = m.slotTypes.slice();
       const r = reorderDevilsLast(m);
-      showSocketModal({ mode: 'forge', index: i, fromType: 'normal', toType: nt,
+      showSocketModal({ mode: 'forge', index: i, fromType: 'normal', toType: 'devil',
         renderTypes: preTypes, reorder: r.changed ? r.order : null });
-    } else {
-      showSocketModal({ mode: 'forge', index: i, fromType: 'normal', toType: nt });
+      return { i: i, name: SLOT_NAME[nt] };
     }
-    return { i: i, name: SLOT_NAME[nt] };
+    const fromVal = m.slotTypes[i];
+    const next = cur.concat([nt]);
+    m.slotTypes[i] = next.length === 1 ? nt : next;
+    showSocketModal({ mode: 'forge', index: i, fromType: fromVal, toType: m.slotTypes[i] });
+    return { i: i, name: slotLabelOf(m.slotTypes[i]) };
   }
   function healActive(frac) {
     const m = activeMonster();
@@ -1810,9 +2030,9 @@
                 title: 'Fortune!', sub: 'The dice blaze gold — the idol coughs up a prize.',
                 cards: [ glyphRevealCard(g, { empower: 1, kind: 'New Glyph' }) ]
               };
-              // jackpot — the rare double win also cracks open a socket. Queue the
+              // jackpot — the RARE double win also cracks open a socket. Queue the
               // socket forge so it plays AFTER the glyph reveal is claimed.
-              if (Math.random() < 0.3) {
+              if (Math.random() < 0.12) {
                 reveal.onClaim = () => gainSocket(1);
                 return { text: 'Jackpot! The dice blaze gold — <b>' + g.name + '</b> (empowered), a fistful of souls, <b>and a new socket</b>.', reveal: reveal };
               }
@@ -1843,17 +2063,25 @@
 
   function eventTrial() {   // THREE-SELECT BOON — pick 1 of 3 permanent gifts
     const am = activeMonster();
-    // the third path is sometimes an extra socket, sometimes a slot reforge
-    const socketPath = Math.random() < 0.5;
+    // the third path is RARELY an extra socket, usually a slot reforge
+    const socketPath = Math.random() < 0.25;
     const third = socketPath
       ? {
           tag: 'Path', icon: '🜨', name: 'Path of the Vessel', color: 'var(--blue)',
           desc: 'Permanently grant your beast one more glyph socket.',
-          resolve: () => { gainSocket(1); return '<b>' + activeMonster().name + '</b> splits open a new socket — room for one more glyph.'; }
+          resolve: () => {
+            // an exceedingly rare blessing: the vessel splits open twice
+            if (Math.random() < 0.08) {
+              gainSocket(2);
+              return '<b>' + activeMonster().name + '</b> splits open — and keeps splitting. <b>TWO</b> new sockets!';
+            }
+            gainSocket(1);
+            return '<b>' + activeMonster().name + '</b> splits open a new socket — room for one more glyph.';
+          }
         }
       : {
           tag: 'Path', icon: '🜨', name: 'Path of the Forge', color: 'var(--blue)',
-          desc: 'Transform one normal socket of your beast into a random special slot.',
+          desc: 'Add a random special power to one of your beast\'s sockets — up to three can stack on a single slot.',
           resolve: () => {
             const r = forgeRandomSlot();
             return r ? 'A socket reshapes into a <b>' + r.name + '</b> slot, humming with new purpose.'
@@ -1995,18 +2223,11 @@
 
     grid.appendChild(shopCard({
       kind: 'Service', icon: '🜨', name: 'Reforge a Slot', color: 'var(--blue)',
-      desc: 'Transform one normal socket into a random special slot.', price: 70,
+      desc: 'Add a random special power to a socket — up to three can stack on one slot (Devil claims a whole socket).', price: 70,
       onBuy: () => forgeRandomSlot()
     }));
-
-    // a socket is rare stock — only some bazaars carry one
-    if (Math.random() < 0.4) {
-      grid.appendChild(shopCard({
-        kind: 'Rare', icon: '🜨', name: 'Forge a Socket', color: 'var(--gold)',
-        desc: 'Permanently grant your active beast one more glyph socket.', price: 95,
-        onBuy: () => gainSocket(1)
-      }));
-    }
+    // (whole sockets are no longer for sale — they come from bosses, and
+    //  rarely from elites or events, so the chain stays a true reward)
 
     // --- cleanse (only if there's junk to remove) ---
     const junkCount = State.pool.filter(id => gdef(id).junk).length;
@@ -2148,15 +2369,15 @@
   function gameOver(win) {
     clearSave();   // the run is over either way — no checkpoint to resume
     if (win) { SFX.victory(); } else { SFX.defeat(); }
-    $('end-title').textContent = win ? 'The Idol Shatters' : 'Undone';
+    $('end-title').textContent = win ? 'Chaos Unmade' : 'Undone';
     $('end-title').style.background = win
       ? 'linear-gradient(180deg,#ffd98a,#57e08f 60%,#4fb6ff)'
       : 'linear-gradient(180deg,#ff7a52,#b07bff)';
     $('end-title').style.webkitBackgroundClip = 'text';
     $('end-title').style.backgroundClip = 'text';
     $('end-sub').textContent = win
-      ? 'You forged the chain that broke the Spire. The Chaos Runes are yours.'
-      : 'Your beasts have fallen. The Spire claims another forger. Floors cleared: ' + State.cleared + '.';
+      ? 'Three floors climbed, Chaos Incarnate unmade. The Chaos Runes are yours.'
+      : 'Your beasts have fallen on floor ' + (State.act || 1) + ' of the Spire. Encounters cleared: ' + State.cleared + '.';
     show('screen-end');
   }
 
@@ -2184,6 +2405,8 @@
       if (!data || !data.state || !data.state.monsters) return false;
       State = data.state;
       if (!Array.isArray(State.items)) State.items = [];   // back-compat for pre-items saves
+      if (!State.act) State.act = 1;                       // back-compat for pre-multi-floor saves
+      if (!State.bossId) State.bossId = pickFloorBoss(State.act);
       root.CG.State = State;
       renderMap();
       show('screen-map');
@@ -2367,6 +2590,14 @@
       try { window.close(); } catch (e) { /* ignore */ }
     });
     $('btn-start-back').addEventListener('click', () => { SFX.click(); show('screen-home'); });
+
+    // turn bestiary pages with ← / → while on the beast-select screen
+    document.addEventListener('keydown', (e) => {
+      const scr = $('screen-start');
+      if (!scr || !scr.classList.contains('is-active')) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); flipBeast(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); flipBeast(1); }
+    });
 
     $('btn-begin').addEventListener('click', () => {
       if (!pendingMonsterPick) return;

@@ -39,7 +39,40 @@
     clone:    { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
     empower:  { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' }
   };
-  function slotType(i) { return (B.slotTypes && B.slotTypes[i]) || 'normal'; }
+  // ---- hybrid sockets ----
+  // a socket's slotTypes entry may be a plain string ('normal'/'devil'/'repeat'…)
+  // or an ARRAY of up to 3 special types (hybrids — duplicates allowed and they
+  // stack; Devil never mixes, so it always stays a plain string).
+  function slotTypesOf(v) {
+    if (Array.isArray(v)) return v;
+    if (!v || v === 'normal') return [];
+    return [v];
+  }
+  function slotList(i) { return slotTypesOf(B.slotTypes && B.slotTypes[i]); }
+  function slotCountAt(i, t) {
+    let n = 0; const l = slotList(i);
+    for (let k = 0; k < l.length; k++) if (l[k] === t) n++;
+    return n;
+  }
+  // pure-Loopback sockets hold no glyph; hybrid Loop sockets still do
+  function isPureLoop(i) {
+    const l = slotList(i);
+    return l.length > 0 && l.every(t => t === 'loopback');
+  }
+  // compress a type list into [{ t, n }] preserving first-seen order
+  function groupSlotTypes(list) {
+    const order = [], counts = {};
+    list.forEach(t => { if (!counts[t]) { counts[t] = 0; order.push(t); } counts[t]++; });
+    return order.map(t => ({ t: t, n: counts[t] }));
+  }
+  function slotLabel(list) {
+    return groupSlotTypes(list).map(g => SLOT_META[g.t].label + (g.n > 1 ? ' ×' + g.n : '')).join(' · ');
+  }
+  function slotTipHTML(list) {
+    return groupSlotTypes(list).map(g =>
+      '<b class="st-name">' + SLOT_META[g.t].label + (g.n > 1 ? ' ×' + g.n : '') + ' Socket</b>' + SLOT_META[g.t].tip
+    ).join('<br>');
+  }
 
   // ---- live battle state ----
   let B = null;
@@ -154,10 +187,149 @@
       <div class="statuses"></div>`;
   }
 
+  // ============================================================
+  // UNIVERSAL COMBAT TOOLTIP — the scattered hover tips all feed one large,
+  // readable panel on the left of the battlefield. The anchored tips still
+  // render (hidden by CSS) and act as the content source, so every tooltip
+  // stays live-updated without duplicating its logic here.
+  // ============================================================
+  let ctWired = false;
+  let ctSource = null;   // the element the open panel belongs to
+  function clearCombatTip() {
+    ctSource = null;
+    const ct = $('combat-tip');
+    if (ct) { ct.classList.remove('show'); ct.innerHTML = ''; }
+  }
+  function showCombatTip(html) {
+    const ct = $('combat-tip');
+    if (!ct) return;
+    ct.innerHTML = html;
+    ct.classList.add('show');
+  }
+  // the hover "owner" for any element under the cursor (or null)
+  function tipSourceFor(t) {
+    if (!t || t.nodeType !== 1 || !t.closest) return null;
+    return t.closest('#socket-row .socket') ||
+           t.closest('#hand-row .glyph') ||
+           t.closest('.intent') ||
+           t.closest('.status-badge') ||
+           t.closest('.pc-passive-badge') ||
+           t.closest('#pile-tray .pile') ||
+           t.closest('#btn-recall');
+  }
+  // a tip's body minus its lead <b>name</b> (the panel header already names it)
+  // and minus the emblem row (the header collects the emblems inline instead)
+  function tipBodySansName(tipEl) {
+    const c = tipEl.cloneNode(true);
+    const emb = c.querySelector('.g-tip-emblems');
+    if (emb) emb.remove();
+    const kids = Array.from(c.childNodes);
+    for (const k of kids) {
+      if (k.nodeType === 1 && k.tagName === 'B') {
+        const nxt = k.nextSibling;
+        k.remove();
+        if (nxt && nxt.nodeType === 1 && nxt.tagName === 'BR') nxt.remove();
+        break;
+      }
+    }
+    return c.innerHTML;
+  }
+  // build panel content for a hover source
+  function tipHTMLFor(src) {
+    if (!src) return null;
+    // a socket merges its glyph's live tip with its slot-type / seal / curse tips
+    if (src.matches('#socket-row .socket')) {
+      const parts = [];
+      const num = src.querySelector('.socket-num');
+      const tn = src.querySelector('.slot-type-name');
+      parts.push('<div class="ct-head">Socket ' + (num ? num.textContent : '') +
+        (tn ? ' — ' + tn.textContent : '') + '</div>');
+      const g = src.querySelector('.g-tip');
+      if (g) parts.push('<div class="ct-body">' + g.innerHTML + '</div>');
+      src.querySelectorAll('.slot-tip, .slot-fx-tip').forEach(x =>
+        parts.push((parts.length > 1 ? '<div class="ct-div"></div>' : '') +
+          '<div class="ct-body">' + x.innerHTML + '</div>'));
+      if (parts.length === 1) {
+        parts.push('<div class="ct-body">An empty socket — play a glyph from your hand into it.</div>');
+      }
+      return parts.join('');
+    }
+    // a glyph in hand — its name becomes the header (combo/temper emblems sit
+    // inline just before it), so both drop out of the body
+    if (src.matches('#hand-row .glyph')) {
+      const tip = src.querySelector('.g-tip');
+      if (tip) {
+        const nm = src.querySelector('.g-name');
+        const emb = tip.querySelector('.g-tip-emblems');
+        return '<div class="ct-head">' +
+          (emb ? '<span class="ct-emblems">' + emb.innerHTML + '</span>' : '') +
+          (nm ? nm.textContent : 'Glyph') + '</div>' +
+          '<div class="ct-body">' + tipBodySansName(tip) + '</div>';
+      }
+    }
+    // an enemy's telegraphed intent
+    if (src.classList.contains('intent')) {
+      const tip = src.querySelector('.intent-tip');
+      if (tip && tip.innerHTML) {
+        const host = src.closest('.combatant');
+        const nm = host && host.querySelector('.c-name');
+        return '<div class="ct-head">' + (nm ? nm.textContent + ' — ' : '') + 'Intent</div>' +
+          '<div class="ct-body">' + tip.innerHTML + '</div>';
+      }
+    }
+    // status badges (burn / weak / leech … on enemies or the player)
+    if (src.classList.contains('status-badge')) {
+      const tip = src.querySelector('.hud-tip');
+      if (tip) return '<div class="ct-head">Status</div><div class="ct-body">' + tip.innerHTML + '</div>';
+    }
+    // the beast's passive badge under its portrait
+    if (src.classList.contains('pc-passive-badge')) {
+      const tip = src.querySelector('.hud-tip');
+      if (tip) return '<div class="ct-head">Passive</div><div class="ct-body">' + tip.innerHTML + '</div>';
+    }
+    // draw / discard piles + the Recall button carry their text in data-tip
+    if (src.dataset && src.dataset.tip) {
+      const nm = src.querySelector('.pile-label');
+      return '<div class="ct-head">' + (nm ? nm.textContent + ' Pile' : 'Recall') + '</div>' +
+        '<div class="ct-body">' + src.dataset.tip + '</div>';
+    }
+    return null;
+  }
+  function wireCombatTip() {
+    if (ctWired) return;
+    ctWired = true;
+    const scr = $('screen-battle');
+    if (!scr) return;
+    scr.addEventListener('mouseover', (e) => {
+      if (handDrag.active) return;   // no tooltips while a card is being dragged
+      const src = tipSourceFor(e.target);
+      if (!src || src === ctSource) return;   // unchanged owner — don't rebuild
+      const html = tipHTMLFor(src);
+      if (html) { ctSource = src; showCombatTip(html); }
+    });
+    scr.addEventListener('mouseout', (e) => {
+      if (!ctSource) return;
+      const to = e.relatedTarget;
+      // still inside the same owner (or moving onto another tip source, which
+      // the mouseover above will repaint) — otherwise the panel goes away
+      if (to && (ctSource.contains(to) || tipSourceFor(to))) return;
+      clearCombatTip();
+    });
+    scr.addEventListener('mouseleave', () => clearCombatTip());
+  }
+  // re-renders replace DOM nodes — if the panel's owner got swapped out, the
+  // mouseout that would normally close it never fires, so close it here
+  function syncCombatTip() {
+    if (ctSource && !document.contains(ctSource)) clearCombatTip();
+  }
+
   function buildDOM() {
     // wipe last battle's leftovers so nothing stale flashes during the intro banner
     $('socket-row').innerHTML = '';
     $('hand-row').innerHTML = '';
+    wireCombatTip();
+    clearCombatTip();
+    renderForecast(null);   // fresh battle — clear any stale forecast panel
     hideComboMeter(true);
     const ez = $('enemy-zone');
     ez.innerHTML = '';
@@ -555,11 +727,13 @@
     updateRecallBtn();
     updateActButton();
     updatePiles();
+    renderForecast(null);
   }
 
-  // a slot can be filled if it accepts glyphs (Loopback never does), is empty
-  // (not already a glyph or a multi-socket continuation), and not sealed
-  function slotTakesGlyph(i) { return slotType(i) !== 'loopback'; }
+  // a slot can be filled if it accepts glyphs (pure Loopback never does — but a
+  // hybrid Loop socket still holds one), is empty (not already a glyph or a
+  // multi-socket continuation), and not sealed
+  function slotTakesGlyph(i) { return !isPureLoop(i); }
   function slotFillable(i) {
     return B.sockets[i] == null && (B.spanHead[i] == null) && slotTakesGlyph(i) && !slotDisabled(i);
   }
@@ -737,6 +911,7 @@
   function renderHand(animate) {
     const row = $('hand-row');
     row.innerHTML = '';
+    syncCombatTip();   // the old hand nodes are gone — drop a stale panel
     // is a combo chain already going? (a lettered glyph is socketed)
     const tail = placedComboTail();
     B.hand.forEach((id, i) => {
@@ -751,10 +926,20 @@
         t.style.opacity = '0.45'; t.style.cursor = 'not-allowed';
         if (!B.resolving && (glyph(id).slots || 1) > 1) t.classList.add('no-room');
       } else {
-        t.addEventListener('mouseenter', () => { SFX.hover(); t.style.zIndex = 1000; });
-        t.addEventListener('mouseleave', () => { t.style.zIndex = t.dataset.baseZ || 0; });
-        t.addEventListener('click', () => placeGlyph(i, t));
+        t.addEventListener('mouseenter', () => {
+          if (handDrag.active) return;
+          SFX.hover(); t.style.zIndex = 1000;
+          markDestSockets(id, true);     // light up where it would land
+          renderForecast(id);            // fold it into the forecast
+        });
+        t.addEventListener('mouseleave', () => {
+          t.style.zIndex = t.dataset.baseZ || 0;
+          if (handDrag.active) return;
+          markDestSockets(null, false);
+          renderForecast(null);
+        });
       }
+      wireHandDrag(t, i, playable);      // tap plays it; press-and-drag reorders
       row.appendChild(t);
     });
     layoutHand();
@@ -828,6 +1013,7 @@
     const natural = sumW + HAND_GAP * (n - 1);
     let step = HAND_GAP;
     if (n > 1 && natural > bandW) step = (bandW - sumW) / (n - 1);   // negative => overlap
+    row.dataset.step = step;   // the drag-reorder math reads the card pitch from here
     cards.forEach((c, i) => {
       c.style.marginLeft = (i === 0 ? 0 : step) + 'px';
       c.dataset.baseZ = i;        // later cards stack above earlier ones
@@ -855,15 +1041,18 @@
     row.innerHTML = '';
     const firstFree = firstFreeSocket();
     B.sockets.forEach((id, i) => {
-      const type = slotType(i);
-      const s = el('div', 'socket slot-' + type);
+      const list = slotList(i);
+      const primary = list.length ? list[0] : 'normal';
+      const s = el('div', 'socket slot-' + primary + (list.length > 1 ? ' slot-hybrid' : ''));
       s.innerHTML = '<img class="slot-img" src="assets/Base Rune.png" alt=""><span class="socket-num">' + (i + 1) + '</span>';
-      const meta = SLOT_META[type];
-      if (meta) {
-        const badge = el('div', 'slot-badge', meta.icon);
-        if (meta.tip) badge.appendChild(el('div', 'slot-tip', '<b class="st-name">' + meta.label + ' Socket</b><br>' + meta.tip));
+      if (list.length) {
+        const groups = groupSlotTypes(list);
+        const badge = el('div', 'slot-badge' + (groups.length > 1 ? ' multi' : ''));
+        badge.innerHTML = groups.map(g =>
+          '<span class="sb-ic">' + SLOT_META[g.t].icon + (g.n > 1 ? '<i>×' + g.n + '</i>' : '') + '</span>').join('');
+        badge.appendChild(el('div', 'slot-tip', slotTipHTML(list)));
         s.appendChild(badge);
-        s.appendChild(el('div', 'slot-type-name', meta.label));
+        s.appendChild(el('div', 'slot-type-name', slotLabel(list)));
       }
       const fx = B.slotFx[i] || {};
       const headIdx = B.spanHead[i];
@@ -883,9 +1072,19 @@
           s.classList.add('recallable');
           s.addEventListener('click', () => recallGlyph(headIdx, $('socket-row').children[headIdx]));
         }
-      } else if (type === 'loopback') {
+      } else if (isPureLoop(i)) {
         s.classList.add('loopback');   // never holds a glyph
         syncPulse(s, 2400);
+        if (fx.disabled > 0) {
+          // a sealed loop stays visible but dormant — show the lock so the
+          // player knows it won't replay this turn
+          s.classList.add('disabled');
+          const lb = el('div', 'slot-lock fx-badge', '⛔<span class="lock-turns">' + fx.disabled + '</span>');
+          lb.appendChild(el('div', 'slot-fx-tip',
+            '<b class="st-name">Sealed Socket</b>Shut tight by the enemy — this Loop will <b>not replay</b> the chain until it reopens.' +
+            '<span class="sft-turns">' + fx.disabled + ' turn(s) remaining</span>'));
+          s.appendChild(lb);
+        }
       } else if (id) {
         const g = glyph(id);
         const span = g.slots || 1;
@@ -939,6 +1138,7 @@
     // the runes are THE centerpiece — on the first build of a battle they
     // materialize one by one instead of snapping in
     if (B.socketIntro) { B.socketIntro = false; revealSockets(); }
+    syncCombatTip();   // the old socket nodes are gone — drop a stale panel
   }
 
   // ============================================================
@@ -995,6 +1195,7 @@
       });
     }
     updateActButton();
+    renderForecast(null);
   }
 
   function recallReady() {
@@ -1026,13 +1227,14 @@
     }
     updateRecallBtn();
     updateActButton();
+    renderForecast(null);
   }
   function updateRecallBtn() {
     const btn = $('btn-recall');
     if (!root.CG.Game.state.blessings.recall) { btn.classList.add('hidden'); return; }
     btn.classList.remove('hidden');
     btn.disabled = true;
-    btn.title = 'Click an equipped glyph to return it to your hand (once per turn).';
+    btn.dataset.tip = 'Click an equipped glyph to return it to your hand (once per turn).';
     btn.textContent = B.recallUsed ? '↺ Recall used' : '↺ Recall ready';
   }
 
@@ -1481,6 +1683,7 @@
     updateRecallBtn();
     renderSockets();
     renderHand(false);
+    renderForecast(null);   // the dry-run bows out — the real chain takes the stage
     // Act commits the chain — it should feel like an ignition, not a hit.
     // The screenshake/impact is reserved for actual damage landing.
     if (placed.length) SFX.act();
@@ -1489,39 +1692,55 @@
     // expand the sockets into an ordered resolution sequence honoring slot types.
     // Loopback replays the prior glyph steps; Repeat duplicates its glyph; Devil
     // is a non-effect "devour" step. A multi-socket glyph triggers the effect of
-    // EVERY slot it covers (hold, clone, catalyst, repeat, devil).
-    const seq = [];          // { id, slot, covered, type, replay?, repeat2?, holdAny?, cloneAny?, catalystAny? }
+    // EVERY slot it covers, and hybrid sockets stack: every INSTANCE of a special
+    // type counts (2× Repeat = 4 resolutions, 2× Clone = 2 copies, …).
+    const seq = [];          // { id, slot, covered, type, replay?, repeat2?, holdAny?, cloneCount?, catalystCount? }
     const baseSteps = [];    // original glyph steps, for Loopback replay
     for (let i = 0; i < B.sockets.length; i++) {
-      const type = slotType(i);
-      if (type === 'loopback') {
-        baseSteps.forEach(st => seq.push({ id: st.id, slot: st.slot, covered: st.covered, type: 'glyph', replay: true }));
+      const id = B.sockets[i];
+      // a pure-Loopback socket holds no glyph; each Loop instance replays the
+      // chain so far once (a sealed loop stays dormant this turn)
+      if (!id && B.spanHead[i] == null && isPureLoop(i)) {
+        if (!slotDisabled(i)) {
+          const loops = slotCountAt(i, 'loopback');
+          for (let L = 0; L < loops; L++) {
+            baseSteps.forEach(st => seq.push({ id: st.id, slot: st.slot, covered: st.covered, type: 'glyph', replay: true }));
+          }
+        }
         continue;
       }
-      const id = B.sockets[i];
       if (!id) continue;   // empty slot, or a multi-socket continuation
       // every socket this glyph occupies (head + continuations)
       const covered = [i];
       for (let j = i + 1; j < B.sockets.length; j++) if (B.spanHead[j] === i) covered.push(j);
-      const types = covered.map(slotType);
+      const countAcross = t => covered.reduce((n, ci) => n + slotCountAt(ci, t), 0);
       const step = {
         id, slot: i, covered, type: 'glyph',
-        holdAny: types.indexOf('hold') !== -1,
-        cloneAny: types.indexOf('clone') !== -1,
-        catalystAny: types.indexOf('catalyst') !== -1,
-        devourAny: types.indexOf('devil') !== -1   // resolves in the chain, THEN is devoured
+        holdAny: countAcross('hold') > 0,
+        cloneCount: countAcross('clone'),
+        catalystCount: countAcross('catalyst'),
+        devourAny: countAcross('devil') > 0   // resolves in the chain, THEN is devoured
       };
       seq.push(step); baseSteps.push(step);
-      // Repeat slots stack: a glyph spanning N repeat slots resolves 2×N times
-      // (1 slot → 2×, 2 → 4×, 3 → 6×). We already pushed the genuine step once,
+      // Repeat instances stack: a glyph covering N Repeats resolves 2×N times
+      // (1 → 2×, 2 → 4×, 3 → 6×). We already pushed the genuine step once,
       // so add (2×N − 1) extra copies; the extras carry repeat2 so slot
       // side-effects only fire on the original placement.
-      const repeatCount = types.filter(t => t === 'repeat').length;
+      const repeatCount = countAcross('repeat');
       if (repeatCount > 0) {
         const extra = 2 * repeatCount - 1;
         for (let r = 0; r < extra; r++) {
           const s2 = Object.assign({}, step, { repeat2: true });
           seq.push(s2); baseSteps.push(s2);
+        }
+      }
+      // hybrid Loop instance(s) riding on a FILLED socket: after this glyph (and
+      // its repeats), each instance replays the whole chain so far once
+      const loopHere = countAcross('loopback');
+      if (loopHere > 0 && !slotDisabled(i)) {
+        const snapshot = baseSteps.slice();
+        for (let L = 0; L < loopHere; L++) {
+          snapshot.forEach(st => seq.push({ id: st.id, slot: st.slot, covered: st.covered, type: 'glyph', replay: true }));
         }
       }
     }
@@ -1550,13 +1769,15 @@
     B.blueThisTurn = fxSteps.filter(s => glyph(s.id).color === 'blue').length;
     if (recordPlays && baseSteps.length) B.lastTurnPlays = baseSteps.map(s => s.id);
 
-    // Empower slots bolster the glyphs resolved immediately before and after them (+1 each).
+    // Empower slots bolster the glyphs resolved immediately before and after
+    // them (+1 each) — hybrid sockets stack, so 2× Empower grants +2.
     const empBonus = new Array(runSeq.length).fill(0);
     for (let k = 0; k < runSeq.length; k++) {
       const cov = runSeq[k].covered || [runSeq[k].slot];
-      if (cov.some(ci => slotType(ci) === 'empower')) {
-        if (k - 1 >= 0) empBonus[k - 1] += 1;
-        if (k + 1 < runSeq.length) empBonus[k + 1] += 1;
+      const empCount = cov.reduce((n, ci) => n + slotCountAt(ci, 'empower'), 0);
+      if (empCount > 0) {
+        if (k - 1 >= 0) empBonus[k - 1] += empCount;
+        if (k + 1 < runSeq.length) empBonus[k + 1] += empCount;
       }
     }
 
@@ -1569,7 +1790,7 @@
       if (!runSeq[gi].replay && !runSeq[gi].repeat2) { lastGenuineIdx = gi; break; }
     }
 
-    let prevId = null, chainPos = 0, fxIndex = 0, pendingCatalyst = null;
+    let prevId = null, chainPos = 0, fxIndex = 0, pendingCatalyst = [];
     B.lastMirrorTarget = null;   // resets each detonation; tracks what Mirrors are echoing
     let comboLen = 0, comboPrev = null, maxCombo = 0, prevComboEl = null;
     for (let k = 0; k < runSeq.length; k++) {
@@ -1589,8 +1810,11 @@
       if (linked && comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
       prevComboEl = (lt == null) ? null : sEl;
 
-      // a Catalyst placed earlier infuses this glyph's resolution
-      if (pendingCatalyst) { await applyCatalyst(pendingCatalyst, sEl); pendingCatalyst = null; }
+      // Catalysts placed earlier infuse this glyph's resolution (one per instance)
+      if (pendingCatalyst.length) {
+        for (const col of pendingCatalyst) await applyCatalyst(col, sEl);
+        pendingCatalyst = [];
+      }
 
       const g = glyph(ev.id);
       const redAfter = fxSteps.slice(fxIndex + 1).filter(s => glyph(s.id).color === 'red').length;
@@ -1602,7 +1826,7 @@
       // visualize the special-slot boosts as the glyph fires (genuine step only)
       if (!ev.replay && !ev.repeat2) {
         if (empBonus[k] > 0) empowerSpark(sEl, empBonus[k]);
-        const repAt = (ev.covered || [slot]).filter(ci => slotType(ci) === 'repeat').length;
+        const repAt = (ev.covered || [slot]).reduce((n, ci) => n + slotCountAt(ci, 'repeat'), 0);
         if (repAt > 0) repeatPop(sEl, 2 * repAt);
       }
 
@@ -1634,9 +1858,9 @@
       if (!ev.replay && !ev.repeat2) {
         // junk (enemy Rubble / Dead Weight) must never be cloned or held — that
         // could trap the player with permanent enemy cards in hand
-        if (ev.cloneAny && !g.junk) queueClone(ev.id, sEl);
+        if (ev.cloneCount && !g.junk) for (let c = 0; c < ev.cloneCount; c++) queueClone(ev.id, sEl);
         if (ev.holdAny && !g.junk) { B.extras.push(ev.id); removeOne(B.drawnThisTurn, ev.id); holdFx(sEl); }   // retained, not discarded
-        if (ev.catalystAny) pendingCatalyst = g.color;
+        if (ev.catalystCount) for (let c = 0; c < ev.catalystCount; c++) pendingCatalyst.push(g.color);
         if (ev.devourAny) { removeOne(B.drawnThisTurn, ev.id); await devourGlyph(ev.id, slot, sEl); }
       }
 
@@ -1837,20 +2061,21 @@
     }
     return order;
   }
-  // does the glyph anchored at head slot `h` cover an Empower socket?
-  function coversEmpower(h) {
-    if (slotType(h) === 'empower') return true;
-    for (let j = h + 1; j < B.sockets.length; j++) if (B.spanHead[j] === h && slotType(j) === 'empower') return true;
-    return false;
+  // total Empower instances covered by the glyph anchored at head slot `h`
+  // (hybrids stack — a 2× Empower socket counts twice)
+  function empowerCountAt(h) {
+    let n = slotCountAt(h, 'empower');
+    for (let j = h + 1; j < B.sockets.length; j++) if (B.spanHead[j] === h) n += slotCountAt(j, 'empower');
+    return n;
   }
-  // +1 for each Empower-glyph resolved immediately before/after this socket
+  // +N for the Empower instances resolved immediately before/after this socket
   function empowerBonusForSlot(slotIndex) {
     const order = placedOrder();
     const pos = order.indexOf(slotIndex);
     if (pos === -1) return 0;
     let b = 0;
-    if (pos > 0 && coversEmpower(order[pos - 1])) b += 1;
-    if (pos < order.length - 1 && coversEmpower(order[pos + 1])) b += 1;
+    if (pos > 0) b += empowerCountAt(order[pos - 1]);
+    if (pos < order.length - 1) b += empowerCountAt(order[pos + 1]);
     return b;
   }
   // env for a hand card if it were played NEXT (appended after the placed chain)
@@ -1860,9 +2085,9 @@
     const e = envFromSim(sim);
     e.gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
     e.comboBonus = linked ? (sim.len + (comboAdv(id) - 1)) : 0;
-    // if the last placed glyph sits in an Empower slot, a card played next is "after" it
+    // if the last placed glyph sits in Empower slot(s), a card played next is "after" them
     const order = placedOrder();
-    if (order.length && coversEmpower(order[order.length - 1])) e.comboBonus += 1;
+    if (order.length) e.comboBonus += empowerCountAt(order[order.length - 1]);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
     e.ramp = rampOf(id);
     e.linked = linked;
@@ -1882,6 +2107,633 @@
     return e;
   }
   function fmtDesc(id, env) { return root.CG.DATA.formatDesc(glyph(id), env); }
+
+  // ============================================================
+  // FORECAST — a faithful dry-run of the socketed chain.
+  // Builds the exact resolution sequence Detonate would run (loop
+  // replays, repeats, empower neighbors, catalysts, devours) and walks
+  // it against CLONED enemy state, so the player can read what the turn
+  // is about to deliver. Random-target effects pool into a 🎲 bucket
+  // instead of pretending to know where the dice land.
+  // ============================================================
+  // a virtual board: the live sockets, optionally with a hovered hand
+  // glyph dropped into the slot(s) it would actually take
+  function fcVirtualBoard(extraId) {
+    const sockets = B.sockets.slice();
+    const spanHead = B.spanHead.slice();
+    if (extraId) {
+      const span = glyph(extraId).slots || 1;
+      const at = firstFreeRun(span);
+      if (at !== -1) {
+        sockets[at] = extraId;
+        for (let k = 1; k < span; k++) spanHead[at + k] = at;
+      }
+    }
+    return { sockets, spanHead };
+  }
+  // mirror of detonate()'s sequence expansion, parameterized over a board
+  function fcBuildSeq(sockets, spanHead) {
+    const seq = [], baseSteps = [];
+    for (let i = 0; i < sockets.length; i++) {
+      const id = sockets[i];
+      if (!id && spanHead[i] == null && isPureLoop(i)) {
+        if (!slotDisabled(i)) {
+          const loops = slotCountAt(i, 'loopback');
+          for (let L = 0; L < loops; L++) {
+            baseSteps.forEach(st => seq.push({ id: st.id, slot: st.slot, covered: st.covered, replay: true }));
+          }
+        }
+        continue;
+      }
+      if (!id) continue;
+      const covered = [i];
+      for (let j = i + 1; j < sockets.length; j++) if (spanHead[j] === i) covered.push(j);
+      const countAcross = t => covered.reduce((n, ci) => n + slotCountAt(ci, t), 0);
+      const step = {
+        id, slot: i, covered,
+        holdAny: countAcross('hold') > 0,
+        cloneCount: countAcross('clone'),
+        catalystCount: countAcross('catalyst'),
+        devourAny: countAcross('devil') > 0
+      };
+      seq.push(step); baseSteps.push(step);
+      const repeatCount = countAcross('repeat');
+      if (repeatCount > 0) {
+        const extra = 2 * repeatCount - 1;
+        for (let r = 0; r < extra; r++) {
+          const s2 = Object.assign({}, step, { repeat2: true });
+          seq.push(s2); baseSteps.push(s2);
+        }
+      }
+      const loopHere = countAcross('loopback');
+      if (loopHere > 0 && !slotDisabled(i)) {
+        const snapshot = baseSteps.slice();
+        for (let L = 0; L < loopHere; L++) {
+          snapshot.forEach(st => seq.push({ id: st.id, slot: st.slot, covered: st.covered, replay: true }));
+        }
+      }
+    }
+    return seq;
+  }
+
+  function simulateChain(extraId) {
+    const board = fcVirtualBoard(extraId);
+    let seq = fcBuildSeq(board.sockets, board.spanHead);
+    // Hall of Mirrors twist — an all-Mirror chain replays last turn instead
+    const isMir = s => baseOf(glyph(s.id).cloneOf || s.id) === 'mirror';
+    let mirrorTurn = false;
+    if (seq.length && seq.every(isMir) && B.lastTurnPlays.length) {
+      mirrorTurn = true;
+      seq = B.lastTurnPlays.map(id => ({ id, slot: -1, covered: [], replay: true }));
+    }
+
+    const T = {
+      foes: B.enemies.filter(e => e.alive).map(e => ({
+        ref: e, hp: e.hp, shield: e.shield, burn: e.burn || 0, scare: e.scare || 0,
+        leech: e.leech || 0, alive: true, dmg: 0, burnAdd: 0
+      })),
+      rndDmg: 0, rndSwings: 0,
+      shield: B.playerShield, shieldGain: 0,
+      heal: 0, selfLoss: 0, playerBurn: 0,
+      strength: effStrength(), strGain: 0,
+      resilience: B.resilience, resGain: 0,
+      frail: B.playerFrail > 0, weak: B.playerWeak > 0,
+      burnTotal: 0, scareTotal: 0, leechTotal: 0,
+      husks: 0, clones: 0, holds: 0, devours: 0,
+      everRamp: 0, approx: false, mirrorTurn, steps: seq.length
+    };
+
+    const A = () => T.foes.filter(f => f.alive);
+    const tFirst = () => A()[0] || null;
+    const tAll = A;
+    const tLowest = () => { const a = A(); return a.length ? a.slice().sort((x, y) => x.hp - y.hp)[0] : null; };
+    const tHighest = () => { const a = A(); return a.length ? a.slice().sort((x, y) => y.hp - x.hp)[0] : null; };
+    const tCenter = () => { const a = A(); return a.length ? (a.length % 2 === 1 ? a[(a.length - 1) / 2] : a[a.length - 1]) : null; };
+
+    let stepCursed = false, stepBurnMirrored = false, lastMirrorTarget = null;
+
+    const fcWardOf = t => {
+      let w = 0;
+      T.foes.forEach(o => { if (o.alive && o !== t && o.ref.base && o.ref.base.ward > 0) w = Math.max(w, o.ref.base.ward); });
+      return w;
+    };
+    // one strike against one foe — mirrors applyDamage's math exactly
+    function fcHit(t, base, opts) {
+      opts = opts || {};
+      let dmg = base;
+      if (T.weak) dmg = Math.max(1, Math.round(dmg * 0.6));
+      if (t === 'random') {
+        const amt = Math.max(0, Math.round(dmg + (opts.strength === false ? 0 : T.strength)));
+        T.rndDmg += amt; T.rndSwings++; T.approx = true;
+        return amt;
+      }
+      if (!t || !t.alive) return 0;
+      let amt = dmg;
+      if (opts.strength !== false) amt += T.strength;
+      if (opts.scare !== false) amt += (t.scare || 0);
+      amt = Math.max(0, Math.round(amt));
+      const ward = fcWardOf(t);
+      if (ward > 0 && amt > 0) amt = Math.max(1, amt - ward);
+      const absorbed = Math.min(t.shield, amt);
+      t.shield -= absorbed;
+      t.hp = Math.max(0, t.hp - (amt - absorbed));
+      t.dmg += amt;
+      if (t.hp <= 0) t.alive = false;
+      else if (t.ref.base && t.ref.base.thorns > 0 && amt > 0 && !opts.noThorns) fcSelf(t.ref.base.thorns);
+      return amt;
+    }
+    // damage recoiling onto the beast (curse mirror, thorns, blood magic)
+    function fcSelf(n) {
+      if (n <= 0) return;
+      if (B.monster.passive === 'stonehide') n = Math.max(1, n - B.monster.passiveVal);
+      if (root.CG.Game.state.blessings.stoneblood) n = Math.max(1, n - 1);
+      const absorbed = Math.min(T.shield, n);
+      T.shield -= absorbed;
+      T.selfLoss += n - absorbed;
+    }
+    // one hitTargets() call: strikes the group, plus the cursed-slot recoil
+    function fcVolley(targets, base, opts) {
+      targets = (targets || []).filter(Boolean);
+      targets.forEach(t => fcHit(t, base, opts));
+      if (stepCursed) {
+        let r = base;
+        if (T.weak) r = Math.max(1, Math.round(r * 0.6));
+        fcSelf(Math.max(0, Math.round(r)));
+      }
+    }
+    function fcShield(amt) {
+      let a = amt + T.resilience;
+      if (T.frail) a = Math.floor(a * 0.5);
+      if (a <= 0) return 0;
+      T.shield += a; T.shieldGain += a;
+      return a;
+    }
+    function fcHeal(n) { if (n > 0) T.heal += n; }
+    function fcBurn(t, n) {
+      if (n <= 0) return;
+      if (stepCursed && !stepBurnMirrored) { stepBurnMirrored = true; T.playerBurn += n; }
+      if (t === 'random') { T.burnTotal += n; T.approx = true; return; }
+      if (!t || !t.alive) return;
+      t.burn += n; t.burnAdd += n; T.burnTotal += n;
+    }
+    function fcStr(n) { if (n > 0) { T.strength += n; T.strGain += n; } }
+    function fcRes(n) { if (n > 0) { T.resilience += n; T.resGain += n; } }
+    function fcDevour(id) {
+      const g = glyph(id);
+      T.devours++;
+      if (baseOf(g.cloneOf || id) === DEVIL_TOKEN) { T.selfLoss += Math.max(1, Math.ceil(B.monster.hp * 0.30)); return; }
+      if (g.color === 'red') fcStr(1);
+      else if (g.color === 'blue') fcShield(1);
+      else fcHeal(3);
+    }
+
+    // chain-wide context (same precomputes detonate makes)
+    const counts = {};
+    seq.forEach(s => { const b = baseOf(s.id); counts[b] = (counts[b] || 0) + 1; });
+    const totalRed = seq.filter(s => glyph(s.id).color === 'red').length;
+    const blueCount = seq.filter(s => glyph(s.id).color === 'blue').length;
+    const redSuffix = new Array(seq.length + 1).fill(0);
+    for (let i = seq.length - 1; i >= 0; i--) redSuffix[i] = redSuffix[i + 1] + (glyph(seq[i].id).color === 'red' ? 1 : 0);
+    const empB = new Array(seq.length).fill(0);
+    for (let k = 0; k < seq.length; k++) {
+      const cov = seq[k].covered || [];
+      const n = cov.reduce((s, ci) => s + slotCountAt(ci, 'empower'), 0);
+      if (n > 0) {
+        if (k > 0) empB[k - 1] += n;
+        if (k + 1 < seq.length) empB[k + 1] += n;
+      }
+    }
+    let lastGenuineIdx = -1;
+    for (let gi = seq.length - 1; gi >= 0; gi--) if (!seq[gi].replay && !seq[gi].repeat2) { lastGenuineIdx = gi; break; }
+    const handLeft = Math.max(0, B.hand.length - (extraId ? 1 : 0));
+
+    // per-glyph effect estimate — mirrors resolveGlyphInner case by case
+    function fcResolve(id, ctx) {
+      const g = glyph(id);
+      const gatherN = (B.monster.passive === 'gatheringTails') ? ctx.chainPos : 0;
+      const gt = gatherN + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) + empowerOf(id);
+      const gtx = gt - gatherN;
+      if (g.color === 'red' && root.CG.Game.state.blessings.emberward) fcShield(2);
+      const E = emberDmg(g);
+      switch (baseOf(g.cloneOf || id)) {
+        case 'rubble': case 'deadweight': break;
+        /* -------- TROLL -------- */
+        case 'smash': fcVolley([tFirst()], 6 + gt + E); break;
+        case 'brace': fcShield(6 + gt); break;
+        case 'quake': fcVolley(tAll(), 3 + gt + E); break;
+        case 'bulwark_slam': fcVolley([tFirst()], T.shield + gt + E); break;
+        case 'hammer': fcVolley([tFirst()], (T.shield > 0 ? 6 : 4) + gt + E); break;
+        case 'steady': fcShield(4 + (ctx.isFirst ? 2 : 0) + gt); break;
+        case 'boulder': fcVolley([tFirst()], 8 + gt + E); break;
+        case 'iron_skin': fcShield(8 + gt); break;
+        case 'mend': fcHeal(6 + gt); break;
+        case 'rockfall': {
+          const extra = Math.max(0, (ctx.counts['rockfall'] || 1) - 1);
+          fcVolley(tAll(), 2 + extra + gt + E);
+          break;
+        }
+        case 'backhand': {
+          const prevRed = ctx.prevId && glyph(ctx.prevId).color === 'red' ? 2 : 0;
+          fcVolley(['random'], 5 + prevRed + gt + E);
+          break;
+        }
+        case 'fortify': fcRes(1 + Math.round(gtx)); break;
+        case 'rampart': fcShield(2 * ctx.chainPos + gt); break;
+        case 'spiked_hide': { const got = fcShield(5 + gt); if (got > 0) fcVolley(['random'], got); break; }
+        case 'crush': {
+          const t = tFirst();
+          fcVolley([t], 5 + (t && t.shield <= 0 ? 4 : 0) + gt + E);
+          break;
+        }
+        case 'second_wind': fcHeal(4 + (B.monster.hp < B.monster.maxHp / 2 ? 4 : 0) + gt); break;
+        case 'avalanche': fcVolley(tAll(), T.shield + gt + E); break;
+        case 'bastion': fcShield(10 + gt); break;
+        case 'titans_smash': fcVolley([tFirst()], 9 + Math.floor(T.shield / 3) + gt + E); break;
+        case 'unbreakable': fcRes(1 + Math.round(gtx)); break;
+        case 'reckoning': fcVolley(tAll(), 2 * T.strength + gt + E, { strength: false }); break;
+        case 'mountains_wrath': fcVolley([tFirst()], T.shield * 2 + gt + E); break;
+        case 'aftershock': {
+          const volleys = Math.max(1, ctx.blueCount || 0);
+          for (let v = 0; v < volleys; v++) { fcVolley(tAll(), 3 + gt + E); if (!A().length) break; }
+          break;
+        }
+        case 'juggernaut': fcShield(Math.ceil(B.monster.maxHp / 2) + gt); break;
+        /* -------- GHOUL -------- */
+        case 'leech': { const t = tCenter(); fcVolley([t], 3 + gt + E); if (t && t.alive) { t.leech = 3; T.leechTotal++; } break; }
+        case 'rake': {
+          for (let n = 0; n < 2; n++) fcVolley(['random'], 2 + gt + E);
+          if (ctx.isLast && ctx.totalRed === 1) { T.leechTotal++; T.approx = true; }
+          break;
+        }
+        case 'vigor': fcStr(1 + (ctx.redAfter || 0) + Math.round(gtx)); break;
+        case 'blood_harden': fcShield(2 + A().filter(f => f.leech > 0).length + gt); break;
+        case 'snarl': { T.scareTotal += (1 + Math.round(gtx)) * A().length; T.approx = true; break; }
+        case 'gnaw': fcVolley([tFirst()], 4 + gt + E); fcHeal(2 + gtx); break;
+        case 'grave_rot': {
+          const all = A();
+          fcVolley(all.filter(f => !(f.leech > 0)), 3 + gt + E);
+          fcVolley(all.filter(f => f.leech > 0), 5 + gt + E);
+          break;
+        }
+        case 'mend_flesh': fcHeal(5 + gtx); break;
+        case 'bone_wall': fcShield(5 + gt); break;
+        case 'raise_dead': T.husks += 2; break;
+        case 'exsanguinate': {
+          const t = tCenter();
+          fcVolley([t], 5 + gt + E);
+          if (t && t.alive) { t.leech = 3; T.leechTotal++; }
+          fcHeal(3 + gtx);
+          break;
+        }
+        case 'dread_howl': {
+          const stacks = 1 + Math.round(gtx) + (B.monster.hp < B.monster.maxHp / 2 ? 1 : 0);
+          A().forEach(f => { f.scare += stacks; });
+          T.scareTotal += stacks * A().length;
+          break;
+        }
+        case 'soul_harvest': { const n = A().length; fcVolley(tAll(), 3 + gt + E); fcHeal(n); break; }
+        case 'blood_pact': {
+          T.selfLoss += Math.min(4, Math.max(0, B.monster.hp - 1));
+          fcStr(3 + Math.round(gtx));
+          break;
+        }
+        case 'glutton': fcVolley([tFirst()], Math.max(2, 2 * ((B.monster.devoured || 0) + T.devours)) + gt + E); break;
+        case 'plague': { A().forEach(f => { f.leech = 3; }); T.leechTotal += A().length; fcHeal(2 + gtx); break; }
+        case 'mass_grave': T.husks += 3; fcVolley(tAll(), 2 + gt + E); break;
+        case 'lich_ascendant': fcHeal(8 + gtx); fcStr(2 + Math.round(gtx)); break;
+        case 'husk': fcVolley(['random'], 1 + gt + E); break;
+        case 'maweaten_scrap': fcVolley(['random'], 5 + gt + E); fcHeal(4 + Math.round(gtx)); break;
+        /* -------- KITSUNE -------- */
+        case 'flicker': fcVolley(['random'], 2 + gt + E); break;
+        case 'foxfire': fcBurn('random', 2 + gtx); break;
+        case 'onslaught': { for (let h = 0; h < ctx.chainPos; h++) fcVolley(['random'], 2 + gt + E); break; }
+        case 'wildfire': {
+          const burnAmt = 1 + gtx;
+          A().forEach(f => {
+            const was = f.burn > 0;
+            fcBurn(f, burnAmt);
+            if (was) fcHit(f, f.burn, { strength: false, scare: false });
+          });
+          break;
+        }
+        case 'mirror': {
+          const prevBase = ctx.prevId ? baseOf(glyph(ctx.prevId).cloneOf || ctx.prevId) : null;
+          const echoId = (prevBase && prevBase !== 'mirror') ? ctx.prevId
+            : (prevBase === 'mirror' ? lastMirrorTarget : null);
+          if (echoId) {
+            lastMirrorTarget = echoId;
+            fcResolve(echoId, Object.assign({}, ctx, {
+              comboBonus: (ctx.comboBonus || 0) + Math.max(0, comboAdv(echoId) - 1) + empowerOf(id)
+            }));
+          }
+          break;
+        }
+        case 'spark': fcVolley(['random'], 4 + (ctx.chainPos === 0 ? 2 : 0) + gt + E); break;
+        case 'smolder': fcBurn(tFirst(), 2 + gtx); break;
+        case 'wisp': fcVolley(tAll(), 2 + gt + E); break;
+        case 'scorch': fcBurn(tHighest(), 3 + gtx); break;
+        case 'veil': fcShield(4 + gtx); break;
+        case 'emberlash': for (let n = 0; n < 3; n++) fcVolley(['random'], 1 + gt + E); break;
+        case 'lick_wounds': fcHeal(5 + gtx); break;
+        case 'everflame': fcVolley(['random'], 4 + gt + E + T.everRamp); T.everRamp++; break;
+        case 'conflagration': A().forEach(f => { if (f.burn > 0) fcHit(f, f.burn + gt, { strength: false }); }); break;
+        case 'foxfire_dance': A().forEach(f => fcBurn(f, 2 + gtx)); break;
+        case 'hoarders_flame': { for (let h = 0; h < ctx.handLeft; h++) fcVolley(['random'], 2 + gt + E); break; }
+        case 'nine_tails': fcVolley(['random'], 2 * ctx.chainPos + gt + E); break;
+        case 'immolate': { const t = tFirst(); fcVolley([t], 5 + gt + E); if (t && t.alive) fcBurn(t, 5); break; }
+        case 'will_o_wisp': fcVolley([tLowest()], 3 + gt + E); break;
+        case 'ember_hoard': fcShield(2 * ctx.handLeft + gtx); break;
+        case 'spirit_fire': A().forEach(f => fcBurn(f, ctx.totalRed + gtx)); break;
+        case 'nine_tailed_inferno': {
+          A().forEach(f => { if (f.burn > 0) { fcHit(f, f.burn, { strength: false }); f.burn = 0; } });
+          A().forEach(f => fcBurn(f, 3 + gtx));
+          break;
+        }
+        case 'phoenix': fcHeal(10 + gtx + (ctx.handLeft === 0 ? 10 : 0)); break;
+        case 'trickster_echo':
+          if (ctx.prevId && baseOf(ctx.prevId) !== 'trickster_echo') {
+            fcResolve(ctx.prevId, Object.assign({}, ctx, {
+              comboBonus: (ctx.comboBonus || 0) + 3 + empowerOf(id)
+            }));
+          }
+          break;
+      }
+    }
+
+    // ---- the walk: combo + catalysts + slot side-effects, in chain order ----
+    let prevId = null, chainPos = 0, pendingCat = [];
+    let comboLen = 0, comboPrev = null;
+    for (let k = 0; k < seq.length; k++) {
+      const ev = seq[k];
+      const lt = comboLetter(ev.id), adv = comboAdv(ev.id);
+      let comboBonus = 0;
+      if (lt == null) { comboLen = 0; comboPrev = null; }
+      else if (comboLinks(comboPrev, lt)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; }
+      else { comboLen = adv; comboPrev = lt; }
+      // catalysts sown by the previous glyph infuse this one
+      stepCursed = false;
+      for (const col of pendingCat) {
+        if (col === 'red') fcVolley(tAll(), 3);
+        else if (col === 'blue') fcShield(3);
+        else fcHeal(6);
+      }
+      pendingCat = [];
+      stepCursed = (ev.covered || []).some(ci => slotCursed(ci));
+      stepBurnMirrored = false;
+      fcResolve(ev.id, {
+        chainPos, prevId, redAfter: redSuffix[k + 1], totalRed, counts,
+        comboBonus: comboBonus + empB[k],
+        isFirst: chainPos === 0, isLast: k === lastGenuineIdx,
+        blueCount, handLeft
+      });
+      if (!ev.replay && !ev.repeat2) {
+        const g = glyph(ev.id);
+        if (ev.cloneCount && !g.junk) T.clones += ev.cloneCount;
+        if (ev.holdAny && !g.junk) T.holds++;
+        if (ev.catalystCount) for (let c = 0; c < ev.catalystCount; c++) pendingCat.push(g.color);
+        if (ev.devourAny) fcDevour(ev.id);
+      }
+      prevId = ev.id; chainPos++;
+      if (!A().length) break;
+    }
+
+    // glyphs that would stay in hand fire their end-of-turn effects too
+    if (A().length) {
+      stepCursed = false;
+      let skippedExtra = false;
+      B.hand.forEach(id => {
+        if (extraId && id === extraId && !skippedExtra) { skippedExtra = true; return; }
+        const ou = glyph(id).onUnplayed;
+        if (!ou) return;
+        if (ou.kind === 'damageRandom') fcVolley(['random'], ou.value);
+        else if (ou.kind === 'block') fcShield(ou.value);
+      });
+    }
+    return T;
+  }
+
+  // ============================================================
+  // FORECAST UI — a panel on the right (mirroring the tooltip panel on
+  // the left) totals the chain; floating marks over each foe show where
+  // the damage actually lands; hovering a hand glyph folds it in and
+  // shows the delta + lights up the socket(s) it would take.
+  // ============================================================
+  function fcEnsureBar() {
+    let p = $('chain-forecast');
+    if (!p) {
+      p = el('aside', 'chain-forecast');
+      p.id = 'chain-forecast';
+      $('screen-battle').appendChild(p);
+    }
+    return p;
+  }
+  function clearForecastMarks() {
+    if (!B) return;
+    B.enemies.forEach(en => {
+      const m = en.dom && en.dom.querySelector('.fc-mark');
+      if (m) m.remove();
+    });
+    const pm = document.querySelector('#player-panel .fc-mark-self');
+    if (pm) pm.remove();
+  }
+  function fcRow(cls, ico, val, label) {
+    return '<div class="fc-row ' + cls + '"><span class="fc-ico">' + ico + '</span>' +
+      '<span class="fc-val">' + val + '</span><span class="fc-lab">' + label + '</span></div>';
+  }
+  function renderForecast(hoverId) {
+    if (!B) return;
+    const bar = fcEnsureBar();
+    const placedAny = B.sockets.some(Boolean);
+    if (B.ended || B.resolving || (!placedAny && !hoverId)) {
+      bar.classList.remove('show');
+      clearForecastMarks();
+      return;
+    }
+    const sim = simulateChain(hoverId || null);
+    const base = hoverId ? simulateChain(null) : null;
+    const sumDmg = s => s.foes.reduce((n, f) => n + f.dmg, 0) + s.rndDmg;
+    const dmgAll = sumDmg(sim);
+    const lethal = sim.foes.filter(f => !f.alive).length;
+    const delta = (cur, b) => {
+      if (!base) return '';
+      const d = cur - b;
+      if (!d) return '';
+      return ' <i class="fc-delta' + (d < 0 ? ' down' : '') + '">' + (d > 0 ? '+' : '') + d + '</i>';
+    };
+    const rows = [];
+    if (dmgAll > 0) rows.push(fcRow('dmg', '⚔', (sim.approx ? '~' : '') + dmgAll + delta(dmgAll, base ? sumDmg(base) : 0), 'damage'));
+    if (sim.rndDmg > 0) rows.push(fcRow('rnd', '🎲', sim.rndDmg, sim.rndSwings + ' random strike' + (sim.rndSwings === 1 ? '' : 's')));
+    if (lethal > 0) rows.push(fcRow('lethal', '💀', lethal, lethal === 1 ? 'killing blow' : 'killing blows'));
+    if (sim.shieldGain > 0) rows.push(fcRow('shield', '◆', sim.shieldGain + delta(sim.shieldGain, base ? base.shieldGain : 0), 'block'));
+    if (sim.heal > 0) rows.push(fcRow('heal', '♥', sim.heal + delta(sim.heal, base ? base.heal : 0), 'healing'));
+    if (sim.burnTotal > 0) rows.push(fcRow('burn', '🔥', sim.burnTotal + delta(sim.burnTotal, base ? base.burnTotal : 0), 'burn applied'));
+    if (sim.scareTotal > 0) rows.push(fcRow('scare', '☠', '~' + sim.scareTotal, 'scare'));
+    if (sim.leechTotal > 0) rows.push(fcRow('leech', '🩸', sim.leechTotal, 'leeched'));
+    if (sim.strGain > 0) rows.push(fcRow('str', '✦', '+' + sim.strGain, 'Strength'));
+    if (sim.resGain > 0) rows.push(fcRow('res', '🛡', '+' + sim.resGain, 'Resilience'));
+    if (sim.husks > 0) rows.push(fcRow('husk', '⚰', sim.husks, 'Husks next hand'));
+    if (sim.clones > 0) rows.push(fcRow('clone', '⧉', sim.clones, sim.clones === 1 ? 'clone next hand' : 'clones next hand'));
+    if (sim.holds > 0) rows.push(fcRow('hold', '⏸', sim.holds, 'held for next turn'));
+    if (sim.devours > 0) rows.push(fcRow('devil', '😈', sim.devours, 'devoured'));
+    if (sim.selfLoss > 0) rows.push(fcRow('warn', '⚠', '−' + sim.selfLoss, 'recoil onto you'));
+    if (sim.playerBurn > 0) rows.push(fcRow('warn', '🔥', sim.playerBurn, 'Burn onto you'));
+    if (!rows.length) {
+      bar.classList.remove('show');
+      clearForecastMarks();
+      return;
+    }
+    bar.innerHTML =
+      '<div class="fc-head">Forecast</div>' +
+      '<div class="fc-sub">' + (hoverId
+        ? '+ ' + glyph(hoverId).name
+        : (sim.mirrorTurn ? 'Hall of Mirrors — last turn echoes' : 'if you Act now')) + '</div>' +
+      rows.join('') +
+      (sim.approx ? '<div class="fc-note">🎲 random targets — totals are estimates</div>' : '');
+    bar.classList.add('show');
+
+    // floating per-foe projections: solid numbers where the chain WILL land
+    B.enemies.forEach(en => {
+      const f = sim.foes.find(x => x.ref === en);
+      let m = en.dom && en.dom.querySelector('.fc-mark');
+      const want = en.alive && f && (f.dmg > 0 || f.burnAdd > 0);
+      if (!want) { if (m) m.remove(); return; }
+      if (!m) { m = el('div', 'fc-mark'); en.dom.appendChild(m); }
+      m.classList.toggle('lethal', !f.alive);
+      m.innerHTML = (!f.alive ? '💀 ' : '⚔ ') + f.dmg +
+        (f.burnAdd > 0 ? ' <i class="fm-burn">🔥' + f.burnAdd + '</i>' : '');
+    });
+
+    // matching projection over the beast — block / heal / buffs / recoil
+    const pp = document.getElementById('player-panel');
+    if (pp) {
+      const bits = [];
+      if (sim.shieldGain > 0) bits.push('<i class="fs-shield">◆ ' + sim.shieldGain + '</i>');
+      if (sim.heal > 0) bits.push('<i class="fs-heal">♥ ' + sim.heal + '</i>');
+      if (sim.strGain > 0) bits.push('<i class="fs-str">✦ +' + sim.strGain + '</i>');
+      if (sim.resGain > 0) bits.push('<i class="fs-res">🛡 +' + sim.resGain + '</i>');
+      const hurt = sim.selfLoss + sim.playerBurn;
+      if (hurt > 0) bits.push('<i class="fs-hurt">⚠ −' + hurt + '</i>');
+      let pm = pp.querySelector('.fc-mark-self');
+      if (!bits.length) { if (pm) pm.remove(); }
+      else {
+        if (!pm) { pm = el('div', 'fc-mark fc-mark-self'); pp.appendChild(pm); }
+        pm.innerHTML = bits.join('<i class="fs-sep"></i>');
+      }
+    }
+  }
+  // light up the socket(s) a hand glyph would fly into
+  function markDestSockets(id, on) {
+    const row = $('socket-row');
+    if (!row) return;
+    Array.from(row.children).forEach(s => s.classList.remove('fc-dest'));
+    if (!on || !id) return;
+    const span = glyph(id).slots || 1;
+    const at = firstFreeRun(span);
+    if (at === -1) return;
+    for (let k = 0; k < span; k++) {
+      const s = row.children[at + k];
+      if (s) s.classList.add('fc-dest');
+    }
+  }
+
+  // ============================================================
+  // HAND DRAG — press-and-drag reorders the hand; a quick tap still
+  // plays the glyph. The press becomes a drag only once the pointer
+  // travels past a small slop threshold, so clicks stay clicks.
+  // ============================================================
+  const handDrag = { active: false };
+  const DRAG_SLOP = 8;   // stage px of travel before a press becomes a drag
+
+  function wireHandDrag(tile, idx, playable) {
+    tile.addEventListener('pointerdown', (e) => {
+      if (!B || B.resolving || B.ended) return;
+      if (e.button != null && e.button !== 0) return;
+      e.preventDefault();
+      const start = Scale.toStage(e.clientX, e.clientY);
+      const stepRaw = parseFloat($('hand-row').dataset.step);
+      const press = {
+        idx, tile, dragging: false, clone: null, centers: null,
+        pitch: 150 + (isNaN(stepRaw) ? HAND_GAP : stepRaw),
+        targetIdx: idx
+      };
+      const unwire = () => {
+        tile.removeEventListener('pointermove', onMove);
+        tile.removeEventListener('pointerup', onUp);
+        tile.removeEventListener('pointercancel', onCancel);
+      };
+      const onMove = (ev) => {
+        const p = Scale.toStage(ev.clientX, ev.clientY);
+        if (!press.dragging) {
+          if (Math.hypot(p.x - start.x, p.y - start.y) < DRAG_SLOP) return;
+          if (B.hand.length < 2) return;   // nothing to reorder
+          beginHandDrag(press);
+        }
+        moveHandDrag(press, p);
+      };
+      const onUp = () => {
+        unwire();
+        if (press.dragging) endHandDrag(press);
+        else if (playable && !B.resolving) placeGlyph(idx, tile);
+      };
+      const onCancel = () => { unwire(); if (press.dragging) endHandDrag(press, true); };
+      try { tile.setPointerCapture(e.pointerId); } catch (err) {}
+      tile.addEventListener('pointermove', onMove);
+      tile.addEventListener('pointerup', onUp);
+      tile.addEventListener('pointercancel', onCancel);
+    });
+  }
+  function beginHandDrag(press) {
+    press.dragging = true;
+    handDrag.active = true;
+    const row = $('hand-row');
+    row.classList.add('dragging');
+    // cache every card's resting center (stage space) for the slot math
+    press.centers = Array.from(row.children).map(c => stageRectCenter(c).x);
+    if (press.centers.length > 1) press.pitch = press.centers[1] - press.centers[0];   // measured beats assumed
+    // a floating copy chases the pointer; the original holds its layout slot
+    const clone = press.tile.cloneNode(true);
+    clone.classList.add('drag-clone');
+    clone.classList.remove('combo-next');
+    clone.style.opacity = '';
+    stage.appendChild(clone);
+    press.clone = clone;
+    press.tile.classList.add('drag-origin');
+    clearCombatTip();
+    markDestSockets(null, false);
+    renderForecast(null);
+    SFX.click();
+  }
+  function moveHandDrag(press, p) {
+    if (!press.dragging) return;
+    press.clone.style.left = p.x + 'px';
+    press.clone.style.top = p.y + 'px';
+    const n = press.centers.length;
+    const t = Math.max(0, Math.min(n - 1, Math.round((p.x - press.centers[0]) / press.pitch)));
+    if (t === press.targetIdx) return;
+    press.targetIdx = t;
+    // the neighbours glide aside to open the drop gap
+    Array.from($('hand-row').children).forEach((c, j) => {
+      if (j === press.idx) return;
+      const pos = j - (j > press.idx ? 1 : 0);
+      const fin = pos + (pos >= t ? 1 : 0);
+      c.style.transform = fin === j ? '' : 'translateX(' + ((fin - j) * press.pitch) + 'px)';
+    });
+  }
+  function endHandDrag(press, cancelled) {
+    const row = $('hand-row');
+    row.classList.remove('dragging');
+    Array.from(row.children).forEach(c => { c.style.transform = ''; });
+    if (press.clone) press.clone.remove();
+    press.tile.classList.remove('drag-origin');
+    handDrag.active = false;
+    if (!cancelled && press.targetIdx !== press.idx) {
+      const moved = B.hand.splice(press.idx, 1)[0];
+      B.hand.splice(press.targetIdx, 0, moved);
+      SFX.place(press.targetIdx);
+    }
+    renderHand(false);
+    renderForecast(null);
+  }
 
   // self-targeting glyphs (shield / buff) get their own cast bolt so the
   // socket's firing animation reads as long and satisfying as an attack.

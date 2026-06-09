@@ -491,10 +491,6 @@
      Every one of these is wired into the battle/run engine.
      ---------------------------------------------------------- */
   const BLESSINGS = {
-    socket: {
-      id: 'socket', name: 'Extra Socket', icon: '🜨', scope: 'monster', effect: 'socket',
-      desc: 'Permanently grant your beast one extra glyph socket.'
-    },
     recall: {
       id: 'recall', name: 'Recall', icon: '↺', scope: 'run',
       desc: 'Once per turn, click an equipped glyph to return it to your hand before acting.'
@@ -535,10 +531,6 @@
 
   // Powerful blessings — only offered by floor bosses & the back room of the shop.
   const POWER_BLESSINGS = {
-    twinsocket: {
-      id: 'twinsocket', name: 'Twin Forge', icon: '🜨', scope: 'monster', effect: 'twinsocket',
-      desc: 'Permanently grant your beast TWO extra glyph sockets.'
-    },
     pyreheart: {
       id: 'pyreheart', name: 'Pyreheart', icon: '🔥', scope: 'run',
       desc: 'All of your red glyphs deal +2 damage.'
@@ -679,18 +671,104 @@
       desc: 'Crams Dead Weight into your grip and gums up your draws.'
     },
 
-    /* ---- Boss: combines several tricks ---- */
+    /* ---- Floor 1 bosses (one of three guards the first ascent) ---- */
     voidIdol: {
-      id: 'voidIdol', name: 'The Chaos Idol', emoji: '🗿', img: 'assets/Chaos Idol.png', maxHp: 120, boss: true,
+      id: 'voidIdol', name: 'The Chaos Idol', emoji: '🗿', img: 'assets/Chaos Idol.png', maxHp: 160, boss: true, enrage: 1,
+      // harder than before: opens with disruption, stacks frailty into a buffed
+      // double-strike, and its war-fury ramps every turn (enrage)
       intents: [
-        { type: 'attack', value: 10 },
-        [ { type: 'curse', value: 2 }, { type: 'attack', value: 8 } ],
-        { type: 'summon', who: 'bonelet', max: 2 },
-        { type: 'attack', value: 7, hits: 2 },
+        [ { type: 'curse', value: 2 }, { type: 'attack', value: 10 } ],
+        [ { type: 'sunder', value: 2 }, { type: 'summon', who: 'bonelet', max: 2 } ],
+        { type: 'attack', value: 9, hits: 2 },
         [ { type: 'debuff', stat: 'frail', value: 2 }, { type: 'buff', value: 4, turns: 2 } ],
-        { type: 'attack', value: 18, big: true }
+        { type: 'attack', value: 22, big: true },
+        [ { type: 'regen', value: 12 }, { type: 'debuff', stat: 'weak', value: 2 } ]
       ],
-      desc: 'The heart of the Spire. It curses, conscripts, and never tires.'
+      desc: 'The heart of the first ascent. It curses, conscripts, seals your sockets — and its fury only grows.'
+    },
+    hollowChoir: {
+      id: 'hollowChoir', name: 'The Hollow Choir', emoji: '🎭', maxHp: 150, boss: true,
+      // a swelling congregation: raises the dead, weakens you in waves, and
+      // crescendos into a massed hymn-strike
+      intents: [
+        [ { type: 'summon', who: 'bonelet', max: 3 }, { type: 'debuff', stat: 'weak', value: 2 } ],
+        [ { type: 'defend', value: 10 }, { type: 'attack', value: 8 } ],
+        [ { type: 'rally', value: 4 }, { type: 'curse', value: 2 } ],
+        { type: 'attack', value: 8, hits: 2 },
+        { type: 'attack', value: 24, big: true }
+      ],
+      desc: 'A congregation of stolen voices. It raises the dead, saps your strength in waves, and builds toward a crushing crescendo.'
+    },
+    mawMother: {
+      id: 'mawMother', name: 'The Maw Mother', emoji: '🪸', maxHp: 170, boss: true,
+      // an attrition fight: chokes your deck with junk, knits her wounds, and
+      // punishes slow turns with grinding multi-hits
+      intents: [
+        [ { type: 'clog' }, { type: 'attack', value: 7 } ],
+        [ { type: 'trash', count: 1, where: 'deck' }, { type: 'defend', value: 12 } ],
+        { type: 'attack', value: 7, hits: 3 },
+        [ { type: 'regen', value: 14 }, { type: 'debuff', stat: 'frail', value: 2 } ],
+        { type: 'attack', value: 20, big: true }
+      ],
+      desc: 'She feeds you Dead Weight and buries Rubble in your deck, mending herself while your draws choke. Kill her before the rot wins.'
+    },
+
+    /* ---- Floor 2 bosses (one of three bars the second ascent) ---- */
+    gravetideColossus: {
+      id: 'gravetideColossus', name: 'The Gravetide Colossus', emoji: '🗿', img: 'assets/Gravewarden.png', maxHp: 280, boss: true, ward: 3,
+      // a walking fortress: its ward shields allies, it seals sockets and
+      // answers with avalanche blows
+      intents: [
+        [ { type: 'defend', value: 16 }, { type: 'attack', value: 12 } ],
+        [ { type: 'sunder', value: 2 }, { type: 'summon', who: 'bonelet', max: 2 } ],
+        { type: 'attack', value: 11, hits: 2 },
+        [ { type: 'trash', count: 1, where: 'deck' }, { type: 'buff', value: 5, turns: 2 } ],
+        { type: 'attack', value: 30, big: true }
+      ],
+      desc: 'A drowned titan of grave-silt. It walls itself in, seals your sockets, and falls on you like a collapsing tomb.'
+    },
+    cinderQueen: {
+      id: 'cinderQueen', name: 'The Cinder Queen', emoji: '👑', img: 'assets/Cinderling.png', maxHp: 240, boss: true, enrage: 2,
+      // pure escalation: her court rallies, her fury ramps fast, and her
+      // flurries multiply — race her or burn
+      intents: [
+        [ { type: 'rally', value: 5 }, { type: 'attack', value: 10 } ],
+        { type: 'attack', value: 9, hits: 3 },
+        [ { type: 'debuff', stat: 'weak', value: 2 }, { type: 'defend', value: 14 } ],
+        { type: 'attack', value: 12, hits: 2 },
+        { type: 'attack', value: 34, big: true }
+      ],
+      desc: 'Empress of the ember court. Her fury ramps with every passing turn and her flurries multiply — this fight is a race you must win.'
+    },
+    hollowShepherd: {
+      id: 'hollowShepherd', name: 'The Hollow Shepherd', emoji: '🐏', img: 'assets/Maledict.png', maxHp: 260, boss: true,
+      // the control boss: drains your strength, curses and seals, and herds
+      // an endless flock between you and it
+      intents: [
+        [ { type: 'summon', who: 'bonelet', max: 3 }, { type: 'siphon', stat: 'strength', value: 2 } ],
+        [ { type: 'curse', value: 2 }, { type: 'attack', value: 11 } ],
+        [ { type: 'sunder', value: 2 }, { type: 'debuff', stat: 'frail', value: 2 } ],
+        { type: 'attack', value: 10, hits: 2 },
+        [ { type: 'regen', value: 18 }, { type: 'attack', value: 26, big: true } ]
+      ],
+      desc: 'It drains the might you hoard, curses what you build, and herds an endless flock between you and its throat.'
+    },
+
+    /* ---- Floor 3: the final boss of the Spire ---- */
+    chaosIncarnate: {
+      id: 'chaosIncarnate', name: 'Chaos Incarnate', emoji: '🌌', img: 'assets/Chaos Idol.png', maxHp: 420, boss: true, enrage: 2,
+      // the end of the climb: every trick in the Spire, stitched into one
+      // escalating storm
+      intents: [
+        [ { type: 'curse', value: 2 }, { type: 'sunder', value: 2 } ],
+        [ { type: 'summon', who: 'bonelet', max: 3 }, { type: 'attack', value: 12 } ],
+        { type: 'attack', value: 11, hits: 3 },
+        [ { type: 'siphon', stat: 'strength', value: 2 }, { type: 'debuff', stat: 'weak', value: 2 } ],
+        [ { type: 'defend', value: 20 }, { type: 'buff', value: 6, turns: 2 } ],
+        { type: 'attack', value: 40, big: true },
+        [ { type: 'regen', value: 20 }, { type: 'debuff', stat: 'frail', value: 2 } ]
+      ],
+      desc: 'The Spire was only ever its shell. Every curse, every chain, every hungry thing you have fought — all of it was practice for this.'
     }
   };
 
