@@ -303,14 +303,15 @@
       desc: 'Deal {0} to a random enemy. <i>A risen scrap — feed it to the Devil.</i>'
     },
 
-    /* -- token: spat back by a Devil slot after it devours a glyph. Permanent,
-          wild-combo, deals basic damage. Feed it BACK to a Devil and it drinks
-          30% of your blood. Never offered (token) and beast-agnostic. -- */
+    /* -- token: spat back by a Devil slot after it devours a glyph. DISPOSABLE
+          (one-shot, vanishes if unused — never bloats the deck). A wild-combo
+          lifesteal striker: it bites an enemy AND heals the beast. Feed it BACK
+          to a Devil and it drinks 30% of your blood. Never offered (token). -- */
     maweaten_scrap: {
       id: 'maweaten_scrap', name: 'Maw-Eaten Scrap', color: 'red', rune: '🩸', token: true,
       character: null, letter: 'wild', rarity: 'token',
       dyn: [{ kind: 'dmg', base: 5 }],
-      desc: 'Deal {0} damage to a random enemy. <i>Spat from the Devil\'s maw — devour it and it tears away <b>30%</b> of your current HP.</i>'
+      desc: 'Deal {0} to a random enemy and <b>heal 4</b>. <i>A one-shot morsel torn from the Devil\'s maw — it vanishes if unused, so devouring never clogs your deck. Feed it BACK to a Devil and it tears away <b>30%</b> of your current HP.</i>'
     },
 
     /* ---------------- KITSUNE — glass-cannon combo chaos (3rd slot is HOLD) ---------------- */
@@ -571,7 +572,7 @@
       maxHp: 50, sockets: 3, slotTypes: ['normal', 'normal', 'devil'],
       passive: 'gravetide', passiveVal: 1,
       passiveText: 'Gravetide: at the start of each turn, gain +1 Strength (rest of battle) for every Leeched enemy.',
-      desc: 'Sap the living and grow stronger. Its third socket is a Devil that DEVOURS a glyph each turn for permanent power — purging it from your deck and spitting back a Maw-Eaten Scrap, so feed it fodder, not your future.',
+      desc: 'Sap the living to grow stronger. Its Devil socket devours a glyph each turn for permanent power — feed it fodder, not your future.',
       evolveName: 'Lich Sovereign',
       deck: ['leech', 'leech', 'rake', 'rake', 'gnaw', 'vigor', 'blood_harden', 'mend_flesh']
     },
@@ -600,7 +601,7 @@
       desc: 'A basic attacker.'
     },
     thornback: {
-      id: 'thornback', name: 'Thornback', emoji: '🦔', img: 'assets/Thornback.png', maxHp: 28, thorns: 3,
+      id: 'thornback', name: 'Thornback', emoji: '🦔', img: 'assets/Thornback.png', maxHp: 28, thorns: 1,
       // THORNS gimmick: every strike you land draws blood back — punishes flailing
       intents: [ { type: 'defend', value: 6 }, { type: 'attack', value: 9 } ],
       desc: 'A bristling hide — guards, then gores. Every blow you land pricks you back, so pick your hits and don\'t flail with multi-strikes.'
@@ -694,6 +695,38 @@
   };
 
   /* ----------------------------------------------------------
+     ITEMS — single-use consumables the player carries between fights.
+     `combatOnly` items can only be used during a battle; the rest can be
+     used anywhere from the top-HUD item tray. `passive` items also do
+     something automatically while carried (Soul Jar's death-save).
+     Effects are resolved in battle.js (combat) / game.js (out of combat).
+     ---------------------------------------------------------- */
+  const ITEMS = {
+    blood_phial:     { id: 'blood_phial', name: 'Blood Phial', icon: '🩸', rarity: 'common', price: 30, combatOnly: false,
+                       desc: 'Heal <b>30%</b> of your active beast\'s max HP.', effect: { kind: 'heal', pct: 0.30 } },
+    unmelting_ice:   { id: 'unmelting_ice', name: 'Unmelting Ice', icon: '❄️', rarity: 'common', price: 32, combatOnly: true,
+                       desc: 'Gain <b>15</b> shield. It lingers all combat until chipped away.', effect: { kind: 'shield', value: 15 } },
+    acid_phial:      { id: 'acid_phial', name: 'Acid Phial', icon: '🧪', rarity: 'uncommon', price: 46, combatOnly: true,
+                       desc: 'Strip the shields off <b>all</b> enemies and apply <b>Weak 3</b>.', effect: { kind: 'acid', weak: 3 } },
+    throwing_knife:  { id: 'throwing_knife', name: 'Throwing Knife', icon: '🔪', rarity: 'common', price: 34, combatOnly: true,
+                       desc: 'Deal <b>10</b> damage to all enemies.', effect: { kind: 'damageAll', value: 10 } },
+    explosive_knife: { id: 'explosive_knife', name: 'Explosive Knife', icon: '💣', rarity: 'uncommon', price: 58, combatOnly: true,
+                       desc: 'Deal <b>30</b> damage to all enemies.', effect: { kind: 'damageAll', value: 30 } },
+    soul_jar:        { id: 'soul_jar', name: 'Soul Jar', icon: '⚱️', rarity: 'rare', price: 96, combatOnly: false, passive: true,
+                       desc: 'Use to <b>fully heal</b> your active beast. While carried, it shatters to <b>revive</b> a fallen beast at <b>30%</b> HP — then it\'s spent.', effect: { kind: 'soulHeal' } },
+    emergency_phial: { id: 'emergency_phial', name: 'Emergency Phial', icon: '🧫', rarity: 'uncommon', price: 44, combatOnly: true,
+                       desc: 'Pull a <b>chosen glyph</b> from your deck straight into your hand this turn.', effect: { kind: 'tutor' } },
+    ember_tome:      { id: 'ember_tome', name: 'Ember Tome', icon: '📜', rarity: 'uncommon', price: 60, combatOnly: false,
+                       desc: 'Gain a random <b>common</b> blessing.', effect: { kind: 'blessing', rarity: 'common' } },
+    astral_tome:     { id: 'astral_tome', name: 'Astral Tome', icon: '📖', rarity: 'rare', price: 110, combatOnly: false,
+                       desc: 'Gain a random <b>rare</b> blessing.', effect: { kind: 'blessing', rarity: 'rare' } },
+    bramble_draught: { id: 'bramble_draught', name: 'Bramble Draught', icon: '🌵', rarity: 'common', price: 34, combatOnly: true,
+                       desc: 'Gain <b>5 Thorns</b> this combat — attackers take 5 damage back.', effect: { kind: 'thorns', value: 5 } },
+    war_tincture:    { id: 'war_tincture', name: 'War Tincture', icon: '⚔️', rarity: 'uncommon', price: 48, combatOnly: true,
+                       desc: 'Gain <b>3 Strength</b> and <b>3 Resilience</b> this combat.', effect: { kind: 'buff', str: 3, res: 3 } }
+  };
+
+  /* ----------------------------------------------------------
      formatDesc — render a glyph's description with live numbers.
      `env` carries the current chain/state bonuses so a card can preview
      exactly what it will do if played next:
@@ -741,6 +774,6 @@
   }
 
   root.CG = root.CG || {};
-  root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, MONSTERS, ENEMIES, formatDesc };
+  root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc };
 
 })(window);

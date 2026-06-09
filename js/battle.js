@@ -35,7 +35,7 @@
     repeat:   { icon: '×2', label: 'Repeat', tip: 'The glyph placed here resolves <b>twice</b>.' },
     hold:     { icon: '⏸', label: 'Hold', tip: 'The glyph placed here is <b>not discarded</b> — it returns next turn as a bonus card that doesn\'t reduce your draw.' },
     catalyst: { icon: '✦', label: 'Catalyst', tip: 'Infuses the <b>next</b> glyph by the color placed here — Red: 3 damage to all · Blue: 3 block · Green: heal 6.' },
-    devil:    { icon: '😈', label: 'Devil', tip: 'The glyph resolves, then is <b>devoured</b> — that copy is gone from your deck for the run — granting a permanent boon by color (Red: +1 Strength · Blue: +1 turn shield · Green: +3 max HP) <b>and</b> spitting back a permanent <b>Maw-Eaten Scrap</b> (basic damage, wild combo) into your deck and next hand. Feed a Scrap back here and it tears away <b>30%</b> of your current HP.' },
+    devil:    { icon: '😈', label: 'Devil', tip: 'The glyph resolves, then is <b>devoured</b> — that copy is gone from your deck for the run — granting a permanent boon by color (Red: +1 Strength · Blue: +1 turn shield · Green: +3 max HP) <b>and</b> spitting a disposable <b>Maw-Eaten Scrap</b> into your <b>next hand only</b> — a one-shot lifesteal striker that vanishes if unused, so it never bloats your deck. Feed a Scrap back here and it tears away <b>30%</b> of your current HP.' },
     clone:    { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
     empower:  { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' }
   };
@@ -97,6 +97,7 @@
       playerWeak: 0,      // turns: your damage is reduced
       playerFrail: 0,     // turns: your shield gains are reduced
       playerBurn: 0,      // Burn DoT on you (e.g. a burn glyph played into a cursed slot)
+      playerThorns: 0,    // item-granted Thorns: reflect damage to melee attackers this combat
       recallUsed: false,
       resolving: false,
       socketIntro: true,   // first socket render of the battle plays the "runes appear" reveal
@@ -507,6 +508,7 @@
   // ============================================================
   function beginTurn() {
     if (B.ended) return;
+    B.enemyActing = false;   // player's turn — items are usable again
     B.turn++;
     $('turn-counter').textContent = B.turn;
 
@@ -1471,7 +1473,7 @@
   // DETONATE — the hero moment
   // ============================================================
   async function detonate() {
-    if (B.resolving || B.ended) return;
+    if (B.resolving || B.ended || B.itemBusy) return;
     const placed = B.sockets.filter(Boolean);
 
     B.resolving = true;
@@ -1558,6 +1560,15 @@
       }
     }
 
+    // "Played last" effects (e.g. Rake's Leech payoff) key off the last glyph the
+    // player GENUINELY placed — not a Repeat echo, Loopback replay, or any trailing
+    // empty/special socket after it. Find that step so the bonus still fires when the
+    // chain ends early with empty sockets behind the final glyph.
+    let lastGenuineIdx = -1;
+    for (let gi = runSeq.length - 1; gi >= 0; gi--) {
+      if (!runSeq[gi].replay && !runSeq[gi].repeat2) { lastGenuineIdx = gi; break; }
+    }
+
     let prevId = null, chainPos = 0, fxIndex = 0, pendingCatalyst = null;
     B.lastMirrorTarget = null;   // resets each detonation; tracks what Mirrors are echoing
     let comboLen = 0, comboPrev = null, maxCombo = 0, prevComboEl = null;
@@ -1601,7 +1612,7 @@
         slot, chainPos, prevId, redAfter, totalRed, counts, originEl, originEls,
         comboBonus: comboBonus + empBonus[k],   // Empower slots fold in as a flat +1 to neighbors
         cursed: cursedSlot != null, curseCaster: cursedSlot != null ? (B.slotFx[cursedSlot] || {}).caster : null,
-        isFirst: chainPos === 0, isLast: fxIndex === fxSteps.length - 1
+        isFirst: chainPos === 0, isLast: k === lastGenuineIdx
       });
 
       // a curse-slot recoil (or burn) can KO your last beast mid-chain — stop cold
@@ -2187,9 +2198,12 @@
       case 'husk':
         await hitTargets(targetRandom(), 1 + gt + emberDmg(g), fromPos, R);
         break;
-      case 'maweaten_scrap':
+      case 'maweaten_scrap': {
         await hitTargets(targetRandom(), 5 + gt + emberDmg(g), fromPos, R);
+        heal(4 + Math.round(gtx));   // lifesteal — the morsel feeds the beast
+        refreshAll(); await wait(160);
         break;
+      }
 
       /* -------- KITSUNE -------- */
       case 'flicker':
@@ -2753,9 +2767,10 @@
   // SLOT-TYPE BEHAVIORS
   // ============================================================
   // DEVIL: devour the glyph (purge one copy from the run deck for good) for a
-  // permanent boon by color, AND spit back a permanent Maw-Eaten Scrap token — a
-  // basic, wild-combo striker added to your deck and next hand. Feeding a Scrap
-  // BACK to the Devil tears away 30% of your current HP instead (no boon/token).
+  // permanent boon by color, AND spit a DISPOSABLE Maw-Eaten Scrap into your next
+  // hand only — a one-shot, wild-combo lifesteal striker that vanishes if unused
+  // (so devouring never bloats the deck). Feeding a Scrap BACK to the Devil tears
+  // away 30% of your current HP instead (no boon/token).
   const DEVIL_TOKEN = 'maweaten_scrap';
   async function devourGlyph(id, slot, sEl) {
     const g = glyph(id);
@@ -2800,9 +2815,15 @@
       setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
       floatText(playerPos(), 'Max HP +3 (run)', 'heal');
     }
-    // ...AND spit back a permanent Maw-Eaten Scrap token
-    root.CG.Game.state.pool.push(DEVIL_TOKEN);   // permanent deck addition
-    B.extras.push(DEVIL_TOKEN);                   // and into the very next hand
+    // ...AND spit back a single DISPOSABLE Maw-Eaten Scrap into your NEXT hand
+    // only. It's a one-shot clone-token (like a Husk): vanishes if unused and
+    // never enters the deck, so repeated devouring no longer bloats your stack.
+    // Played, it's a lifesteal striker; fed BACK to the Devil it drinks 30% HP.
+    const cid = DEVIL_TOKEN + '#m' + (B.cloneSeq++);
+    B.tempGlyphs[cid] = Object.assign({}, GLYPHS[DEVIL_TOKEN], {
+      id: cid, cloneOf: DEVIL_TOKEN, token: true, sticky: false, junk: false, letter: 'wild'
+    });
+    B.extras.push(cid);                          // next hand only — disposable
     floatText(offset(playerPos(), 0, -150), '+ Maw-Eaten Scrap', 'status');
     fxMotes(center(playerArt()), 8, '#ff5470', 'fx-mote-rise', 60);
     updateTopbar();
@@ -2932,6 +2953,7 @@
   }
 
   async function enemyTurn() {
+    B.enemyActing = true;   // block item use while the foes act
     // slot timers + player debuffs decay first, so a freshly-applied "2 turns"
     // lasts both of the player's next two turns
     tickRoundTimers();
@@ -2986,6 +3008,13 @@
           en.dom.style.transform = '';
           damagePlayer(dmg);
           if (B.ended) return;
+          // item-granted Thorns: the attacker bleeds for it (reflect flag stops
+          // the foe's own Thornmail from recoiling back at us in turn)
+          if (B.playerThorns > 0 && en.alive) {
+            floatText(offset(center(en.dom), 0, -30), 'Thorns ' + B.playerThorns, 'dmg');
+            applyDamage(en, B.playerThorns, { reflect: true, strength: false, scare: false });
+            if (B.ended) return;
+          }
           if (h < hits - 1) await wait(200);
         }
         break;
@@ -3254,6 +3283,19 @@
   }
 
   function handlePlayerDeath() {
+    // Soul Jar: if the player carries one, it shatters to revive the falling
+    // beast at 30% HP instead of letting it die — then the jar is spent.
+    if (root.CG.Game.consumeRevive && root.CG.Game.consumeRevive()) {
+      const back = Math.max(1, Math.ceil(B.monster.maxHp * 0.30));
+      B.monster.hp = back;
+      B.monster.alive = true;
+      setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
+      floatText(offset(center(playerArt()), 0, -120), 'Soul Jar! Revived', 'heal');
+      healFx(playerArt());
+      SFX.reward();
+      refreshAll();
+      return;
+    }
     B.monster.alive = false;
     B.monster.hp = 0;
     SFX.death();
@@ -3376,7 +3418,117 @@
     }
   }
 
+  // ============================================================
+  // ITEMS — consumables used from the top-HUD tray during combat
+  // ============================================================
+  function inCombat() {
+    const scr = $('screen-battle');
+    return !!(B && !B.ended && B.monster && B.monster.alive && scr && scr.classList.contains('is-active'));
+  }
+  function combatBusy() { return !!(B && (B.resolving || B.enemyActing || B.itemBusy)); }
+
+  // pull a CHOSEN glyph from the draw/discard pile straight into the hand.
+  // Returns a promise: true if a card was taken, false if cancelled/empty.
+  function tutorGlyph() {
+    return new Promise(resolve => {
+      const pile = B.draw.concat(B.discard);
+      const seen = {}, uniq = [];
+      pile.forEach(id => { if (!seen[id]) { seen[id] = 1; uniq.push(id); } });
+      if (!uniq.length) { floatText(playerPos(), 'Deck is empty', 'status'); resolve(false); return; }
+
+      const overlay = el('div', 'item-choose');
+      overlay.innerHTML =
+        '<div class="ic-panel"><h3 class="ic-title">Emergency Phial — pull a glyph to hand</h3>' +
+        '<div class="ic-grid"></div><button class="btn btn-ghost ic-cancel">Cancel</button></div>';
+      const grid = overlay.querySelector('.ic-grid');
+      const close = taken => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); resolve(!!taken); };
+      uniq.forEach(id => {
+        const g = glyph(id);
+        const tile = el('div', 'ic-tile');
+        tile.style.setProperty('--g-color', 'var(--' + (g.color || 'gold') + ')');
+        const art = g.img ? '<img src="' + g.img + '" alt="">' : '<span class="ic-rune">' + (g.rune || '◆') + '</span>';
+        tile.innerHTML = '<div class="ic-art">' + art + '</div><div class="ic-name">' + g.name + '</div>';
+        tile.addEventListener('mouseenter', () => SFX.hover());
+        tile.addEventListener('click', () => {
+          let i = B.draw.indexOf(id);
+          if (i !== -1) B.draw.splice(i, 1);
+          else { i = B.discard.indexOf(id); if (i !== -1) B.discard.splice(i, 1); }
+          B.hand.push(id);
+          B.drawnThisTurn.push(id);   // it's a real deck card — route it to discard at end of turn
+          SFX.recall();
+          renderHand(true);
+          updatePiles();
+          close(true);
+        });
+        grid.appendChild(tile);
+      });
+      overlay.querySelector('.ic-cancel').addEventListener('click', () => { SFX.click(); close(false); });
+      overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+      $('stage').appendChild(overlay);
+    });
+  }
+
+  // apply a consumable's COMBAT effect. Returns true if it actually fired (so
+  // the caller can spend the item); false if it couldn't be used / was cancelled.
+  async function applyCombatItem(id) {
+    if (!inCombat() || combatBusy()) return false;
+    const ITEMS = root.CG.DATA.ITEMS || {};
+    const it = ITEMS[id]; if (!it) return false;
+    const e = it.effect || {};
+    const from = playerPos();
+    B.itemBusy = true;
+    try {
+    switch (e.kind) {
+      case 'heal': SFX.reward(); heal(Math.max(1, Math.ceil(B.monster.maxHp * e.pct))); break;
+      case 'soulHeal': SFX.reward(); heal(B.monster.maxHp); break;
+      case 'shield': SFX.fireBlue(0); gainShield(e.value); break;
+      case 'damageAll':
+        SFX.detonate(); fxRing(from, 'var(--red)', 560);
+        // a thrown blade deals its flat damage — not boosted by Strength/Scare
+        await hitTargets(targetAll(), e.value, from, 'var(--red)', { strength: false, scare: false });
+        break;
+      case 'acid':
+        SFX.firePurple(0);
+        alive().forEach(en => {
+          if (en.shield > 0) { en.shield = 0; setShieldPip(en.dom, 0); }
+          en.weak = Math.max(en.weak || 0, e.weak || 3);
+          floatText(offset(center(en.dom), 0, -40), 'Acid · Weak ' + (e.weak || 3), 'status');
+          weakFx(en.dom);
+        });
+        refreshAll(); await wait(280);
+        break;
+      case 'thorns':
+        SFX.fireGreen(0);
+        B.playerThorns += e.value;
+        floatText(offset(center(playerArt()), 0, -120), 'Thorns +' + e.value, 'status');
+        fxRing(from, '#7bd88f', 560);
+        refreshAll();
+        break;
+      case 'buff':
+        SFX.act();
+        B.strength += e.str; B.resilience += e.res;
+        floatText(offset(center(playerArt()), 0, -120), 'STR +' + e.str + ' · RES +' + e.res, 'status');
+        strengthFx(playerArt());
+        refreshAll();
+        break;
+      case 'blessing':
+        SFX.reward();
+        if (root.CG.Game.grantRandomBlessing) root.CG.Game.grantRandomBlessing(e.rarity);
+        floatText(offset(center(playerArt()), 0, -120), 'Blessing claimed!', 'status');
+        break;
+      case 'tutor': {
+        const ok = await tutorGlyph();
+        if (!ok) return false;   // cancelled / empty — do NOT consume the item
+        break;
+      }
+      default: return false;
+    }
+    await wait(120);
+    return true;
+    } finally { B.itemBusy = false; }
+  }
+
   root.CG = root.CG || {};
-  root.CG.Battle = { start, init, debug: Debug };
+  root.CG.Battle = { start, init, debug: Debug, useItem: applyCombatItem, inCombat, busy: combatBusy };
 
 })(window);

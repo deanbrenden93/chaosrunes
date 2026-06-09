@@ -7,7 +7,7 @@
   'use strict';
 
   const DATA = root.CG.DATA;
-  const { GLYPHS, BLESSINGS, POWER_BLESSINGS, MONSTERS, ENEMIES } = DATA;
+  const { GLYPHS, BLESSINGS, POWER_BLESSINGS, MONSTERS, ENEMIES, ITEMS } = DATA;
   const SFX = root.CG.Audio.SFX;
 
   // neutral preview env for meta screens: no chain/strength, only run-wide buffs
@@ -155,7 +155,7 @@
   // the signature special socket each beast brings to the forge (icon + name + blurb)
   const SLOT_SIGNATURE = {
     empower:  { icon: '⊕', name: 'Empower', blurb: 'Bolsters the glyphs resolved just before & after it by +1.', color: '#ffe6a8' },
-    devil:    { icon: '😈', name: 'Devil', blurb: 'Devours its glyph for a permanent boon, spitting back a Maw-Eaten Scrap.', color: '#ff8aa0' },
+    devil:    { icon: '😈', name: 'Devil', blurb: 'Devours its glyph for a permanent boon, spitting a disposable lifesteal Maw-Eaten Scrap into your next hand.', color: '#ff8aa0' },
     hold:     { icon: '⏸', name: 'Hold', blurb: 'Keeps its glyph for next turn as a bonus card — no discard.', color: '#9fd6c0' },
     clone:    { icon: '⧉', name: 'Clone', blurb: 'Copies its glyph into your next hand, empowered +1.', color: '#aee0ff' },
     catalyst: { icon: '✦', name: 'Catalyst', blurb: 'Infuses the next glyph by color — damage, block, or heal.', color: 'var(--gold)' },
@@ -243,6 +243,7 @@
       map: genMap(),
       pos: { floor: -1, idx: null },   // -1 = before the first floor
       cleared: 0,
+      items: ['blood_phial'],    // carried consumables (top-HUD tray); start with one
       lastEvent: null            // avoid repeating the same event back-to-back
     };
     root.CG.State = State;
@@ -598,6 +599,13 @@
       pendingNodeSouls += souls;
     }));
 
+    // --- Item drop (non-boss tiers, when there's room to carry one) ---
+    if (tier !== 'boss' && !itemsFull() && Math.random() < 0.5) {
+      const it = rng(Object.values(ITEMS));
+      if (it) claims.appendChild(claimCard(it.icon, 'Item',
+        '<b>' + it.name + '</b> — ' + it.desc, 'var(--gold)', () => addItem(it.id)));
+    }
+
     // --- Blessing (elite + boss) ---
     if (tier === 'elite' || tier === 'boss') {
       const bless = pickBlessing(tier);
@@ -886,9 +894,118 @@
           }).join('')
         : '<span class="tb-empty">—</span>';
     }
+    renderItems();
   }
   // back-compat alias used around the reward flow
   function updateRunUI() { updateTopbar(); }
+
+  // ============================================================
+  // ITEMS / INVENTORY (top-HUD consumable tray)
+  // ============================================================
+  const MAX_ITEMS = 6;
+  const ITEM_SLOTS = 5;   // baseline empty slots shown in the HUD
+  function itemsArr() { return (State && State.items) || []; }
+  function itemsFull() { return itemsArr().length >= MAX_ITEMS; }
+
+  function addItem(id) {
+    if (!State || !ITEMS[id]) return false;
+    if (!State.items) State.items = [];
+    if (State.items.length >= MAX_ITEMS) return false;
+    State.items.push(id);
+    renderItems(); saveGame();
+    return true;
+  }
+  function removeItemAt(idx, id) {
+    if (!State || !State.items) return;
+    if (State.items[idx] === id) State.items.splice(idx, 1);
+    else { const i = State.items.indexOf(id); if (i !== -1) State.items.splice(i, 1); }
+    renderItems(); saveGame();
+  }
+  // Soul Jar death-save: spend one if carried, so a fallen beast revives.
+  function consumeRevive() {
+    if (!State || !State.items) return false;
+    const i = State.items.indexOf('soul_jar');
+    if (i === -1) return false;
+    State.items.splice(i, 1);
+    renderItems(); saveGame();
+    return true;
+  }
+  function grantRandomBlessing(rarity) {
+    let bless;
+    if (rarity === 'rare') {
+      const pool = Object.values(POWER_BLESSINGS).filter(b => !(b.scope === 'run' && State.blessings[b.id]));
+      bless = rng(pool.length ? pool : Object.values(POWER_BLESSINGS));
+    } else {
+      const pool = Object.values(BLESSINGS).filter(b => b.scope === 'run' ? !State.blessings[b.id] : true);
+      bless = rng(pool.length ? pool : Object.values(BLESSINGS));
+    }
+    if (bless) { applyBlessing(bless); updateTopbar(); }
+    return bless;
+  }
+  function inCombatNow() {
+    return !!(root.CG.Battle && root.CG.Battle.inCombat && root.CG.Battle.inCombat());
+  }
+  function flashItemDenied(idx) {
+    const tray = document.querySelector('.tb-items');
+    const chip = tray && tray.children[idx];
+    if (chip) { chip.classList.add('item-deny'); setTimeout(() => chip.classList.remove('item-deny'), 380); }
+  }
+  // out-of-combat use for the non-combat consumables
+  function applyMetaItem(it) {
+    const e = it.effect || {};
+    const m = activeMonster();
+    if (e.kind === 'heal' && m) { m.hp = Math.min(m.maxHp, m.hp + Math.ceil(m.maxHp * e.pct)); SFX.reward(); }
+    else if (e.kind === 'soulHeal' && m) { m.hp = m.maxHp; SFX.reward(); }
+    else if (e.kind === 'blessing') { grantRandomBlessing(e.rarity); SFX.reward(); }
+    updateTopbar();
+  }
+  function useItem(idx) {
+    const id = itemsArr()[idx];
+    const it = id && ITEMS[id];
+    if (!it) return;
+    const inB = inCombatNow();
+    if (it.combatOnly && !inB) { (SFX.error || SFX.click)(); flashItemDenied(idx); return; }
+    if (inB) {
+      if (root.CG.Battle.busy && root.CG.Battle.busy()) { (SFX.error || SFX.click)(); flashItemDenied(idx); return; }
+      // combat effect is animated by the battle engine; consume only if it fired
+      root.CG.Battle.useItem(id).then(used => { if (used) removeItemAt(idx, id); });
+      return;
+    }
+    applyMetaItem(it);
+    removeItemAt(idx, id);
+  }
+  function renderItems() {
+    const tray = document.querySelector('.tb-items');
+    if (!tray) return;
+    tray.innerHTML = '';
+    const items = itemsArr();
+    const inB = inCombatNow();
+    const count = Math.max(ITEM_SLOTS, items.length);
+    for (let idx = 0; idx < count; idx++) {
+      if (idx >= items.length) {
+        if (idx < ITEM_SLOTS) {
+          const slot = el('div', 'item-slot');
+          slot.innerHTML = '<span class="hud-tip">Empty item slot</span>';
+          tray.appendChild(slot);
+        }
+        continue;
+      }
+      const id = items[idx];
+      const it = ITEMS[id];
+      if (!it) continue;
+      const usableNow = !it.combatOnly || inB;
+      const chip = el('div', 'item-slot filled rarity-' + (it.rarity || 'common') + (usableNow ? '' : ' item-locked'));
+      chip.innerHTML =
+        '<span class="item-icon">' + it.icon + '</span>' +
+        '<span class="hud-tip"><b>' + it.name + '</b><br>' + it.desc +
+          (it.combatOnly ? '<br><i class="item-hint">Combat only</i>' : '') +
+          (it.passive ? '<br><i class="item-hint">Revives a fallen beast while carried</i>' : '') +
+          '<br><i class="item-hint">' + (usableNow ? 'Click to use' : 'Use in combat') + '</i></span>';
+      chip.addEventListener('mouseenter', () => SFX.hover());
+      chip.addEventListener('click', () => useItem(idx));
+      tray.appendChild(chip);
+    }
+  }
 
   // show/hide + configure the global HUD per screen
   function setHud(screenId) {
@@ -1851,6 +1968,18 @@
       }));
     }
 
+    // --- a consumable item for sale (only when there's room to carry it) ---
+    if (!itemsFull()) {
+      const offered = rng(Object.values(ITEMS));
+      if (offered) {
+        grid.appendChild(shopCard({
+          kind: 'Item', icon: offered.icon, name: offered.name, color: 'var(--gold)',
+          desc: offered.desc, price: offered.price,
+          onBuy: () => { addItem(offered.id); }
+        }));
+      }
+    }
+
     // --- services ---
     grid.appendChild(shopCard({
       kind: 'Service', icon: '🔥', name: 'Mend Wounds', color: 'var(--red)',
@@ -2054,6 +2183,7 @@
       const data = JSON.parse(raw);
       if (!data || !data.state || !data.state.monsters) return false;
       State = data.state;
+      if (!Array.isArray(State.items)) State.items = [];   // back-compat for pre-items saves
       root.CG.State = State;
       renderMap();
       show('screen-map');
@@ -2092,13 +2222,14 @@
   // OPTIONS  (audio settings, persisted)
   // ============================================================
   const SETTINGS_KEY = 'cg_settings_v1';
-  let settings = { music: 0.42, sfx: 0.9, muted: false };
+  let settings = { master: 1.0, music: 0.42, sfx: 0.9, muted: false };
   function loadSettings() {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (raw) {
         const s = JSON.parse(raw);
         if (s && typeof s === 'object') {
+          if (typeof s.master === 'number') settings.master = s.master;
           if (typeof s.music === 'number') settings.music = s.music;
           if (typeof s.sfx === 'number') settings.sfx = s.sfx;
           if (typeof s.muted === 'boolean') settings.muted = s.muted;
@@ -2113,6 +2244,7 @@
   function applySettingsToAudio() {
     const A = root.CG.Audio;
     if (!A) return;
+    if (A.setMasterVolume) A.setMasterVolume(settings.master);
     if (A.setMusicVolume) A.setMusicVolume(settings.music);
     if (A.setSfxVolume) A.setSfxVolume(settings.sfx);
     if (A.mute) A.mute(settings.muted);
@@ -2125,11 +2257,12 @@
   }
   function syncOptionsUI() {
     const pct = v => Math.round(v * 100) + '%';
-    const mus = $('opt-music'), sfx = $('opt-sfx'), mute = $('opt-mute');
+    const mas = $('opt-master'), mus = $('opt-music'), sfx = $('opt-sfx'), mute = $('opt-mute');
+    if (mas) { mas.value = Math.round(settings.master * 100); $('opt-master-val').textContent = pct(settings.master); paintSlider(mas); }
     if (mus) { mus.value = Math.round(settings.music * 100); $('opt-music-val').textContent = pct(settings.music); paintSlider(mus); }
     if (sfx) { sfx.value = Math.round(settings.sfx * 100); $('opt-sfx-val').textContent = pct(settings.sfx); paintSlider(sfx); }
     if (mute) { mute.classList.toggle('on', settings.muted); mute.setAttribute('aria-checked', settings.muted ? 'true' : 'false'); }
-    [mus, sfx].forEach(el => { if (el) el.classList.toggle('opt-disabled', settings.muted); });
+    [mas, mus, sfx].forEach(el => { if (el) el.classList.toggle('opt-disabled', settings.muted); });
   }
   function openOptions() {
     syncOptionsUI();
@@ -2142,7 +2275,15 @@
     $('options-modal').classList.add('hidden');
   }
   function wireOptions() {
-    const mus = $('opt-music'), sfx = $('opt-sfx'), mute = $('opt-mute');
+    const mas = $('opt-master'), mus = $('opt-music'), sfx = $('opt-sfx'), mute = $('opt-mute');
+    if (mas) mas.addEventListener('input', () => {
+      settings.master = mas.value / 100;
+      $('opt-master-val').textContent = mas.value + '%';
+      paintSlider(mas);
+      if (root.CG.Audio) root.CG.Audio.setMasterVolume(settings.master);
+      saveSettings();
+    });
+    if (mas) mas.addEventListener('change', () => SFX.click());   // audition on release
     if (mus) mus.addEventListener('input', () => {
       settings.music = mus.value / 100;
       $('opt-music-val').textContent = mus.value + '%';
@@ -2278,6 +2419,7 @@
   root.CG = root.CG || {};
   root.CG.Game = {
     init, show, renderMap, gameOver, activeMonster, firstAlive, updateTopbar,
+    grantRandomBlessing, consumeRevive, addItem,
     get state() { return State; }
   };
 

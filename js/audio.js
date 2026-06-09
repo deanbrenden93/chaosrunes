@@ -9,14 +9,16 @@
   let master = null;
   let muted = false;
   let sfxVol = 0.9;            // multiplier applied to sample SFX + synth master
+  let masterVol = 1.0;        // overall ceiling applied to BOTH music and SFX
   const SFX_MASTER_BASE = 0.5; // synth master gain at 100% sfx
+  function sfxGain() { return SFX_MASTER_BASE * sfxVol * masterVol; }
 
   function ensure() {
     if (ctx) return;
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       master = ctx.createGain();
-      master.gain.value = SFX_MASTER_BASE * sfxVol;
+      master.gain.value = sfxGain();
       master.connect(ctx.destination);
     } catch (e) { ctx = null; }
   }
@@ -134,7 +136,7 @@
     sampleIdx[name] = (sampleIdx[name] + 1) % pool.length;
     try {
       a.muted = false;
-      a.volume = (SAMPLE_VOL[name] != null ? SAMPLE_VOL[name] : 0.6) * sfxVol;
+      a.volume = (SAMPLE_VOL[name] != null ? SAMPLE_VOL[name] : 0.6) * sfxVol * masterVol;
       try { a.currentTime = 0; } catch (e) { /* not seekable yet */ }
       const p = a.play();
       if (p && p.catch) p.catch(() => {});
@@ -158,7 +160,11 @@
     elite: 'assets/elite battle.mp3'
   };
   const FADE_MS = 900;          // gentle fade-in / track-to-track crossfade
-  const LOOP_XFADE_MS = 10000;  // crossfade the loop 10s before the end
+  const LOOP_XFADE_MS = 10000;  // default: crossfade the loop 10s before the end
+  // per-track loop-seam crossfade length. The normal battle theme loops on itself
+  // constantly, so a long 10s tail-into-head overlap muddies it — keep it tight (~3s).
+  const LOOP_XFADE_BY_TRACK = { battle: 3000 };
+  function loopXfadeFor(name) { return LOOP_XFADE_BY_TRACK[name] || LOOP_XFADE_MS; }
   // tracks that should REMEMBER their playhead and resume where they left off
   // (the ambient node bed + the normal battle theme, both heard constantly), vs.
   // tracks that restart fresh each time for impact (the elite/boss theme)
@@ -169,7 +175,7 @@
   const trackPos = {};          // remembered playhead per resumable track (seconds)
 
   function nowMs() { return (root.performance || Date).now(); }
-  function targetVol() { return muted ? 0 : musicGain; }
+  function targetVol() { return muted ? 0 : musicGain * masterVol; }
 
   // ramp an element's volume; `eq` uses an equal-power curve (no mid-fade dip)
   function fadeEl(el, target, ms, opts) {
@@ -250,7 +256,7 @@
     const dur = el.duration;
     if (!dur || !isFinite(dur)) return;
     // never let the crossfade exceed half the track length
-    const x = Math.min(LOOP_XFADE_MS, Math.max(1000, (dur * 1000) / 2));
+    const x = Math.min(loopXfadeFor(voice.name), Math.max(1000, (dur * 1000) / 2));
     const remain = (dur - el.currentTime) * 1000;
     if (remain <= x) {
       voice._looped = true;
@@ -294,7 +300,7 @@
     stop(opts) { this.to(null, opts); },
     setVolume(v) {
       musicGain = Math.max(0, Math.min(1, v));
-      if (!muted) voices.forEach(function (vo) { if (vo.name === currentTrack && !vo._dying) fadeEl(vo.el, musicGain, 200); });
+      if (!muted) voices.forEach(function (vo) { if (vo.name === currentTrack && !vo._dying) fadeEl(vo.el, targetVol(), 200); });
     }
   };
 
@@ -396,9 +402,23 @@
     // ---- sfx volume (0..1): scales synth master + sampled one-shots ----
     setSfxVolume(v) {
       sfxVol = Math.max(0, Math.min(1, v));
-      if (master) master.gain.value = SFX_MASTER_BASE * sfxVol;
+      if (master) master.gain.value = sfxGain();
     },
-    getSfxVolume() { return sfxVol; }
+    getSfxVolume() { return sfxVol; },
+    // ---- master volume (0..1): overall ceiling on music AND sfx ----
+    setMasterVolume(v) {
+      masterVol = Math.max(0, Math.min(1, v));
+      if (master) master.gain.value = sfxGain();
+      if (!muted) voices.forEach(function (vo) { if (vo.name === currentTrack && !vo._dying) fadeEl(vo.el, targetVol(), 200); });
+    },
+    getMasterVolume() { return masterVol; },
+    // every audio file the game ships, so the boot loader can prewarm them
+    assetUrls() {
+      const out = [];
+      for (const k in SAMPLE_SRC) out.push(SAMPLE_SRC[k]);
+      for (const k in MUSIC_SRC) out.push(MUSIC_SRC[k]);
+      return out;
+    }
   };
 
 })(window);

@@ -10,6 +10,18 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
+  <!-- ============ BOOT LOADING SCREEN (covers everything until assets are warm) ============ -->
+  <div id="loading-screen" class="loading-screen">
+    <div class="loading-inner">
+      <img class="loading-logo" src="assets/game logo.png" alt="Chaos Runes" />
+      <div class="loading-bar"><div id="loading-fill" class="loading-fill"></div></div>
+      <div class="loading-meta">
+        <span id="loading-status" class="loading-status">Stoking the forge…</span>
+        <span id="loading-pct" class="loading-pct">0%</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Letterboxed viewport. #stage is a fixed 1920x1080 reference that scales uniformly. -->
   <div id="viewport">
     <div id="stage">
@@ -221,6 +233,11 @@
         <div class="options-panel">
           <h2 class="options-title">Options</h2>
           <div class="options-group">
+            <label class="opt-row">
+              <span class="opt-label">Master Volume</span>
+              <input id="opt-master" class="opt-slider" type="range" min="0" max="100" value="100" />
+              <span id="opt-master-val" class="opt-val">100%</span>
+            </label>
             <label class="opt-row">
               <span class="opt-label">Music Volume</span>
               <input id="opt-music" class="opt-slider" type="range" min="0" max="100" value="42" />
