@@ -96,6 +96,15 @@ html, body {
   background:
     radial-gradient(ellipse at 50% 0%, #241936 0%, #120c1e 45%, #0a0712 100%);
 }
+/* shake layer — a stable GPU layer that only the screen-shake transforms.
+   Decoupling this from #stage's scale lets the shake run on the compositor
+   thread (pure translate3d, no CSS-var transform), which kills the mobile
+   black-box / tearing artifacts during heavy hits. */
+#stage-shake {
+  position: absolute; inset: 0;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
 
 .fx-layer {
   position: absolute; inset: 0;
@@ -353,6 +362,7 @@ html, body {
   --beast: var(--gold);
   position: relative; width: 1400px; height: 700px;
   perspective: 1500px;
+  transform-style: preserve-3d;
 }
 .bp-content {
   position: absolute; inset: 0;
@@ -363,6 +373,12 @@ html, body {
   box-shadow: 0 22px 56px rgba(0,0,0,0.6), 0 0 44px color-mix(in srgb, var(--beast) 16%, transparent);
   transform-origin: calc(50% - var(--dir, 1) * 50%) center;
   animation: page-turn .5s cubic-bezier(.2,.85,.3,1) backwards;
+  /* mobile: keep the 3D turn on its own backed layer so it doesn't tear or
+     flash black mid-rotation */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+  transform: translateZ(0);
 }
 @keyframes page-turn {
   from {
@@ -2348,34 +2364,36 @@ html, body {
   100% { opacity: 0; transform: translate(-50%,-50%) scale(0.95); }
 }
 
-/* screen shake */
-.stage-shake { animation: shake-hard 0.4s ease; }
-.stage-shake-2 { animation: shake-hard-2 0.5s ease; }
-.stage-shake-3 { animation: shake-hard-3 0.62s ease; }
+/* screen shake — applied to #stage-shake, which is already centered/scaled by
+   its #stage parent. Keyframes use pure translate3d/rotate so the animation
+   stays on the compositor thread (smooth on mobile, no repaints). */
+.stage-shake  { animation: shake-hard   0.4s ease;  will-change: transform; }
+.stage-shake-2 { animation: shake-hard-2 0.5s ease;  will-change: transform; }
+.stage-shake-3 { animation: shake-hard-3 0.62s ease; will-change: transform; }
 .bolt { transform: translate(-50%, -50%); }
 @keyframes shake-hard {
-  0%,100% { transform: var(--stage-tf) translate(0,0); }
-  20% { transform: var(--stage-tf) translate(-10px, 6px); }
-  40% { transform: var(--stage-tf) translate(8px, -6px); }
-  60% { transform: var(--stage-tf) translate(-6px, 4px); }
-  80% { transform: var(--stage-tf) translate(4px, -3px); }
+  0%,100% { transform: translate3d(0,0,0); }
+  20% { transform: translate3d(-10px, 6px, 0); }
+  40% { transform: translate3d(8px, -6px, 0); }
+  60% { transform: translate3d(-6px, 4px, 0); }
+  80% { transform: translate3d(4px, -3px, 0); }
 }
 @keyframes shake-hard-2 {
-  0%,100% { transform: var(--stage-tf) translate(0,0); }
-  15% { transform: var(--stage-tf) translate(-17px, 10px) rotate(-0.4deg); }
-  33% { transform: var(--stage-tf) translate(15px, -11px) rotate(0.4deg); }
-  52% { transform: var(--stage-tf) translate(-12px, 8px); }
-  71% { transform: var(--stage-tf) translate(9px, -6px); }
-  88% { transform: var(--stage-tf) translate(-5px, 3px); }
+  0%,100% { transform: translate3d(0,0,0); }
+  15% { transform: translate3d(-17px, 10px, 0) rotate(-0.4deg); }
+  33% { transform: translate3d(15px, -11px, 0) rotate(0.4deg); }
+  52% { transform: translate3d(-12px, 8px, 0); }
+  71% { transform: translate3d(9px, -6px, 0); }
+  88% { transform: translate3d(-5px, 3px, 0); }
 }
 @keyframes shake-hard-3 {
-  0%,100% { transform: var(--stage-tf) translate(0,0); }
-  12% { transform: var(--stage-tf) translate(-27px, 15px) rotate(-0.7deg); }
-  27% { transform: var(--stage-tf) translate(24px, -18px) rotate(0.7deg); }
-  43% { transform: var(--stage-tf) translate(-20px, 13px) rotate(-0.5deg); }
-  60% { transform: var(--stage-tf) translate(16px, -11px); }
-  77% { transform: var(--stage-tf) translate(-11px, 7px); }
-  90% { transform: var(--stage-tf) translate(6px, -4px); }
+  0%,100% { transform: translate3d(0,0,0); }
+  12% { transform: translate3d(-27px, 15px, 0) rotate(-0.7deg); }
+  27% { transform: translate3d(24px, -18px, 0) rotate(0.7deg); }
+  43% { transform: translate3d(-20px, 13px, 0) rotate(-0.5deg); }
+  60% { transform: translate3d(16px, -11px, 0); }
+  77% { transform: translate3d(-11px, 7px, 0); }
+  90% { transform: translate3d(6px, -4px, 0); }
 }
 
 /* ============================================================
