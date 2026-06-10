@@ -12,7 +12,8 @@
     blue:   'var(--blue)',
     green:  'var(--green)',
     purple: 'var(--purple)',
-    gray:   'var(--gray)'
+    gray:   'var(--gray)',
+    white:  'var(--white)'
   };
 
   /* ----------------------------------------------------------
@@ -483,6 +484,136 @@
       id: 'deadweight', name: 'Dead Weight', color: 'gray', rune: '⛓',
       character: null, junk: true, sticky: true, slots: 2,
       desc: 'A cursed anchor. Takes <b>2</b> hand spaces and never discards. Socket it to finally drop it.'
+    },
+
+    /* ---------------- COLORLESS — the white Soul-glyphs ----------------
+       Beast-agnostic, premium cards earned ONLY at Soulstone nodes. They
+       play to no beast's traits, so they're strong on raw numbers and carry
+       the `wild` combo letter to slot into any chain. `colorless: true`
+       keeps them out of the normal reward pools. Resolution is data-driven
+       from `fx` (see battle.js resolveNeutral). 12 are available from the
+       start; 8 more (unlock-gated) are saved for a meta-progression pass. */
+    soul_strike: {
+      id: 'soul_strike', name: 'Soul Strike', color: 'white', rune: '✶',
+      colorless: true, letter: 'wild', rarity: 'uncommon',
+      fx: [{ op: 'dmg', v: 8, t: 'first' }],
+      desc: 'Deal <b>8</b> damage to the first enemy.'
+    },
+    soul_ward: {
+      id: 'soul_ward', name: 'Soul Ward', color: 'white', rune: '❖',
+      colorless: true, letter: 'wild', rarity: 'uncommon',
+      fx: [{ op: 'shield', v: 8 }],
+      desc: 'Gain <b>8</b> shield.'
+    },
+    soul_mend: {
+      id: 'soul_mend', name: 'Soul Mend', color: 'white', rune: '✚',
+      colorless: true, letter: 'wild', rarity: 'uncommon',
+      fx: [{ op: 'heal', v: 8 }],
+      desc: 'Heal <b>8</b> HP.'
+    },
+    soul_lash: {
+      id: 'soul_lash', name: 'Soul Lash', color: 'white', rune: '✦',
+      colorless: true, letter: 'wild', rarity: 'uncommon',
+      fx: [{ op: 'dmg', v: 4, t: 'all' }],
+      desc: 'Deal <b>4</b> damage to ALL enemies.'
+    },
+    soul_spark: {
+      id: 'soul_spark', name: 'Soul Spark', color: 'white', rune: '❂',
+      colorless: true, letter: 'wild', rarity: 'uncommon',
+      fx: [{ op: 'dmg', v: 5, t: 'random', hits: 2 }],
+      desc: 'Strike random enemies <b>twice</b> for <b>5</b> each.'
+    },
+    soul_might: {
+      id: 'soul_might', name: 'Soul Might', color: 'white', rune: '⬢',
+      colorless: true, letter: 'wild', rarity: 'uncommon',
+      fx: [{ op: 'str', v: 2 }],
+      desc: 'Gain <b>2</b> Strength for the battle.'
+    },
+    soul_bulwark: {
+      id: 'soul_bulwark', name: 'Soul Bulwark', color: 'white', rune: '⬣',
+      colorless: true, letter: 'wild', rarity: 'uncommon',
+      fx: [{ op: 'res', v: 2 }],
+      desc: 'Gain <b>2</b> Resilience for the battle.'
+    },
+    soul_pyre: {
+      id: 'soul_pyre', name: 'Soul Pyre', color: 'white', rune: '✸',
+      colorless: true, letter: 'wild', rarity: 'uncommon',
+      fx: [{ op: 'burn', v: 4, t: 'first' }],
+      desc: 'Apply <b>4</b> Burn to the first enemy.'
+    },
+    soul_drain: {
+      id: 'soul_drain', name: 'Soul Drain', color: 'white', rune: '❉',
+      colorless: true, letter: 'wild', rarity: 'rare',
+      fx: [{ op: 'dmg', v: 6, t: 'first' }, { op: 'heal', v: 4 }],
+      desc: 'Deal <b>6</b> damage to the first enemy and heal <b>4</b> HP.'
+    },
+    soul_crush: {
+      id: 'soul_crush', name: 'Soul Crush', color: 'white', rune: '✹',
+      colorless: true, letter: 'wild', rarity: 'rare',
+      fx: [{ op: 'dmg', v: 10, t: 'lowest' }],
+      desc: 'Deal <b>10</b> damage to the weakest enemy.'
+    },
+    soul_aegis: {
+      id: 'soul_aegis', name: 'Soul Aegis', color: 'white', rune: '⛨',
+      colorless: true, letter: 'wild', rarity: 'rare',
+      fx: [{ op: 'shield', v: 5 }, { op: 'dmg', v: 5, t: 'first' }],
+      desc: 'Gain <b>5</b> shield and deal <b>5</b> damage to the first enemy.'
+    },
+    soul_terror: {
+      id: 'soul_terror', name: 'Soul Terror', color: 'white', rune: '☠',
+      colorless: true, letter: 'wild', rarity: 'rare',
+      fx: [{ op: 'scare', v: 2, t: 'all' }],
+      desc: 'Apply <b>2</b> Scare to ALL enemies.'
+    },
+
+    /* -- unlockable soul-glyphs (gated; saved for meta progression) -- */
+    soul_rend: {
+      id: 'soul_rend', name: 'Soul Rend', color: 'white', rune: '✺',
+      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_rend',
+      fx: [{ op: 'dmg', v: 6, t: 'all' }],
+      desc: 'Deal <b>6</b> damage to ALL enemies.'
+    },
+    soul_nova: {
+      id: 'soul_nova', name: 'Soul Nova', color: 'white', rune: '✴',
+      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_nova',
+      fx: [{ op: 'dmg', v: 12, t: 'first' }, { op: 'shield', v: 4 }],
+      desc: 'Deal <b>12</b> damage to the first enemy and gain <b>4</b> shield.'
+    },
+    soul_phoenix: {
+      id: 'soul_phoenix', name: 'Soul Phoenix', color: 'white', rune: '❤',
+      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_phoenix',
+      fx: [{ op: 'heal', v: 12 }, { op: 'str', v: 1 }],
+      desc: 'Heal <b>12</b> HP and gain <b>1</b> Strength.'
+    },
+    soul_tempest: {
+      id: 'soul_tempest', name: 'Soul Tempest', color: 'white', rune: '❈',
+      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_tempest',
+      fx: [{ op: 'dmg', v: 4, t: 'all', hits: 2 }],
+      desc: 'Deal <b>4</b> damage to ALL enemies, <b>twice</b>.'
+    },
+    soul_fortress: {
+      id: 'soul_fortress', name: 'Soul Fortress', color: 'white', rune: '🏰',
+      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_fortress',
+      fx: [{ op: 'shield', v: 14 }],
+      desc: 'Gain <b>14</b> shield.'
+    },
+    soul_reaper: {
+      id: 'soul_reaper', name: 'Soul Reaper', color: 'white', rune: '⚰',
+      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_reaper',
+      fx: [{ op: 'dmg', v: 9, t: 'highest' }, { op: 'scare', v: 2, t: 'highest' }],
+      desc: 'Deal <b>9</b> damage and apply <b>2</b> Scare to the strongest enemy.'
+    },
+    soul_inferno: {
+      id: 'soul_inferno', name: 'Soul Inferno', color: 'white', rune: '♨',
+      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_inferno',
+      fx: [{ op: 'burn', v: 5, t: 'all' }],
+      desc: 'Apply <b>5</b> Burn to ALL enemies.'
+    },
+    soul_ascend: {
+      id: 'soul_ascend', name: 'Soul Ascend', color: 'white', rune: '❇',
+      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_ascend',
+      fx: [{ op: 'str', v: 3 }, { op: 'res', v: 3 }],
+      desc: 'Gain <b>3</b> Strength and <b>3</b> Resilience for the battle.'
     }
   };
 
@@ -538,6 +669,22 @@
     bastionheart: {
       id: 'bastionheart', name: 'Bastion Heart', icon: '🏰', scope: 'run',
       desc: 'Gain 5 shield at the start of every turn.'
+    }
+  };
+
+  // Soul blessings — wrested ONLY from the Soulhunter, one per form (A → B → C).
+  const SOUL_BLESSINGS = {
+    conjoined: {
+      id: 'conjoined', name: 'Conjoined Soul', icon: '🜸', scope: 'run', form: 'A',
+      desc: 'Every set of reward glyphs guarantees a <b>+2 empowered</b> glyph among the choices.'
+    },
+    conniving: {
+      id: 'conniving', name: 'Conniving Soul', icon: '🜹', scope: 'run', form: 'B',
+      desc: 'Every fifth turn, the enemies <b>skip their turn</b> entirely.'
+    },
+    calamitous: {
+      id: 'calamitous', name: 'Calamitous Soul', icon: '🜺', scope: 'run', form: 'C',
+      desc: 'On pickup, every eligible socket gains <b>Upgrade</b> — glyphs played there gain +1 empower for the rest of each battle.'
     }
   };
 
@@ -852,6 +999,6 @@
   }
 
   root.CG = root.CG || {};
-  root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc };
+  root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc };
 
 })(window);

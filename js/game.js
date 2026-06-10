@@ -7,7 +7,7 @@
   'use strict';
 
   const DATA = root.CG.DATA;
-  const { GLYPHS, BLESSINGS, POWER_BLESSINGS, MONSTERS, ENEMIES, ITEMS } = DATA;
+  const { GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, MONSTERS, ENEMIES, ITEMS } = DATA;
   const SFX = root.CG.Audio.SFX;
 
   // neutral preview env for meta screens: no chain/strength, only run-wide buffs
@@ -122,12 +122,13 @@
     'screen-rest': 'node',
     'screen-event': 'node',
     'screen-shop': 'node',
+    'screen-soulstone': 'node',
     'screen-blessing': 'node',
     'screen-collection': 'node'
   };
   // fight themes by node type (null = no dedicated track yet)
   function battleMusic(node) {
-    if (node.type === 'elite') return 'elite';
+    if (node.type === 'elite' || node.type === 'shadow') return 'elite';
     if (node.type === 'boss') return null;   // boss theme not supplied yet
     return 'battle';                          // normal battles & regular fights
   }
@@ -379,7 +380,10 @@
       pos: { floor: -1, idx: null },   // -1 = before the first floor
       cleared: 0,
       items: ['blood_phial'],    // carried consumables (top-HUD tray); start with one
-      lastEvent: null            // avoid repeating the same event back-to-back
+      lastEvent: null,           // avoid repeating the same event back-to-back
+      soulstones: 0,             // collected at Soulstone nodes; 5 evolves the beast
+      soulhunterKills: 0,        // Soulhunter forms cleared this run (0 → next is A, etc.)
+      unlocks: {}                // earned meta-unlocks (e.g. colorless glyphs)
     };
     root.CG.State = State;
     // the run opens on the blessing draft — the start of the "story"
@@ -397,42 +401,19 @@
   // ============================================================
   // MAP GENERATION  (Spire-style branching)
   // ============================================================
-  const FLOORS = 14;
+  // 15 rows. Row 1 (floor 0) is the opening skirmish; row 15 (floor 14) is the
+  // floor boss. The three regions referenced by the placement rules:
+  //   lower  = rows 1-5   (floors 0-4)
+  //   middle = rows 6-10  (floors 5-9)
+  //   upper  = rows 11-15 (floors 10-14)
+  const FLOORS = 15;
 
-  function pickType(f) {
-    if (f === 0) return 'battle';
-    if (f === FLOORS - 1) return 'boss';
-    if (f === FLOORS - 2) return 'rest';          // breather before the boss
-    const r = Math.random();
-    // early floors stay gentle — no elites, plenty of events to set the tone
-    if (f < 2) {
-      if (r < 0.55) return 'battle';
-      if (r < 0.78) return 'event';
-      return 'reward';
+  function shuffleArr(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = a[i]; a[i] = a[j]; a[j] = t;
     }
-    if (r < 0.32) return 'battle';
-    if (r < 0.46) return 'elite';
-    if (r < 0.63) return 'event';
-    if (r < 0.76) return 'reward';
-    if (r < 0.89) return 'shop';
-    return 'rest';
-  }
-
-  // Guarantee at least a couple of shops and a healthy spread of events somewhere
-  // along the run so the new node types always show up on a longer map.
-  function ensureServices(floors) {
-    const mids = [];
-    for (let f = 1; f < FLOORS - 2; f++) floors[f].forEach(n => mids.push(n));
-    const count = t => mids.filter(n => n.type === t).length;
-    const reseed = (need, type, avoid) => {
-      while (count(type) < need) {
-        const pool = mids.filter(n => n.type !== type && avoid.indexOf(n.type) === -1);
-        if (!pool.length) break;
-        pool[Math.floor(Math.random() * pool.length)].type = type;
-      }
-    };
-    reseed(2, 'shop', ['boss', 'rest']);
-    reseed(3, 'event', ['boss', 'rest', 'shop']);
+    return a;
   }
 
   function genMap() {
@@ -444,7 +425,7 @@
         nodes.push({
           id: f + '-' + i, floor: f, idx: i,
           x: (i + 1) / (count + 1),
-          type: pickType(f),
+          type: 'battle',     // everything starts as a battle; specials are seeded below
           enemies: null,
           children: [], parents: [],
           visited: false
@@ -473,8 +454,88 @@
         }
       });
     }
-    ensureServices(floors);
+    seedNodeTypes(floors);
     return { floors: floors };
+  }
+
+  // Constraint-driven placement of every special node type onto the skeleton.
+  function seedNodeTypes(floors) {
+    const act = (State && State.act) || 1;
+    const LAST = FLOORS - 1;            // boss row
+    const PREBOSS = FLOORS - 2;         // guaranteed rest row
+
+    const floorHasType = (f, type) => f >= 0 && f < FLOORS && floors[f].some(n => n.type === type);
+    const adjHasType = (f, type) => floorHasType(f - 1, type) || floorHasType(f + 1, type);
+    // drop `type` onto an open (still-battle) slot of floor f; returns success
+    const placeOn = (f, type) => {
+      const open = floors[f].filter(n => n.type === 'battle');
+      if (!open.length) return false;
+      open[Math.floor(Math.random() * open.length)].type = type;
+      return true;
+    };
+    // place `type` once somewhere in [lo,hi], honoring options
+    const placeInRange = (lo, hi, type, opt) => {
+      opt = opt || {};
+      const order = shuffleArr(rangeFloors(lo, hi));
+      for (const f of order) {
+        if (f <= 0 || f >= LAST) continue;                 // never the intro or boss row
+        if (opt.freshFloor && floors[f].some(n => n.type !== 'battle')) continue;
+        if (opt.noAdjacent && adjHasType(f, type)) continue;
+        if (opt.notRows && opt.notRows.indexOf(f) !== -1) continue;
+        if (placeOn(f, type)) return f;
+      }
+      return -1;
+    };
+
+    // --- fixed rows ---
+    floors[LAST][0].type = 'boss';
+    placeOn(PREBOSS, 'rest');           // breather right before the boss
+
+    // --- Soulhunter: the shadow elite, exactly one per floor (act) ---
+    placeInRange(2, LAST - 2, 'shadow', { freshFloor: true });
+
+    // --- Elites: 3-5 distinct rows, anywhere ---
+    const eliteRows = 3 + Math.floor(Math.random() * 3);   // 3,4,5
+    let elitesPlaced = 0;
+    for (const f of shuffleArr(rangeFloors(1, LAST - 1))) {
+      if (elitesPlaced >= eliteRows) break;
+      if (floorHasType(f, 'elite')) continue;
+      if (placeOn(f, 'elite')) elitesPlaced++;
+    }
+
+    // --- Shops ---
+    if (act === 1) {
+      placeInRange(5, 9, 'shop', { noAdjacent: true });               // one in the middle
+      placeInRange(10, LAST - 1, 'shop', { noAdjacent: true, notRows: [PREBOSS] }); // one in the upper
+    } else {
+      const nShops = 2 + Math.floor(Math.random() * 2);               // 2-3, never more than 3
+      for (let s = 0; s < nShops; s++) placeInRange(1, LAST - 1, 'shop', { noAdjacent: true, notRows: [PREBOSS] });
+    }
+
+    // --- A second rest, allowed in the middle region only ---
+    if (Math.random() < 0.75) placeInRange(5, 9, 'rest', { noAdjacent: true });
+
+    // --- Soulstones: two per floor so evolution stays reachable ---
+    placeInRange(2, 9, 'soulstone', {});
+    placeInRange(8, LAST - 1, 'soulstone', { notRows: [PREBOSS] });
+
+    // --- Fill a portion of the remaining battles with events / caches for texture ---
+    const filler = [];
+    for (let f = 1; f < PREBOSS; f++) floors[f].forEach(n => { if (n.type === 'battle') filler.push(n); });
+    shuffleArr(filler);
+    const wantEvents = 3, wantCaches = 2;
+    let made = 0;
+    for (const n of filler) {
+      if (made < wantEvents) { n.type = 'event'; made++; continue; }
+      if (made < wantEvents + wantCaches) { n.type = 'reward'; made++; continue; }
+      break;
+    }
+  }
+
+  function rangeFloors(lo, hi) {
+    const out = [];
+    for (let f = lo; f <= hi; f++) out.push(f);
+    return out;
   }
 
   function nodeById(id) {
@@ -491,8 +552,8 @@
   // ============================================================
   // MAP RENDER
   // ============================================================
-  const NODE_ICON = { battle: '⚔️', elite: '☠️', reward: '🎁', rest: '🔥', boss: '👑', event: '❔', shop: '🛒' };
-  const NODE_NAME = { battle: 'Battle', elite: 'Elite', reward: 'Cache', rest: 'Rest', boss: 'Boss', event: 'Event', shop: 'Bazaar' };
+  const NODE_ICON = { battle: '⚔️', elite: '☠️', reward: '🎁', rest: '🔥', boss: '👑', event: '❔', shop: '🛒', soulstone: '💠', shadow: '💀' };
+  const NODE_NAME = { battle: 'Battle', elite: 'Elite', reward: 'Cache', rest: 'Rest', boss: 'Boss', event: 'Event', shop: 'Bazaar', soulstone: 'Soulstone', shadow: 'Soulhunter' };
   // boss nodes are named after the boss actually waiting on this floor
   function nodeLabel(node) {
     if (node.type === 'boss') {
@@ -555,7 +616,14 @@
       const n = el('div', 'mapnode type-' + node.type);
       n.style.left = p.x + 'px';
       n.style.top = p.y + 'px';
-      n.innerHTML = `<span>${NODE_ICON[node.type]}</span><span class="node-label">${nodeLabel(node)}</span>`;
+      // the Soulhunter node smolders with cold black flame
+      const flames = node.type === 'shadow'
+        ? '<span class="shadowflames">' +
+            Array.from({ length: 6 }, (_, k) =>
+              '<span class="bflame" style="--i:' + k + '"></span>').join('') +
+          '</span>'
+        : '';
+      n.innerHTML = flames + `<span>${NODE_ICON[node.type]}</span><span class="node-label">${nodeLabel(node)}</span>`;
       if (node.id === curId) n.classList.add('current');
       else if (node.visited) n.classList.add('visited');
       // debug "any node" lets every node (except the one we're standing on) be entered
@@ -643,6 +711,60 @@
     return pick.members.slice();
   }
 
+  // ---- Soulhunter: the recurring shadow elite ----
+  // Its form is fixed by how many times you've already cut it down this run
+  // (0 → A, 1 → B, 2 → C). Each form is roughly twice as fierce as a regular
+  // floor elite, and every form is a major step up from the last.
+  function soulhunterForm() {
+    const k = State.soulhunterKills || 0;
+    return k <= 0 ? 'A' : (k === 1 ? 'B' : 'C');
+  }
+  function soulhunterFormation() {
+    const form = soulhunterForm();
+    const act = State.act || 1;
+    const actMul = 1 + (act - 1) * 0.55;          // the floor's own difficulty rides on top
+    const FORMS = {
+      A: { hp: 124, enrage: 0, intents: [
+        { type: 'attack', value: 12 },
+        [ { type: 'debuff', stat: 'weak', value: 2 }, { type: 'attack', value: 8 } ],
+        { type: 'attack', value: 9, hits: 2 },
+        { type: 'attack', value: 24, big: true }
+      ] },
+      B: { hp: 210, enrage: 2, intents: [
+        [ { type: 'curse', value: 2 }, { type: 'attack', value: 12 } ],
+        { type: 'attack', value: 12, hits: 2 },
+        [ { type: 'sunder', value: 2 }, { type: 'debuff', stat: 'frail', value: 2 } ],
+        { type: 'attack', value: 15, hits: 2 },
+        { type: 'attack', value: 36, big: true },
+        { type: 'regen', value: 18 }
+      ] },
+      C: { hp: 340, enrage: 3, intents: [
+        [ { type: 'curse', value: 3 }, { type: 'sunder', value: 2 } ],
+        { type: 'attack', value: 13, hits: 3 },
+        [ { type: 'siphon', stat: 'strength', value: 2 }, { type: 'debuff', stat: 'weak', value: 3 } ],
+        [ { type: 'defend', value: 26 }, { type: 'buff', value: 6, turns: 2 } ],
+        { type: 'attack', value: 19, hits: 3 },
+        { type: 'attack', value: 54, big: true },
+        [ { type: 'regen', value: 28 }, { type: 'debuff', stat: 'frail', value: 3 } ]
+      ] }
+    };
+    const spec = FORMS[form];
+    const scaleSub = it => {
+      const o = Object.assign({}, it);
+      if (o.type === 'attack' || o.type === 'defend' || o.type === 'regen') o.value = Math.round(it.value * actMul);
+      return o;
+    };
+    const intents = spec.intents.map(e => Array.isArray(e) ? e.map(scaleSub) : scaleSub(e));
+    const def = {
+      id: 'soulhunter', name: 'Soulhunter \u2014 Form ' + form, emoji: '\u2620\uFE0F',
+      maxHp: Math.round(spec.hp * actMul),
+      boss: true, shadow: true, form: form,
+      intents: intents
+    };
+    if (spec.enrage) def.enrage = spec.enrage;
+    return [ def ];
+  }
+
   function enterNode(node) {
     SFX.click();
     State.pos = { floor: node.floor, idx: node.idx };
@@ -661,12 +783,17 @@
     } else if (node.type === 'shop') {
       buildShop();
       show('screen-shop');
+    } else if (node.type === 'soulstone') {
+      buildSoulstone(node);
+      show('screen-soulstone');
     } else {
-      // battle / elite / boss
-      const enemies = enemyFormation(node);
+      // battle / elite / boss / shadow(Soulhunter)
+      const isShadow = node.type === 'shadow';
+      const enemies = isShadow ? soulhunterFormation() : enemyFormation(node);
       root.CG.Battle.start({
         enemies: enemies,
         isBoss: node.type === 'boss',
+        shadow: isShadow,
         // acts stack on top of node depth so floor 2/3 enemies hit and soak harder
         depth: ((State.act || 1) - 1) * 10 + (node.floor || 0),
         onWin: () => onBattleWin(node),
@@ -690,6 +817,8 @@
         pendingNextFloor = true;   // floor boss down — climb to the next act after rewards
       }
       buildReward('boss');
+    } else if (node.type === 'shadow') {
+      buildReward('shadow');
     } else {
       buildReward(node.type === 'elite' ? 'elite' : 'normal');
     }
@@ -721,19 +850,91 @@
 
   function soulsFor(tier) {
     if (tier === 'boss') return 60 + Math.floor(Math.random() * 21);   // 60-80
+    if (tier === 'shadow') return 44 + Math.floor(Math.random() * 17); // 44-60
     if (tier === 'elite') return 28 + Math.floor(Math.random() * 9);   // 28-36
     if (tier === 'cache') return 8 + Math.floor(Math.random() * 7);    // 8-14
     return 12 + Math.floor(Math.random() * 7);                          // 12-18
   }
 
-  // glyphs the active beast may be offered (its own + neutral).
-  // `unlock` glyphs stay out of the pool until earned (meta system, TODO).
+  // glyphs the active beast may be offered (its own + neutral, but NOT the
+  // colorless soul-glyphs — those only come from Soulstone nodes).
+  // `unlock` glyphs stay out of the pool until earned.
   function eligibleGlyphs() {
     const m = State.monsters[firstAlive()] || activeMonster();
     return Object.values(GLYPHS).filter(g =>
-      !g.junk && !g.token &&
+      !g.junk && !g.token && !g.colorless &&
       (!g.character || g.character === m.id) &&
       (!g.unlock || (State.unlocks && State.unlocks[g.unlock])));
+  }
+  // the white, beast-agnostic glyphs offered at Soulstone nodes
+  function eligibleColorless() {
+    return Object.values(GLYPHS).filter(g =>
+      g.colorless && !g.junk && !g.token &&
+      (!g.unlock || (State.unlocks && State.unlocks[g.unlock])));
+  }
+  function offerColorless(n) {
+    const pool = eligibleColorless().slice();
+    const out = [];
+    while (out.length < n && pool.length) {
+      out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    return out;
+  }
+
+  // ============================================================
+  // SOULSTONE NODE — a soul fragment (5 → evolution) plus a colorless glyph.
+  // Both are offered; both are optional. Reuses the reward commit flow.
+  // ============================================================
+  function soulstoneMeterHTML() {
+    const have = State.soulstones || 0;
+    let pips = '';
+    for (let i = 0; i < 5; i++) pips += '<span class="ss-pip' + (i < have ? ' lit' : '') + '">\u25C6</span>';
+    return '<div class="ss-pips">' + pips + '</div>' +
+      '<div class="ss-meter-label">' + have + ' / 5 — five Soulstones evolve your beast</div>';
+  }
+  function gainSoulstone() {
+    State.soulstones = (State.soulstones || 0) + 1;
+    let evolved = false;
+    if (State.soulstones >= 5) { State.soulstones -= 5; evolveMonster(); evolved = true; }
+    const meter = $('soulstone-meter');
+    if (meter) meter.innerHTML = soulstoneMeterHTML();
+    if (evolved) {
+      const sub = $('soulstone-sub');
+      if (sub) sub.innerHTML = '<b>The fragments fuse — ' + activeMonster().name + ' EVOLVES!</b>';
+      SFX.reward();
+    }
+    updateRunUI();
+  }
+  function buildSoulstone(node) {
+    pendingClaims = [];
+    pendingGlyphPick = null;
+    pendingUpgrade = null;
+    pendingNodeSouls = 0;
+    const meter = $('soulstone-meter');
+    if (meter) meter.innerHTML = soulstoneMeterHTML();
+    const sub = $('soulstone-sub');
+    if (sub) sub.textContent = 'Claim the stone, and take a colorless Soul-glyph if you wish.';
+
+    const claims = $('soulstone-claims');
+    claims.innerHTML = '';
+    claims.appendChild(claimCard('\u25C6', 'Soulstone',
+      'A shard of raw soul. Gather <b>5</b> to evolve <b>' + activeMonster().name + '</b>.',
+      'var(--blue)', () => gainSoulstone()));
+
+    const row = $('soulstone-glyphs');
+    row.innerHTML = '';
+    const offers = offerColorless(3);
+    if (!offers.length && sub) sub.textContent = 'Claim the stone — no Soul-glyphs remain to offer.';
+    offers.forEach(g => {
+      const c = glyphRewardCard(g, 1, () => {
+        pendingGlyphPick = { id: g.id, copies: 1 };
+        pendingUpgrade = null;
+        row.querySelectorAll('.reward-card').forEach(x => x.classList.remove('chosen'));
+        c.classList.add('chosen');
+        SFX.reward();
+      });
+      row.appendChild(c);
+    });
   }
   function offerGlyphs(n) {
     const pool = eligibleGlyphs().slice();
@@ -746,7 +947,7 @@
   }
 
   function buildReward(tier) {
-    const titles = { normal: 'Victory', cache: 'A Hidden Cache', elite: 'Elite Vanquished', boss: 'Boss Vanquished' };
+    const titles = { normal: 'Victory', cache: 'A Hidden Cache', elite: 'Elite Vanquished', boss: 'Boss Vanquished', shadow: 'The Soulhunter Falls' };
     $('reward-head').textContent = titles[tier] || 'Victory';
     $('reward-sub').textContent = 'Collect your spoils, then choose a glyph.';
     pendingClaims = [];
@@ -757,7 +958,7 @@
 
     // --- Souls (always) ---
     const souls = soulsFor(tier);
-    const soulKind = tier === 'boss' ? 'Abundant Souls' : tier === 'elite' ? 'Greater Souls' : 'Souls';
+    const soulKind = tier === 'boss' ? 'Abundant Souls' : (tier === 'elite' || tier === 'shadow') ? 'Greater Souls' : 'Souls';
     // Souls don't pour out here — they ride home from the node you just cleared,
     // bursting onto the map when you set out again (see finishReward).
     // Show the post-bonus total (Greed etc.) so the card matches what actually lands.
@@ -796,14 +997,25 @@
       }
     }
 
-    // --- Evolution + guaranteed socket (boss only) ---
+    // --- Guaranteed socket (boss only). Evolution is no longer a boss spoil —
+    // it now comes from gathering Soulstones. ---
     if (tier === 'boss') {
-      claims.appendChild(claimCard('🜲', 'Evolution',
-        'Evolve <b>' + activeMonster().name + '</b> — enhanced base stats &amp; passive.',
-        'var(--green)', () => evolveMonster()));
       claims.appendChild(claimCard('🜨', 'Extra Socket',
         'Permanently grant <b>' + activeMonster().name + '</b> one more glyph socket.',
         'var(--blue)', () => gainSocket(1)));
+    }
+
+    // --- Soulhunter spoils: the soul blessing for the form you just slew ---
+    if (tier === 'shadow') {
+      const form = soulhunterForm();
+      const sbId = { A: 'conjoined', B: 'conniving', C: 'calamitous' }[form];
+      const sb = SOUL_BLESSINGS[sbId];
+      if (sb && !State.blessings[sb.id]) {
+        claims.appendChild(claimCard(sb.icon, 'Soul Blessing \u2014 Form ' + form,
+          '<b>' + sb.name + '</b> \u2014 ' + sb.desc, 'var(--purple)', () => applyBlessing(sb)));
+      }
+      // this form is spent — the next Soulhunter you face rises one form stronger
+      State.soulhunterKills = (State.soulhunterKills || 0) + 1;
     }
 
     // --- Glyph of three (the only real choice) ---
@@ -815,14 +1027,18 @@
     // so the player can freely change their pick until then.
     pendingGlyphPick = null;
     pendingUpgrade = null;
-    offerGlyphs(3).forEach(g => {
+    // Conjoined Soul: one of the three offered glyphs comes pre-empowered +2.
+    const conjoined = !!State.blessings.conjoined;
+    const blessedIdx = conjoined ? Math.floor(Math.random() * 3) : -1;
+    offerGlyphs(3).forEach((g, gi) => {
+      const bonus = (gi === blessedIdx) ? 2 : 0;
       const c = glyphRewardCard(g, copies, () => {
-        pendingGlyphPick = { id: g.id, copies: copies };
+        pendingGlyphPick = { id: g.id, copies: copies, empower: bonus };
         pendingUpgrade = null;
         glyphRow.querySelectorAll('.reward-card').forEach(x => x.classList.remove('chosen'));
         c.classList.add('chosen');
         SFX.reward();
-      });
+      }, bonus);
       glyphRow.appendChild(c);
     });
 
@@ -969,8 +1185,11 @@
       // coins fade IN one by one from the source instead of piling up there visibly
       const anim = coin.animate([
         { transform: 'translate(-50%,-50%) scale(.55) rotate(0deg)', opacity: 0 },
-        { transform: `translate(-50%,-50%) translate(${sx}px,${sy}px) scale(1) rotate(${spin / 2 | 0}deg)`, opacity: 1, offset: 0.32 },
-        { transform: `translate(-50%,-50%) translate(${dx}px,${dy}px) scale(.5) rotate(${spin}deg)`, opacity: 1 }
+        { transform: `translate(-50%,-50%) translate(${sx}px,${sy}px) scale(1) rotate(${spin / 2 | 0}deg)`, opacity: 1, offset: 0.3 },
+        // nearly home, still bright...
+        { transform: `translate(-50%,-50%) translate(${dx * 0.95 | 0}px,${dy * 0.95 | 0}px) scale(.62) rotate(${spin * 0.9 | 0}deg)`, opacity: 1, offset: 0.82 },
+        // ...then dissolve into the counter as it lands
+        { transform: `translate(-50%,-50%) translate(${dx}px,${dy}px) scale(.32) rotate(${spin}deg)`, opacity: 0 }
       ], { duration: dur, delay: delay, easing: 'cubic-bezier(.3,.6,.3,1)', fill: 'both' });
       anim.onfinish = () => {
         coin.remove();
@@ -997,17 +1216,20 @@
     return '<div class="g-stack" style="--n:' + n + '">' + layers + '</div>';
   }
 
-  function glyphRewardCard(g, copies, onPick) {
-    const c = el('div', 'reward-card glyph-reward');
+  function glyphRewardCard(g, copies, onPick, bonus) {
+    bonus = bonus || 0;
+    const c = el('div', 'reward-card glyph-reward' + (bonus ? ' blessed-glyph' : ''));
     c.style.setProperty('--g-color', 'var(--' + g.color + ')');
     const slots = g.slots || 1;
+    const env = bonus ? upgradeEnv(bonus) : metaEnv(g.id);
     c.innerHTML = `
       ${letterChipHTML(g)}
+      ${bonus ? '<div class="rc-empower">Conjoined Soul +' + bonus + '</div>' : ''}
       <div class="rc-kind">${g.color} glyph${copies > 1 ? ' &times;' + copies : ''}</div>
       <div class="gr-art">${glyphArtHTML(g)}</div>
       <div class="rc-name">${g.name}</div>
       ${slots > 1 ? '<div class="rc-slots">⬡ Takes ' + slots + ' sockets</div>' : ''}
-      <div class="rc-desc">${DATA.formatDesc(g, metaEnv(g.id))}</div>`;
+      <div class="rc-desc">${DATA.formatDesc(g, env)}</div>`;
     c.addEventListener('mouseenter', () => SFX.hover());
     c.addEventListener('click', () => onPick());
     return c;
@@ -1026,10 +1248,28 @@
   function applyBlessing(bless) {
     if (bless.scope === 'run') {
       State.blessings[bless.id] = true;
+      // Calamitous Soul reshapes every eligible socket the moment it's taken
+      if (bless.id === 'calamitous') grantCalamitousUpgrade();
+      updateRunUI();
     } else if (bless.effect === 'twinsocket') {
       gainSocket(2);
     } else { // socket
       gainSocket(1);
+    }
+  }
+
+  // Calamitous Soul: stamp 'Upgrade' onto every socket that can carry a glyph
+  // and isn't a Devil socket (Devil never mixes). Persists on the beast.
+  function grantCalamitousUpgrade() {
+    const m = State.monsters[firstAlive()] || activeMonster();
+    if (!m.slotTypes) m.slotTypes = [];
+    for (let i = 0; i < m.sockets; i++) {
+      const v = m.slotTypes[i] || 'normal';
+      const list = Array.isArray(v) ? v.slice() : (v === 'normal' ? [] : [v]);
+      if (list.indexOf('devil') !== -1) continue;                          // ineligible
+      if (list.length && list.every(t => t === 'loopback')) continue;      // holds no glyph
+      if (list.indexOf('upgrade') === -1) list.push('upgrade');
+      m.slotTypes[i] = list.length === 1 ? list[0] : list;
     }
   }
 
@@ -1069,7 +1309,7 @@
     const sv = $('tb-souls'); if (sv) sv.textContent = State.souls;
     const blEl = $('tb-blessings');
     if (blEl) {
-      const allBless = Object.assign({}, BLESSINGS, POWER_BLESSINGS);
+      const allBless = Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS);
       const owned = Object.keys(State.blessings).filter(k => State.blessings[k] && allBless[k]);
       blEl.innerHTML = owned.length
         ? owned.map(k => {
@@ -1078,8 +1318,29 @@
               '<span class="hud-tip"><b>' + b.name + '</b><br>' + b.desc + '</span></span>';
           }).join('')
         : '<span class="tb-empty">—</span>';
+      fitBlessings();
     }
     renderItems();
+  }
+  // Shrink the blessing chips just enough that a big collection never collides
+  // with the items column. Chips stay full-size until they actually need to give.
+  function fitBlessings() {
+    const wrap = $('tb-blessings');
+    if (!wrap) return;
+    wrap.style.removeProperty('--bw');
+    wrap.style.removeProperty('--bgap');
+    const chips = wrap.querySelectorAll('.tb-bless');
+    const n = chips.length;
+    if (!n) return;
+    const avail = wrap.clientWidth;          // flex:1 1 0 → exactly the free gap
+    if (avail <= 0) return;                   // not laid out yet; a later update retries
+    const maxS = 28, minS = 15;
+    let gap = 6;
+    const fits = s => n * s + (n - 1) * gap <= avail;
+    let s = maxS;
+    while (s > minS && !fits(s)) s--;
+    if (s <= minS && !fits(minS)) { gap = 3; wrap.style.setProperty('--bgap', '3px'); }
+    wrap.style.setProperty('--bw', s + 'px');
   }
   // back-compat alias used around the reward flow
   function updateRunUI() { updateTopbar(); }
@@ -1217,7 +1478,7 @@
   function setHud(screenId) {
     const bar = $('battle-topbar');
     if (!bar) return;
-    const runScreens = ['screen-map', 'screen-battle', 'screen-reward', 'screen-rest', 'screen-event', 'screen-shop', 'screen-blessing'];
+    const runScreens = ['screen-map', 'screen-battle', 'screen-reward', 'screen-rest', 'screen-event', 'screen-shop', 'screen-soulstone', 'screen-blessing'];
     const on = State && runScreens.indexOf(screenId) !== -1;
     bar.classList.toggle('hidden', !on);
     const turnStat = $('tb-turn-stat');
@@ -1228,7 +1489,17 @@
   function finishReward() {
     // commit the chosen glyph (if any) now, not on click
     if (pendingGlyphPick) {
-      for (let k = 0; k < pendingGlyphPick.copies; k++) State.pool.push(pendingGlyphPick.id);
+      const bonus = pendingGlyphPick.empower || 0;
+      for (let k = 0; k < pendingGlyphPick.copies; k++) {
+        if (bonus) {
+          // Conjoined Soul: bake the +2 into its own instance so it stays empowered
+          const inst = mintInstance(baseOf(pendingGlyphPick.id));
+          State.empower[inst] = (State.empower[inst] || 0) + bonus;
+          State.pool.push(inst);
+        } else {
+          State.pool.push(pendingGlyphPick.id);
+        }
+      }
       pendingGlyphPick = null;
     } else if (pendingUpgrade) {
       applyUpgrade(pendingUpgrade.index, pendingUpgrade.type);
@@ -1601,18 +1872,30 @@
   // ============================================================
   // SHARED RUN-EFFECT HELPERS  (used by events, shop, rest)
   // ============================================================
-  const SLOT_NAME = { devil: 'Devil', catalyst: 'Catalyst', repeat: 'Repeat', hold: 'Hold', clone: 'Clone', empower: 'Empower', loopback: 'Loop' };
-  // icon + label per slot type (mirrors battle's SLOT_META) for the forge modal
+  const SLOT_NAME = { devil: 'Devil', catalyst: 'Catalyst', repeat: 'Repeat', hold: 'Hold', clone: 'Clone', empower: 'Empower', loopback: 'Loop', upgrade: 'Upgrade' };
+  // icon + label + hover description per slot type (mirrors battle's SLOT_META)
+  // for the forge modal so hovering a special slot explains what it does.
   const SLOT_INFO = {
     normal: null,
-    loopback: { icon: '↻', label: 'Loop' },
-    repeat: { icon: '×2', label: 'Repeat' },
-    hold: { icon: '⏸', label: 'Hold' },
-    catalyst: { icon: '✦', label: 'Catalyst' },
-    devil: { icon: '😈', label: 'Devil' },
-    clone: { icon: '⧉', label: 'Clone' },
-    empower: { icon: '⊕', label: 'Empower' }
+    loopback: { icon: '↻', label: 'Loop', tip: 'Holds no glyph. When the chain reaches it, every glyph already played this turn resolves <b>again</b>, then the chain continues.' },
+    repeat: { icon: '×2', label: 'Repeat', tip: 'The glyph placed here resolves <b>twice</b>.' },
+    hold: { icon: '⏸', label: 'Hold', tip: 'The glyph placed here is <b>not discarded</b> — it returns next turn as a bonus card that doesn\'t reduce your draw.' },
+    catalyst: { icon: '✦', label: 'Catalyst', tip: 'Infuses the <b>next</b> glyph by the color placed here — Red: 3 damage to all · Blue: 3 block · Green: heal 6.' },
+    devil: { icon: '😈', label: 'Devil', tip: 'The glyph resolves, then is <b>devoured</b> — that copy is gone from your deck for the run — granting a permanent boon by color (Red: +1 Strength · Blue: +1 turn shield · Green: +3 max HP) <b>and</b> spitting a disposable <b>Maw-Eaten Scrap</b> into your <b>next hand only</b>. Feed a Scrap back here and it tears away <b>30%</b> of your current HP.' },
+    clone: { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
+    empower: { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' },
+    upgrade: { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' }
   };
+  // build the hover tooltip body for one or more slot types (forge modal)
+  function slotTipHTMLOf(list) {
+    const order = [], counts = {};
+    list.forEach(t => { if (!counts[t]) { counts[t] = 0; order.push(t); } counts[t]++; });
+    return order.map(t => {
+      const info = SLOT_INFO[t];
+      if (!info) return '';
+      return '<b class="st-name">' + info.label + (counts[t] > 1 ? ' ×' + counts[t] : '') + ' Socket</b>' + (info.tip || '');
+    }).join('<br>');
+  }
 
   // ---- hybrid sockets: a slotTypes entry is 'normal', a plain special string,
   // or an ARRAY of up to 3 special types (duplicates allowed; Devil never mixes)
@@ -1642,8 +1925,11 @@
       list.forEach(x => { if (!counts[x]) { counts[x] = 0; order.push(x); } counts[x]++; });
       const icons = order.map(x =>
         '<span class="sb-ic">' + SLOT_INFO[x].icon + (counts[x] > 1 ? '<i>×' + counts[x] + '</i>' : '') + '</span>').join('');
+      // the slot-tip rides as a direct child of the tile so hovering ANYWHERE on
+      // the special slot reveals its description (centered over the tile)
       badge = '<div class="slot-badge' + (order.length > 1 ? ' multi' : '') + '">' + icons + '</div>' +
-        '<div class="slot-type-name">' + slotLabelOf(type) + '</div>';
+        '<div class="slot-type-name">' + slotLabelOf(type) + '</div>' +
+        '<div class="slot-tip modal-slot-tip">' + slotTipHTMLOf(list) + '</div>';
     }
     t.innerHTML =
       '<img class="slot-img" src="assets/Base Rune.png" alt="">' +
@@ -2278,7 +2564,7 @@
   // ============================================================
   // COLLECTION OVERLAY
   // ============================================================
-  const GLYPH_KIND = { red: 'Attack', blue: 'Defense', green: 'Support', purple: 'Hex', gray: 'Junk' };
+  const GLYPH_KIND = { red: 'Attack', blue: 'Defense', green: 'Support', purple: 'Hex', gray: 'Junk', white: 'Soul' };
   let deckDetailPinned = null;   // glyph id whose detail card is pinned by a click
 
   function glyphOwner(gl) {
@@ -2386,7 +2672,7 @@
 
     const b = $('collection-blessings');
     b.innerHTML = '';
-    const allBless = Object.assign({}, BLESSINGS, POWER_BLESSINGS);
+    const allBless = Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS);
     const owned = Object.keys(State.blessings)
       .filter(k => State.blessings[k] && allBless[k])
       .map(k => allBless[k]);
@@ -2442,6 +2728,9 @@
       if (!Array.isArray(State.items)) State.items = [];   // back-compat for pre-items saves
       if (!State.act) State.act = 1;                       // back-compat for pre-multi-floor saves
       if (!State.bossId) State.bossId = pickFloorBoss(State.act);
+      if (State.soulstones == null) State.soulstones = 0;  // back-compat for pre-soulstone saves
+      if (State.soulhunterKills == null) State.soulhunterKills = 0;
+      if (!State.unlocks) State.unlocks = {};
       root.CG.State = State;
       renderMap();
       show('screen-map');
@@ -2644,6 +2933,7 @@
 
     $('btn-skip-reward').addEventListener('click', () => { SFX.click(); finishReward(); });
     $('btn-leave-rest').addEventListener('click', () => { SFX.click(); finishReward(); });
+    $('btn-leave-soulstone').addEventListener('click', () => { SFX.click(); finishReward(); });
     $('btn-leave-shop').addEventListener('click', () => { SFX.click(); renderMap(); show('screen-map'); });
 
     $('btn-collection').addEventListener('click', () => {
@@ -2719,8 +3009,8 @@
       }));
     });
 
-    // every blessing (basic + power)
-    const allBless = Object.values(BLESSINGS).concat(Object.values(POWER_BLESSINGS));
+    // every blessing (basic + power + soul)
+    const allBless = Object.values(BLESSINGS).concat(Object.values(POWER_BLESSINGS), Object.values(SOUL_BLESSINGS));
     const seenBless = {};
     allBless.forEach(b => {
       if (!b || seenBless[b.id]) return; seenBless[b.id] = 1;

@@ -37,7 +37,8 @@
     catalyst: { icon: '✦', label: 'Catalyst', tip: 'Infuses the <b>next</b> glyph by the color placed here — Red: 3 damage to all · Blue: 3 block · Green: heal 6.' },
     devil:    { icon: '😈', label: 'Devil', tip: 'The glyph resolves, then is <b>devoured</b> — that copy is gone from your deck for the run — granting a permanent boon by color (Red: +1 Strength · Blue: +1 turn shield · Green: +3 max HP) <b>and</b> spitting a disposable <b>Maw-Eaten Scrap</b> into your <b>next hand only</b> — a one-shot lifesteal striker that vanishes if unused, so it never bloats your deck. Feed a Scrap back here and it tears away <b>30%</b> of your current HP.' },
     clone:    { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
-    empower:  { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' }
+    empower:  { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' },
+    upgrade:  { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' }
   };
   // ---- hybrid sockets ----
   // a socket's slotTypes entry may be a plain string ('normal'/'devil'/'repeat'…)
@@ -101,7 +102,8 @@
       carryShield: 0,     // shield that survives into next turn (Bastion)
       redThisTurn: 0,     // red glyphs played this turn (for Gravetide)
       blueThisTurn: 0,    // blue glyphs played this turn (for Aftershock)
-      slotTypes: [],      // per-socket behavior: normal/loopback/repeat/hold/catalyst/devil/clone
+      slotTypes: [],      // per-socket behavior: normal/loopback/repeat/hold/catalyst/devil/clone/upgrade
+      combatEmpower: {},  // Upgrade sockets: per-type +empower that lasts the battle (keyed by base id)
       tempGlyphs: {},     // transient glyph instances (Clone copies)
       extras: [],         // bonus cards for next hand (Hold + Clone) — do NOT reduce the draw
       spanHead: [],       // for multi-socket glyphs: continuation slot -> head slot index
@@ -149,7 +151,10 @@
 
     buildDOM();
     root.CG.Game.show('screen-battle');
-    banner((B.isBoss ? '⚔ ' + B.enemies[0].name + ' ⚔' : 'Battle'), 1100);
+    const headline = B.isBoss ? '⚔ ' + B.enemies[0].name + ' ⚔'
+      : opts.shadow ? '☠ ' + B.enemies[0].name + ' ☠'
+      : 'Battle';
+    banner(headline, 1100);
     setTimeout(() => beginTurn(), 700);
   }
 
@@ -170,6 +175,7 @@
     // bosses more so, to feel imposing (feet stay anchored, so they grow upward)
     const b = en.base || {};
     c.classList.remove('tier-elite', 'tier-floorboss', 'tier-boss');
+    c.classList.toggle('foe-shadow', !!b.shadow);   // Soulhunter's black-flame aura
     if (b.boss) c.classList.add('tier-boss');
     else if (b.floorBoss) c.classList.add('tier-floorboss');
     else if (b.elite) c.classList.add('tier-elite');
@@ -803,14 +809,15 @@
     const stuckCost = B.stuck.reduce((s, id) => s + (glyph(id).slots || 1), 0);
     const injected = B.injected.slice();
     B.injected = [];
-    // Held glyphs return as EXTRA cards — they do NOT reduce the normal draw
+    // Held / cloned glyphs return as EXTRA cards — pure bonuses that ADD to your
+    // hand and do NOT reduce your fresh draw (a Held card joins a full hand, it
+    // never replaces a drawn one). Only forced junk (stuck / injected) eats in.
     const extras = B.extras.slice();
     B.extras = [];
-    // Target hand size: after clones/extras are counted, you always hold at least
-    // your socket count, but never fewer than 5. Held/cloned cards count toward
-    // this minimum; forced junk (stuck / injected) still eats into your real draw.
+    // Fresh draw target: at least your socket count, never fewer than 5 (+1 Overload).
+    // Extras are then layered on top, so e.g. 5 sockets + 1 Hold + 1 Clone = 7 cards.
     const target = Math.max(5, B.monster.sockets) + (root.CG.Game.state.blessings.overload ? 1 : 0);
-    let handSize = target - extras.length - stuckCost - injected.length;
+    let handSize = target - stuckCost - injected.length;
     handSize = Math.max(0, handSize);
     const hand = drawFromPile(handSize);
     B.hand = B.stuck.concat(injected, extras, hand);
@@ -1870,6 +1877,14 @@
         if (ev.holdAny && !g.junk) { B.extras.push(ev.id); removeOne(B.drawnThisTurn, ev.id); holdFx(sEl); }   // retained, not discarded
         if (ev.catalystCount) for (let c = 0; c < ev.catalystCount; c++) pendingCatalyst.push(g.color);
         if (ev.devourAny) { removeOne(B.drawnThisTurn, ev.id); await devourGlyph(ev.id, slot, sEl); }
+        // Upgrade socket (Calamitous Soul): this glyph type grows +1 for the battle
+        const upAt = (ev.covered || [slot]).reduce((n, ci) => n + slotCountAt(ci, 'upgrade'), 0);
+        if (upAt > 0 && !g.junk) {
+          const ukey = baseOf(g.cloneOf || ev.id);
+          B.combatEmpower[ukey] = (B.combatEmpower[ukey] || 0) + upAt;
+          floatText(offset(center(sEl), 0, -40), 'Upgrade +' + upAt, 'status');
+          SFX.place(slot);
+        }
       }
 
       prevId = ev.id;
@@ -1977,7 +1992,8 @@
     const key = glyph(id).cloneOf || id;
     const inst = (st.empower && st.empower[key]) || 0;
     const run = (st.runEmpower && st.runEmpower[baseOf(key)]) || 0;   // shared by every copy of the type (Everflame)
-    return inst + run;
+    const combat = (B && B.combatEmpower && B.combatEmpower[baseOf(key)]) || 0;   // Upgrade sockets (this battle)
+    return inst + run + combat;
   }
 
   // ----- live "what would this do" preview env (drives card detail numbers) -----
@@ -2345,6 +2361,34 @@
       const gtx = gt - gatherN;
       if (g.color === 'red' && root.CG.Game.state.blessings.emberward) fcShield(2);
       const E = emberDmg(g);
+      // colorless Soul-glyphs: mirror resolveNeutral's data-driven effects
+      if (g.colorless && Array.isArray(g.fx)) {
+        const fcPick = t => t === 'all' ? tAll() : t === 'random' ? ['random']
+          : t === 'lowest' ? [tLowest()] : t === 'highest' ? [tHighest()]
+          : t === 'center' ? [tCenter()] : [tFirst()];
+        g.fx.forEach(step => {
+          for (let h = 0; h < (step.hits || 1); h++) {
+            if (step.op === 'dmg') fcVolley(fcPick(step.t || 'first'), (step.v || 0) + gt + E);
+            else if (step.op === 'shield') fcShield((step.v || 0) + gtx);
+            else if (step.op === 'heal') fcHeal((step.v || 0) + gtx);
+            else if (step.op === 'str') fcStr((step.v || 0) + Math.round(gtx));
+            else if (step.op === 'res') fcRes((step.v || 0) + Math.round(gtx));
+            else if (step.op === 'burn') {
+              const t = step.t || 'first';
+              if (t === 'all') A().forEach(f => fcBurn(f, (step.v || 0) + gtx));
+              else if (t === 'random') fcBurn('random', (step.v || 0) + gtx);
+              else { const f = fcPick(t)[0]; if (f) fcBurn(f, (step.v || 0) + gtx); }
+            } else if (step.op === 'scare') {
+              const stacks = (step.v || 0) + Math.round(gtx);
+              const t = step.t || 'all';
+              const foes = (t === 'all') ? A() : fcPick(t).filter(Boolean);
+              foes.forEach(f => { f.scareAdd += stacks; });
+              T.scareTotal += stacks * foes.length;
+            }
+          }
+        });
+        return;
+      }
       switch (baseOf(g.cloneOf || id)) {
         case 'rubble': case 'deadweight': break;
         /* -------- TROLL -------- */
@@ -2849,6 +2893,9 @@
     // Ember Ward blessing: shield on each red glyph
     if (g.color === 'red' && root.CG.Game.state.blessings.emberward) gainShield(2);
 
+    // colorless Soul-glyphs resolve from their data-driven fx list
+    if (g.colorless && Array.isArray(g.fx)) { await resolveNeutral(g, id, ctx, fromPos, R, gt, gtx); return; }
+
     switch (baseOf(g.cloneOf || id)) {
       /* -------- JUNK forced on you by enemies -------- */
       case 'rubble':
@@ -3291,6 +3338,64 @@
         }
         break;
     }
+  }
+
+  // Data-driven resolver for the colorless Soul-glyphs. Damage folds in the
+  // full power-up (gt); support effects use gtx (no Gathering-Tails passive).
+  async function resolveNeutral(g, id, ctx, fromPos, R, gt, gtx) {
+    const pick = t => t === 'all' ? targetAll() : t === 'random' ? targetRandom()
+      : t === 'lowest' ? targetLowest() : t === 'highest' ? targetHighest()
+      : t === 'center' ? targetCenter() : targetFirst();
+    let didSelf = false;
+    const selfCast = async () => { if (!didSelf) { didSelf = true; await castSelf(fromPos, R); } };
+    for (const step of g.fx) {
+      const reps = step.hits || 1;
+      for (let h = 0; h < reps; h++) {
+        if (alive().length === 0 && (step.op === 'dmg' || step.op === 'burn' || step.op === 'scare')) break;
+        switch (step.op) {
+          case 'dmg': {
+            const tg = pick(step.t || 'first');
+            if (tg.length) await hitTargets(tg, (step.v || 0) + gt + emberDmg(g), fromPos, R);
+            break;
+          }
+          case 'shield':
+            await selfCast(); gainShield((step.v || 0) + gtx); await wait(150); break;
+          case 'heal':
+            await selfCast(); heal((step.v || 0) + gtx); await wait(150); break;
+          case 'str': {
+            await selfCast();
+            const a = (step.v || 0) + Math.round(gtx); B.strength += a;
+            floatText(playerPos(), 'Strength +' + a, 'status'); strengthFx(playerArt()); await wait(180);
+            break;
+          }
+          case 'res': {
+            await selfCast();
+            const a = (step.v || 0) + Math.round(gtx); B.resilience += a;
+            floatText(playerPos(), 'Resilience +' + a, 'status'); resilienceFx(playerArt()); await wait(180);
+            break;
+          }
+          case 'burn': {
+            for (const en of pick(step.t || 'first')) {
+              if (en && en.alive) { await boltAll(center(en.dom), R); addBurn(en, (step.v || 0) + gtx); }
+            }
+            break;
+          }
+          case 'scare': {
+            const stacks = (step.v || 0) + Math.round(gtx);
+            for (const en of pick(step.t || 'all')) {
+              if (en && en.alive) {
+                en.scare = (en.scare || 0) + stacks; en.scareTurns = 3;
+                floatText(offset(center(en.dom), 0, -60), 'Scared +' + stacks, 'status');
+                scareFx(en.dom);
+              }
+            }
+            break;
+          }
+        }
+        refreshAll();
+      }
+    }
+    await wait(120);
   }
 
   // apply Burn to one enemy with the standard themed float + flash
@@ -3877,6 +3982,14 @@
     tickRoundTimers();
     await processStatusTicks();
     if (alive().length === 0) { victory(); return; }
+    // Conniving Soul: every fifth turn the foes are robbed of their action
+    if (root.CG.Game.state.blessings.conniving && B.turn > 0 && B.turn % 5 === 0) {
+      banner('The Soul connives — enemies skip their turn', 1100);
+      B.enemies.forEach(en => { if (en.alive) advanceIntent(en); });
+      await wait(500);
+      refreshAll();
+      return;
+    }
     // iterate a snapshot — summons join the fight but act next round
     const actors = B.enemies.slice();
     for (const en of actors) {
@@ -3897,9 +4010,14 @@
       advanceIntent(en);
       if (en.strengthTurns > 0) { en.strengthTurns--; if (en.strengthTurns === 0) en.strength = 0; }
       refreshAll();
+      // a foe can drop itself on its own turn — Thorns recoil, reflected hits,
+      // self-inflicted burn — so check the moment it happens instead of waiting
+      // for the next round's status tick.
+      if (alive().length === 0 && !B.ended) { victory(); return; }
       await wait(140);
     }
     refreshAll();
+    if (alive().length === 0 && !B.ended) { victory(); return; }
   }
 
   async function doEnemyAction(en, intent) {

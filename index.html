@@ -73,7 +73,7 @@
           </div>
         </div>
         <div class="tb-mid">
-          <div class="tb-group tb-group-bless"><span class="tb-label">Blessings</span><div id="tb-blessings" class="tb-blessings"></div></div>
+          <div id="tb-blessings" class="tb-blessings"></div>
           <div class="tb-group tb-group-items"><span class="tb-label">Items</span>
             <div class="tb-items">
               <div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div>
@@ -171,6 +171,20 @@
           <h3 class="reward-choose-head" id="reward-choose-head">Choose a Glyph</h3>
           <div id="reward-glyphs" class="reward-row"></div>
           <button id="btn-skip-reward" class="btn btn-primary">Continue</button>
+        </div>
+      </section>
+
+      <!-- ============ SOULSTONE SCREEN ============ -->
+      <section id="screen-soulstone" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="reward-inner">
+          <div class="soulstone-meter" id="soulstone-meter"></div>
+          <h2 class="reward-head">A Soulstone</h2>
+          <p class="reward-sub" id="soulstone-sub">Claim the stone, and take a colorless Soul-glyph if you wish.</p>
+          <div id="soulstone-claims" class="reward-claims"></div>
+          <h3 class="reward-choose-head">A Soul-Glyph</h3>
+          <div id="soulstone-glyphs" class="reward-row"></div>
+          <button id="btn-leave-soulstone" class="btn btn-primary">Continue</button>
         </div>
       </section>
 
