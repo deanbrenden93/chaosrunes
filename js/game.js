@@ -531,6 +531,35 @@
     // --- A couple of treasure caches for texture ---
     placeInRange(2, LAST - 2, 'reward', { uniqueRow: true });
     placeInRange(2, LAST - 2, 'reward', { uniqueRow: true });
+
+    // --- Pacing guarantee: no ROUTE may chain more than 3 plain battles ---
+    breakBattleStreaks(floors);
+  }
+
+  // Row-level seeding spreads specials around, but a player only ever walks ONE
+  // path — and that path can still thread through a wall of battles. This pass
+  // walks top-down (parents are always resolved first) tracking each node's
+  // running streak of consecutive battles along its worst incoming route, and
+  // reforges any battle that would become the 4th-in-a-row into a breather.
+  function breakBattleStreaks(floors) {
+    const MAX_STREAK = 3;               // at most this many plain battles in a row
+    const LAST = FLOORS - 1;
+    const streak = {};                  // node id -> consecutive battles ending here
+    for (let f = 0; f < FLOORS; f++) {
+      floors[f].forEach(node => {
+        if (node.type !== 'battle') { streak[node.id] = 0; return; }
+        let worst = 0;
+        node.parents.forEach(pid => { worst = Math.max(worst, streak[pid] || 0); });
+        let s = worst + 1;
+        // the overrunning battle becomes a breather (mostly an event, sometimes a
+        // cache); never touch the intro row or the boss row.
+        if (s > MAX_STREAK && f > 0 && f < LAST) {
+          node.type = Math.random() < 0.3 ? 'reward' : 'event';
+          s = 0;
+        }
+        streak[node.id] = s;
+      });
+    }
   }
 
   function rangeFloors(lo, hi) {
