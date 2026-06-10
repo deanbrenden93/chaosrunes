@@ -35,7 +35,7 @@
     repeat:   { icon: '×2', label: 'Repeat', tip: 'The glyph placed here resolves <b>twice</b>.' },
     hold:     { icon: '⏸', label: 'Hold', tip: 'The glyph placed here is <b>not discarded</b> — it returns next turn as a bonus card that doesn\'t reduce your draw.' },
     catalyst: { icon: '✦', label: 'Catalyst', tip: 'Infuses the <b>next</b> glyph by the color placed here — Red: 3 damage to all · Blue: 3 block · Green: heal 6.' },
-    devil:    { icon: '😈', label: 'Devil', tip: 'The glyph resolves, then is <b>devoured</b> — that copy is gone from your deck for the run — granting a permanent boon by color (Red: +1 Strength · Blue: +1 turn shield · Green: +3 max HP) <b>and</b> spitting a disposable <b>Maw-Eaten Scrap</b> into your <b>next hand only</b> — a one-shot lifesteal striker that vanishes if unused, so it never bloats your deck. Feed a Scrap back here and it tears away <b>30%</b> of your current HP.' },
+    devil:    { icon: '<img class="devil-emote" src="assets/Happy Devil.png" alt="">', label: 'Devil', tip: 'Each turn it <b>craves a specific glyph</b> (shown on the socket) and hides a random <b>boon</b>. Play that glyph here to claim the boon — any other glyph just resolves as normal, no harm done. <b>Ignore it 3 turns running</b> and it bites you for <b>1/3 of your max HP</b>, then craves anew. The hungrier it gets, the rarer the boons it offers.' },
     clone:    { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
     empower:  { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' },
     upgrade:  { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' }
@@ -136,6 +136,8 @@
       recallUsed: false,
       resolving: false,
       socketIntro: true,   // first socket render of the battle plays the "runes appear" reveal
+      devil: {},           // per-socket Devil state (craving / boon / ignore), keyed by index
+      extraTurn: false,    // Devil "Extra Turn" boon: skip the enemy response once
       ended: false
     };
     B.slotFx = Array.from({ length: monster.sockets }, () => ({ disabled: 0, cursed: 0, caster: null }));
@@ -698,6 +700,11 @@
     B.turn++;
     $('turn-counter').textContent = B.turn;
 
+    // a Devil ignored three turns running takes its tithe before anything else
+    ensureDevils();
+    chompStarvedDevils();
+    if (B.ended) return;
+
     // shield is a per-turn response to telegraphs
     B.playerShield = 0;
     if (B.monster.passive === 'turnShield') B.playerShield += B.monster.passiveVal;
@@ -735,6 +742,7 @@
     while (B.slotTypes.length < B.monster.sockets) B.slotTypes.push('normal');
     B.recallUsed = false;
     drawHand();
+    assignDevilCravings();   // each Devil picks a craved glyph + rolls a boon for this turn
     renderSockets();
     renderHand(true);
     refreshAll();
@@ -929,8 +937,28 @@
     syncCombatTip();   // the old hand nodes are gone — drop a stale panel
     // is a combo chain already going? (a lettered glyph is socketed)
     const tail = placedComboTail();
+    // which hand cards a Devil is craving right now (distinct copies). The
+    // craving is signalled by a Devil Finger pointing at the card.
+    const cravedAt = {};
+    if (B.devil) {
+      const used = {};
+      devilIdxs().forEach(di => {
+        const d = B.devil[di];
+        if (!d || !d.crave || d.fed) return;
+        let hi = B.hand.findIndex((hid, k) => !used[k] && hid === d.craveId);
+        if (hi === -1) hi = B.hand.findIndex((hid, k) => !used[k] && baseOf(hid) === d.crave);
+        if (hi !== -1) { used[hi] = true; cravedAt[hi] = di; }
+      });
+    }
     B.hand.forEach((id, i) => {
       const t = glyphTile(id);
+      if (cravedAt[i] != null) {
+        t.classList.add('devil-craved');
+        const finger = el('img', 'devil-finger');
+        finger.src = 'assets/Devil Finger.png';
+        finger.alt = '';
+        t.appendChild(finger);
+      }
       // highlight cards that would continue the active alphabet chain
       if (!B.resolving && tail.prev != null && comboLinks(tail.prev, comboLetter(id))) {
         t.classList.add('combo-next');
@@ -1145,6 +1173,7 @@
         const gt = s.querySelector('.g-tip');
         if (gt) s.insertBefore(cb, gt); else s.appendChild(cb);
       }
+      if (slotCountAt(i, 'devil') > 0) decorateDevilSocket(s, i);
       row.appendChild(s);
     });
     // the runes are THE centerpiece — on the first build of a battle they
@@ -1194,6 +1223,15 @@
     for (let k = 1; k < span; k++) B.spanHead[empty + k] = empty;   // mark continuation slots
     renderHand(false);
     renderSockets();
+    // Devil reaction: a craved glyph turns it happy (handled in render); the
+    // WRONG glyph dropped on it throws a one-second frustrated fit
+    for (let k = 0; k < span; k++) {
+      const ci = empty + k;
+      if (slotCountAt(ci, 'devil') > 0) {
+        const d = B.devil && B.devil[ci];
+        if (d && d.crave && baseOf(id) !== d.crave) devilFrustrate(ci);
+      }
+    }
     // send one glyph flying into EACH socket the glyph occupies
     for (let k = 0; k < span; k++) {
       const slotIdx = empty + k;
@@ -1747,7 +1785,7 @@
         holdAny: countAcross('hold') > 0,
         cloneCount: countAcross('clone'),
         catalystCount: countAcross('catalyst'),
-        devourAny: countAcross('devil') > 0   // resolves in the chain, THEN is devoured
+        devilSlots: covered.filter(ci => slotCountAt(ci, 'devil') > 0)   // Devil sockets this glyph fills
       };
       seq.push(step); baseSteps.push(step);
       // Repeat instances stack: a glyph covering N Repeats resolves 2×N times
@@ -1825,6 +1863,7 @@
     }
 
     let prevId = null, chainPos = 0, fxIndex = 0, pendingCatalyst = [];
+    B._devilRewards = [];        // boons banked this chain, paid out as their own finale
     B.lastMirrorTarget = null;   // resets each detonation; tracks what Mirrors are echoing
     let comboLen = 0, comboPrev = null, maxCombo = 0, prevComboEl = null;
     for (let k = 0; k < runSeq.length; k++) {
@@ -1832,6 +1871,15 @@
       const slot = ev.slot;
       const sEl = $('socket-row').children[slot];
       const coveredEls = (ev.covered || [slot]).map(ci => $('socket-row').children[ci]).filter(Boolean);
+
+      // ----- Devil feed: a genuine play of the craved glyph onto its socket -----
+      const devilFeeds = [];
+      if (!ev.replay && !ev.repeat2 && ev.devilSlots && ev.devilSlots.length) {
+        for (const ci of ev.devilSlots) {
+          const d = B.devil && B.devil[ci];
+          if (d && d.crave && !d.fed && baseOf(ev.id) === d.crave) devilFeeds.push(ci);
+        }
+      }
 
       // ----- Alphabet combo: figure this glyph's link + bonus before it fires -----
       const lt = comboLetter(ev.id);
@@ -1843,6 +1891,10 @@
       if (lt == null) { comboLen = 0; comboPrev = null; }
       else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; linked = true; }
       else { comboLen = adv; comboPrev = lt; }
+      // Devil "Combo +N" boons stretch the running chain right as the fed glyph fires
+      let comboExtend = 0;
+      devilFeeds.forEach(ci => { const b = B.devil[ci].bonus; if (b && b.preCombo) comboExtend += b.preCombo; });
+      if (comboExtend > 0) { comboLen = Math.max(0, comboLen) + comboExtend; comboBonus = Math.max(comboBonus, comboLen - 1); linked = comboLen > 1; }
       if (comboLen > maxCombo) maxCombo = comboLen;
       if (linked && comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
       prevComboEl = (lt == null) ? null : sEl;
@@ -1854,6 +1906,16 @@
       }
 
       const g = glyph(ev.id);
+      // Devil "Upgrade" boons must land BEFORE the fed glyph resolves, so this
+      // very activation fires upgraded (combat = this battle; run = permanent)
+      devilFeeds.forEach(ci => {
+        const b = B.devil[ci].bonus;
+        if (b && b.preUpgrade) {
+          const ukey = baseOf(g.cloneOf || ev.id);
+          B.combatEmpower[ukey] = (B.combatEmpower[ukey] || 0) + 1;
+          if (b.preUpgrade === 'run') root.CG.Game.permEmpowerBase(ukey);
+        }
+      });
       const redAfter = fxSteps.slice(fxIndex + 1).filter(s => glyph(s.id).color === 'red').length;
       const originEl = sEl ? sEl.querySelector('.socket-glyph') : null;
       const originEls = coveredEls.map(ce => ce.querySelector('.socket-glyph')).filter(Boolean);
@@ -1890,15 +1952,33 @@
 
       // slot side-effects fire once, on the genuine placement (not replays/repeat copies).
       // A multi-socket glyph triggers EVERY special slot it covers. These run AFTER
-      // the glyph has resolved — so a Devil-slotted glyph plays out its effect in the
-      // chain first, then gets devoured.
+      // the glyph has resolved — so a glyph fed to a Devil plays out its effect in the
+      // chain first, then the craved-glyph boon (if any) lands.
       if (!ev.replay && !ev.repeat2) {
         // junk (enemy Rubble / Dead Weight) must never be cloned or held — that
         // could trap the player with permanent enemy cards in hand
         if (ev.cloneCount && !g.junk) for (let c = 0; c < ev.cloneCount; c++) queueClone(ev.id, sEl);
         if (ev.holdAny && !g.junk) { B.extras.push(ev.id); removeOne(B.drawnThisTurn, ev.id); holdFx(sEl); }   // retained, not discarded
         if (ev.catalystCount) for (let c = 0; c < ev.catalystCount; c++) pendingCatalyst.push(g.color);
-        if (ev.devourAny) { removeOne(B.drawnThisTurn, ev.id); await devourGlyph(ev.id, slot, sEl); }
+        // any glyph landing on a Devil socket "touches" it — that spares the
+        // ignore tick even when it's the wrong glyph (you just miss the boon)
+        if (ev.devilSlots && ev.devilSlots.length) ev.devilSlots.forEach(ci => { if (B.devil[ci]) B.devil[ci].touched = true; });
+        // Devil feed: the craving is sated (the glyph is NOT consumed — it discards
+        // as normal). preCombo/preUpgrade already fired above so they shape this very
+        // activation; every other boon is BANKED and paid out as its own dramatic
+        // event once the chain (and the combo number) is done.
+        if (devilFeeds.length) {
+          for (const ci of devilFeeds) {
+            const d = B.devil[ci];
+            d.fed = true;
+            const b = d.bonus;
+            devilFeedFx(ci);
+            floatText(offset(center(sEl), 0, -64), '😈 craving sated', 'status');
+            // every Devil you satisfy this run feeds the Glutton's hunger
+            if (B.monster) B.monster.devoured = (B.monster.devoured || 0) + 1;
+            B._devilRewards.push({ slot: ci, bonus: b, comboLen: comboLen, baseId: baseOf(ev.id) });
+          }
+        }
         // Upgrade socket (Calamitous Soul): this glyph type grows +1 for the battle
         const upAt = (ev.covered || [slot]).reduce((n, ci) => n + slotCountAt(ci, 'upgrade'), 0);
         if (upAt > 0 && !g.junk) {
@@ -1922,8 +2002,15 @@
     if (maxCombo >= 3) { comboFinale(maxCombo); await wait(260); }
     hideComboMeter();
 
+    // the Devil's fed boons take the stage where the combo number just was
+    await resolveDevilRewards();
+    if (B.ended) return;
+
     // glyphs left unplayed in hand fire their lingering "end of turn" effects
     if (alive().length > 0) await processUnplayed();
+
+    // a fed Devil cools off; an ignored (but craving) one grows hungrier
+    finalizeDevils();
 
     await wait(250);
     await discardHand();
@@ -1933,6 +2020,15 @@
 
     // the spent runes dissolve into embers instead of cutting away
     await clearSocketsExit();
+
+    // Devil "Extra Turn" boon: skip the enemy response and forge again at once
+    if (B.extraTurn) {
+      B.extraTurn = false;
+      banner('Extra Turn', 800);
+      B.resolving = false;
+      beginTurn();
+      return;
+    }
 
     // enemies respond
     await enemyTurn();
@@ -2603,7 +2699,6 @@
         if (ev.cloneCount && !g.junk) T.clones += ev.cloneCount;
         if (ev.holdAny && !g.junk) T.holds++;
         if (ev.catalystCount) for (let c = 0; c < ev.catalystCount; c++) pendingCat.push(g.color);
-        if (ev.devourAny) fcDevour(ev.id);
       }
       prevId = ev.id; chainPos++;
       if (!A().length) break;
@@ -2689,7 +2784,6 @@
     if (sim.husks > 0) rows.push(fcRow('husk', '⚰', sim.husks, 'Husks next hand'));
     if (sim.clones > 0) rows.push(fcRow('clone', '⧉', sim.clones, sim.clones === 1 ? 'clone next hand' : 'clones next hand'));
     if (sim.holds > 0) rows.push(fcRow('hold', '⏸', sim.holds, 'held for next turn'));
-    if (sim.devours > 0) rows.push(fcRow('devil', '😈', sim.devours, 'devoured'));
     if (sim.selfLoss > 0) rows.push(fcRow('warn', '⚠', '−' + sim.selfLoss, 'recoil onto you'));
     if (sim.playerBurn > 0) rows.push(fcRow('warn', '🔥', sim.playerBurn, 'Burn onto you'));
     if (!rows.length) {
@@ -3885,68 +3979,274 @@
   // ============================================================
   // SLOT-TYPE BEHAVIORS
   // ============================================================
-  // DEVIL: devour the glyph (purge one copy from the run deck for good) for a
-  // permanent boon by color, AND spit a DISPOSABLE Maw-Eaten Scrap into your next
-  // hand only — a one-shot, wild-combo lifesteal striker that vanishes if unused
-  // (so devouring never bloats the deck). Feeding a Scrap BACK to the Devil tears
-  // away 30% of your current HP instead (no boon/token).
-  const DEVIL_TOKEN = 'maweaten_scrap';
-  async function devourGlyph(id, slot, sEl) {
-    const g = glyph(id);
-    const from = sEl ? center(sEl.querySelector('.socket-glyph') || sEl) : playerPos();
-    const baseId = g.cloneOf || id;
-    // a real (non-clone) glyph is gone from the deck for good
-    if (!g.cloneOf) {
-      const pool = root.CG.Game.state.pool;
-      const pi = pool.indexOf(baseId);
-      if (pi !== -1) pool.splice(pi, 1);
-    }
-    B.monster.devoured = (B.monster.devoured || 0) + 1;   // run total (Glutton scales off it)
+  const DEVIL_TOKEN = 'maweaten_scrap';   // legacy token id (no longer spawned)
 
-    // feeding the Devil its own Scrap: it bites back for 30% of current HP
-    if (baseId === DEVIL_TOKEN) {
-      floatText(from, 'Devoured', 'status');
-      await boltP(from, playerPos(), 'var(--red)');
-      const bite = Math.max(1, Math.ceil(B.monster.hp * 0.30));
-      floatText(offset(playerPos(), 0, -40), 'Blood Tithe!', 'status');
-      selfDamage(bite);
-      shake();
-      updateTopbar();
-      await wait(220);
-      return;
+  // ---- DEVIL SOCKET: a craving + lottery -------------------------------------
+  // Each turn a Devil socket craves one glyph in your hand and hides a random
+  // boon. Play that glyph onto it to claim the boon — any other glyph just
+  // resolves normally. Ignore it three turns running and it bites for 1/3 max HP,
+  // then craves anew. The hungrier it is (higher ignore), the rarer its boons.
+  const DEVIL_FACE = {
+    happy: 'assets/Happy Devil.png',
+    impatient: 'assets/Impatient Devil.png',
+    angry: 'assets/Angry Devil.png',
+    frustrated: 'assets/Frustrated Devil.png'
+  };
+  // boon catalog, in three rarity tiers. `apply` runs AFTER the fed glyph
+  // resolves; `preCombo` / `preUpgrade` are handled inline in the chain so they
+  // shape the very activation that fed the Devil.
+  const DEVIL_BONUSES = [
+    /* tier 1 — common */
+    { key:'str_c', tier:1, icon:'⚔', label:'+1 Strength', desc:'+1 Strength for this combat.',
+      apply: async () => { B.strength += 1; floatText(playerPos(), 'Strength +1', 'status'); strengthFx(playerArt()); refreshAll(); } },
+    { key:'res_c', tier:1, icon:'🛡', label:'+1 Resilience', desc:'+1 Resilience for this combat.',
+      apply: async () => { B.resilience += 1; floatText(playerPos(), 'Resilience +1', 'status'); resilienceFx(playerArt()); refreshAll(); } },
+    { key:'souls', tier:1, icon:'💠', label:'+20 Souls', desc:'Gain 20 souls.',
+      apply: async () => { root.CG.Game.gainSouls(20); floatText(offset(playerPos(), 0, -40), '+20 Souls', 'status'); } },
+    { key:'heal', tier:1, icon:'♥', label:'Heal 20%', desc:'Heal 20% of max HP.',
+      apply: async () => { heal(Math.max(1, Math.ceil(B.monster.maxHp * 0.20))); } },
+    { key:'combo1', tier:1, icon:'▲', label:'Combo +1', desc:'Extend your combo by 1.', preCombo: 1 },
+    /* tier 2 — uncommon */
+    { key:'upg_c', tier:2, icon:'⬆', label:'Upgrade (combat)', desc:'Upgrade the fed glyph for the rest of this combat.', preUpgrade:'combat' },
+    { key:'burst', tier:2, icon:'🎲', label:'Soul Burst', desc:'Three hits on random foes for 5 + combo each.',
+      apply: async (c) => { for (let i = 0; i < 3; i++) { const t = targetRandom(); if (!t.length) break; await hitTargets(t, 5 + (c.comboLen || 0), c.from, 'var(--purple)', { strength:false, scare:false }); if (alive().length === 0) break; } } },
+    { key:'scare', tier:2, icon:'☠', label:'Scare 3 (all)', desc:'Scare every foe by 3.',
+      apply: async () => { alive().forEach(e => { e.scare = (e.scare || 0) + 3; e.scareTurns = 3; scareFx(e.dom); }); SFX.firePurple(0); refreshAll(); await wait(160); } },
+    { key:'weak', tier:2, icon:'▼', label:'Weak 3 (all)', desc:'Weaken every foe by 3.',
+      apply: async () => { alive().forEach(e => { e.weak = (e.weak || 0) + 3; weakFx(e.dom); }); refreshAll(); await wait(160); } },
+    { key:'glyph', tier:2, icon:'🜲', label:'Gain a Glyph', desc:'Gain a random glyph for the run.',
+      apply: async () => { const id = root.CG.Game.grantRandomGlyph(); if (id) { B.draw.push(id); shuffle(B.draw); floatText(offset(playerPos(), 0, -150), '+ ' + glyph(id).name, 'status'); fxMotes(center(playerArt()), 8, '#caa6ff', 'fx-mote-rise', 60); } } },
+    { key:'item', tier:2, icon:'🎒', label:'Gain an Item', desc:'Gain a random item.', apply: async () => { grantRandomDevilItem(); } },
+    { key:'combo3', tier:2, icon:'▲▲', label:'Combo +3', desc:'Extend your combo by 3.', preCombo: 3 },
+    /* tier 3 — rare */
+    { key:'extra', tier:3, icon:'⟳', label:'Extra Turn', desc:'Take another turn right after this one.',
+      apply: async () => { B.extraTurn = true; floatText(offset(playerPos(), 0, -40), 'Extra Turn!', 'status'); } },
+    { key:'upg_r', tier:3, icon:'⬆', label:'Upgrade (run)', desc:'Permanently upgrade the fed glyph.', preUpgrade:'run' },
+    { key:'str_p', tier:3, icon:'⚔', label:'+1 Strength (run)', desc:'Permanent +1 Strength.',
+      apply: async () => { B.monster.runStrength = (B.monster.runStrength || 0) + 1; B.strength += 1; floatText(playerPos(), 'Strength +1 (run)', 'status'); strengthFx(playerArt()); refreshAll(); } },
+    { key:'res_p', tier:3, icon:'🛡', label:'+1 Resilience (run)', desc:'Permanent +1 Resilience.',
+      apply: async () => { B.monster.runResilience = (B.monster.runResilience || 0) + 1; B.resilience += 1; floatText(playerPos(), 'Resilience +1 (run)', 'status'); resilienceFx(playerArt()); refreshAll(); } },
+    { key:'kill', tier:3, icon:'💀', label:'Devour a Foe', desc:'Slay a random non-boss enemy.',
+      apply: async (c) => {
+        const foes = alive().filter(e => !(e.base && (e.base.boss || e.base.floorBoss)));
+        if (!foes.length) { B.strength += 1; floatText(playerPos(), 'No prey — Strength +1', 'status'); strengthFx(playerArt()); return; }
+        const e = foes[Math.floor(Math.random() * foes.length)];
+        floatText(offset(center(e.dom), 0, -60), 'Devoured!', 'status');
+        await boltP(c.from, center(e.dom), 'var(--purple)');
+        e.hp = 0; if (e.alive) { e.alive = false; killEnemyVisual(e); }
+      } }
+  ];
+  function rollDevilBonus(ignore) {
+    const w = ignore >= 2 ? [30, 45, 25] : ignore === 1 ? [50, 38, 12] : [70, 27, 3];
+    const r = Math.random() * 100;
+    const tier = r < w[0] ? 1 : r < w[0] + w[1] ? 2 : 3;
+    const opts = DEVIL_BONUSES.filter(b => b.tier === tier);
+    return opts[Math.floor(Math.random() * opts.length)];
+  }
+  function grantRandomDevilItem() {
+    const G = root.CG.Game;
+    const ITEMS = root.CG.DATA.ITEMS || {};
+    const ids = Object.keys(ITEMS).filter(id => G.canAddItem(id));
+    if (!ids.length) { G.gainSouls(20); floatText(offset(playerPos(), 0, -40), 'Bags full — +20 Souls', 'status'); return; }
+    const id = ids[Math.floor(Math.random() * ids.length)];
+    G.addItem(id);
+    floatText(offset(playerPos(), 0, -150), '+ ' + ITEMS[id].name, 'status');
+  }
+
+  // ---- DEVIL REWARD FINALE -----------------------------------------------------
+  // Boons banked during the chain are paid out here, after the combo number has
+  // cleared. The grinning Devil rears up where the combo meter sat and HURLS the
+  // reward to wherever it belongs — buffs/loot to the hero, wrath to the foes.
+  const DEVIL_ENEMY_BOONS = { burst: 1, scare: 1, weak: 1, kill: 1 };
+  function devilRewardColor(b) {
+    switch (b && b.key) {
+      case 'burst': case 'kill': return 'var(--red)';
+      case 'scare': return 'var(--purple)';
+      case 'weak': return 'var(--blue)';
+      case 'heal': case 'glyph': return 'var(--green)';
+      default: return '#ffce5e';
+    }
+  }
+  function devilRewardTargets(b) {
+    if (b && DEVIL_ENEMY_BOONS[b.key]) {
+      const a = alive().filter(e => e.dom);
+      if (a.length) return a.map(e => center(e.dom));
+    }
+    return [playerPos()];
+  }
+  async function resolveDevilRewards() {
+    const q = B._devilRewards || [];
+    B._devilRewards = [];
+    for (const r of q) {
+      if (B.ended) return;
+      await playDevilReward(r);
+      if (B.ended) return;
+    }
+  }
+  async function playDevilReward(r) {
+    const b = r && r.bonus;
+    if (!b) return;
+    // anchor to the combo meter's spot so the Devil takes the stage it just left
+    const meter = $('combo-meter');
+    const pos = meter ? center(meter) : { x: (stage.offsetWidth || 1920) - 200, y: 400 };
+
+    const face = el('div', 'devil-reward');
+    const img = el('img', 'devil-reward-face');
+    img.src = DEVIL_FACE.happy; img.alt = '';
+    const lab = el('div', 'devil-reward-label', (b.icon ? b.icon + ' ' : '') + b.label);
+    face.appendChild(img); face.appendChild(lab);
+    face.style.left = pos.x + 'px'; face.style.top = pos.y + 'px';
+    stage.appendChild(face);
+
+    // a menacing entrance
+    SFX.firePurple && SFX.firePurple(0);
+    fxRing(pos, '#ff486e', 760, 'fx-ring-soft');
+    fxRing(pos, '#ffce5e', 540);
+    fxMotes(pos, 16, '#ff7a96', 'fx-mote-rise', 96);
+    await wait(560);
+
+    // pre-boons (combo / upgrade) already fired mid-chain — this is a pure flourish.
+    // every other boon is fired off toward its destination, then resolved on impact.
+    const targets = devilRewardTargets(b);
+    const col = devilRewardColor(b);
+    face.classList.add('cast');
+    SFX.reward && SFX.reward();
+    await Promise.all(targets.map((tp, k) => new Promise(res => {
+      setTimeout(() => boltP(pos, tp, col).then(res), k * 70);
+    })));
+
+    if (b.apply && !b.preCombo && !b.preUpgrade) {
+      await b.apply({ from: pos, comboLen: r.comboLen || 0, baseId: r.baseId, slot: r.slot });
+      refreshAll();
     }
 
-    // ordinary devour: purge the card, gain a permanent boon by color...
-    floatText(from, 'Devoured', 'status');
-    await boltP(from, playerPos(), 'var(--purple)');
-    if (g.color === 'red') {
-      B.monster.runStrength = (B.monster.runStrength || 0) + 1;
-      B.strength += 1;
-      floatText(playerPos(), 'Strength +1 (run)', 'status');
-      strengthFx(playerArt());
-    } else if (g.color === 'blue') {
-      B.monster.runTurnShield = (B.monster.runTurnShield || 0) + 1;
-      gainShield(1);
-      floatText(playerPos(), 'Turn Shield +1 (run)', 'status');
-    } else {
-      B.monster.maxHp += 3;
-      B.monster.hp = Math.min(B.monster.maxHp, B.monster.hp + 3);
-      setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
-      floatText(playerPos(), 'Max HP +3 (run)', 'heal');
-    }
-    // ...AND spit back a single DISPOSABLE Maw-Eaten Scrap into your NEXT hand
-    // only. It's a one-shot clone-token (like a Husk): vanishes if unused and
-    // never enters the deck, so repeated devouring no longer bloats your stack.
-    // Played, it's a lifesteal striker; fed BACK to the Devil it drinks 30% HP.
-    const cid = DEVIL_TOKEN + '#m' + (B.cloneSeq++);
-    B.tempGlyphs[cid] = Object.assign({}, GLYPHS[DEVIL_TOKEN], {
-      id: cid, cloneOf: DEVIL_TOKEN, token: true, sticky: false, junk: false, letter: 'wild'
+    face.classList.add('exit');
+    await wait(360);
+    face.remove();
+  }
+
+  // ---- per-combat Devil bookkeeping (keyed by socket index) ----
+  function devilIdxs() {
+    const out = [];
+    const n = (B.slotTypes && B.slotTypes.length) || 0;
+    for (let i = 0; i < n; i++) if (slotCountAt(i, 'devil') > 0) out.push(i);
+    return out;
+  }
+  function ensureDevils() {
+    if (!B.devil) B.devil = {};
+    devilIdxs().forEach(i => { if (!B.devil[i]) B.devil[i] = { ignore: 0, crave: null, craveId: null, bonus: null, fed: false }; });
+  }
+  function devilMoodKey(ignore) { return ignore >= 2 ? 'angry' : ignore === 1 ? 'impatient' : 'happy'; }
+  function devilMoodLabel(ignore) { return ignore >= 2 ? 'Starving — best odds!' : ignore === 1 ? 'Impatient' : 'Content'; }
+  // each turn (after the draw) every Devil picks a craved glyph + rolls a boon.
+  // multiple Devils crave DIFFERENT cards (distinct hand entries, distinct types
+  // where possible).
+  function assignDevilCravings() {
+    ensureDevils();
+    const idxs = devilIdxs();
+    if (!idxs.length) return;
+    const takenId = {};   // a specific hand copy can only be craved once
+    idxs.forEach(i => {
+      const d = B.devil[i];
+      const cands = B.hand.filter(id => { const g = glyph(id); return g && !g.junk && !g.token && !takenId[id]; });
+      const usedBases = idxs.map(j => B.devil[j].crave).filter(Boolean);
+      const pref = cands.filter(id => usedBases.indexOf(baseOf(id)) === -1);
+      const pool = pref.length ? pref : cands;
+      if (!pool.length) { d.crave = null; d.craveId = null; d.bonus = null; d.fed = false; return; }
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      takenId[pick] = true;
+      d.crave = baseOf(pick);
+      d.craveId = pick;
+      d.bonus = rollDevilBonus(d.ignore);
+      d.fed = false;
+      d.touched = false;   // did any glyph land on this socket this turn?
     });
-    B.extras.push(cid);                          // next hand only — disposable
-    floatText(offset(playerPos(), 0, -150), '+ Maw-Eaten Scrap', 'status');
-    fxMotes(center(playerArt()), 8, '#ff5470', 'fx-mote-rise', 60);
-    updateTopbar();
-    await wait(180);
+  }
+  // turn start: any Devil ignored three turns running takes its tithe (1/3 HP)
+  function chompStarvedDevils() {
+    if (!B.devil) return;
+    devilIdxs().forEach(i => {
+      const d = B.devil[i];
+      if (d && d.ignore >= 3) {
+        d.ignore = 0;
+        const bite = Math.max(1, Math.ceil(B.monster.maxHp / 3));
+        floatText(offset(playerPos(), 0, -40), 'The Devil feasts!', 'status');
+        selfDamage(bite); shake(); updateTopbar();
+      }
+    });
+  }
+  // turn resolved: a fed Devil resets to content; a Devil left untouched (no
+  // glyph played on it at all) grows hungrier. Playing the WRONG glyph on it is
+  // not an ignore — you just miss the boon, the mood holds.
+  function finalizeDevils() {
+    if (!B.devil) return;
+    devilIdxs().forEach(i => {
+      const d = B.devil[i];
+      if (!d) return;
+      if (d.fed) d.ignore = 0;
+      else if (d.crave && !d.touched) d.ignore += 1;
+    });
+  }
+  function devilFeedFx(i) {
+    const sEl = $('socket-row').children[i];
+    if (!sEl) return;
+    sEl.classList.add('devil-fed');
+    setTimeout(() => sEl.classList.remove('devil-fed'), 720);
+    fxRing(center(sEl), '#ffd36a', 620);
+    fxMotes(center(sEl), 8, '#ffd36a', 'fx-mote-rise', 56);
+  }
+  // the mood face the socket badge should currently show
+  function devilFaceKey(i) {
+    const d = B.devil && B.devil[i];
+    const here = B.sockets[i];
+    const happy = !!(d && (d.fed || (here && d.crave && baseOf(here) === d.crave)));
+    return happy ? 'happy' : devilMoodKey(d ? d.ignore : 0);
+  }
+  // a non-craved glyph dropped on the socket: the badge face flips to Frustrated
+  // and shakes for a second, then settles back to the mood face
+  function devilFrustrate(i) {
+    const sEl = $('socket-row').children[i];
+    const img = sEl && sEl.querySelector('.slot-badge .devil-emote');
+    if (!img) return;
+    img.src = DEVIL_FACE.frustrated;
+    img.classList.add('devil-shake');
+    setTimeout(() => { img.classList.remove('devil-shake'); img.src = DEVIL_FACE[devilFaceKey(i)]; }, 1000);
+  }
+  // a fragment that completes "Play the craved glyph in this socket to ___"
+  function devilBoonTip(b) {
+    switch (b && b.key) {
+      case 'str_c': return 'gain +1 Strength for this combat';
+      case 'res_c': return 'gain +1 Resilience for this combat';
+      case 'souls': return 'gain 20 souls';
+      case 'heal': return 'heal 20% of your max HP';
+      case 'combo1': return 'extend your combo by 1';
+      case 'upg_c': return 'upgrade that glyph for the rest of this combat';
+      case 'burst': return 'strike random foes three times for 5 + your combo each';
+      case 'scare': return 'Scare every foe by 3';
+      case 'weak': return 'Weaken every foe by 3';
+      case 'glyph': return 'gain a random glyph for your run';
+      case 'item': return 'gain a random item';
+      case 'combo3': return 'extend your combo by 3';
+      case 'extra': return 'take another turn right after this one';
+      case 'upg_r': return 'permanently upgrade that glyph';
+      case 'str_p': return 'gain a permanent +1 Strength';
+      case 'res_p': return 'gain a permanent +1 Resilience';
+      case 'kill': return 'slay a random non-boss enemy';
+      default: return 'claim a hidden boon';
+    }
+  }
+  // decorate a Devil socket in renderSockets: paint the badge with the mood face
+  // and route the current boon offer into the hover tooltip
+  function decorateDevilSocket(s, i) {
+    const d = B.devil && B.devil[i];
+    s.classList.add('has-devil');
+    const img = s.querySelector('.slot-badge .devil-emote');
+    if (img) img.src = DEVIL_FACE[devilFaceKey(i)];
+    if (d && d.crave && d.bonus) {
+      s.appendChild(el('div', 'slot-fx-tip devil-tip',
+        '<b class="st-name">Devil — ' + devilMoodLabel(d.ignore) + '</b>' +
+        'Play the craved glyph in this socket to <b>' + devilBoonTip(d.bonus) + '</b>.'));
+    }
   }
 
   // CATALYST: the color sown in the slot infuses the NEXT glyph with a bonus.
@@ -4451,6 +4751,7 @@
     B.slotTypes = Array.from({ length: B.monster.sockets }, (_, i) => (B.monster.slotTypes && B.monster.slotTypes[i]) || 'normal');
     B.extras = []; B.injected = []; B.tempGlyphs = {}; B.lastTurnPlays = [];
     B.resolveCount = {};
+    B.devil = {};   // fresh cravings for the incoming beast's sockets
     // fresh deck for the incoming beast
     B.draw = shuffle(root.CG.Game.state.pool.slice()); B.discard = []; B.drawnThisTurn = [];
     B.spanHead = new Array(B.monster.sockets).fill(null);

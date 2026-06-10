@@ -184,7 +184,7 @@
   // the signature special socket each beast brings to the forge (icon + name + blurb)
   const SLOT_SIGNATURE = {
     empower:  { icon: '⊕', name: 'Empower', blurb: 'Bolsters the glyphs resolved just before & after it by +1.', color: '#ffe6a8' },
-    devil:    { icon: '😈', name: 'Devil', blurb: 'Devours its glyph for a permanent boon, spitting a disposable lifesteal Maw-Eaten Scrap into your next hand.', color: '#ff8aa0' },
+    devil:    { icon: '<img class="devil-emote" src="assets/Happy Devil.png" alt="">', name: 'Devil', blurb: 'Each turn it craves one of your glyphs and hides a boon. Feed it what it wants to claim the boon — the hungrier it gets, the better the prize.', color: '#ff8aa0' },
     hold:     { icon: '⏸', name: 'Hold', blurb: 'Keeps its glyph for next turn as a bonus card — no discard.', color: '#9fd6c0' },
     clone:    { icon: '⧉', name: 'Clone', blurb: 'Copies its glyph into your next hand, empowered +1.', color: '#aee0ff' },
     catalyst: { icon: '✦', name: 'Catalyst', blurb: 'Infuses the next glyph by color — damage, block, or heal.', color: 'var(--gold)' },
@@ -363,7 +363,7 @@
       runStrength: 0, runTurnShield: 0, runResilience: 0,   // permanent buffs gained from Devil slots / unlocks
       alive: true
     };
-    reorderDevilsLast(m);   // Devil slots always pinned to the back of the chain
+    reorderDevilsLast(m);   // no-op now (Devils may live on any socket); kept for callers
     return m;
   }
 
@@ -917,6 +917,35 @@
     return out;
   }
 
+  // ---- helpers the combat engine borrows (e.g. Devil socket boons) ----
+  // add souls straight to the purse (no reward animation; used mid-combat)
+  function gainSouls(n) {
+    if (!State) return;
+    State.souls = Math.max(0, (State.souls || 0) + (n || 0));
+    setSoulCounters(State.souls);
+    updateTopbar();
+  }
+  // permanently add a random glyph (this beast's pool + the colorless souls) to
+  // the run deck; returns the glyph id added (or null if none eligible)
+  function grantRandomGlyph() {
+    if (!State) return null;
+    const pool = eligibleGlyphs().concat(eligibleColorless());
+    if (!pool.length) return null;
+    const g = pool[Math.floor(Math.random() * pool.length)];
+    State.pool.push(g.id);
+    return g.id;
+  }
+  // permanently upgrade ONE copy of a base glyph in the run deck (+1 empower)
+  function permEmpowerBase(baseId) {
+    if (!State || !Array.isArray(State.pool)) return false;
+    const idx = State.pool.findIndex(id => baseOf(id) === baseId);
+    if (idx === -1) return false;
+    const inst = ensureInstance(idx);
+    if (!inst) return false;
+    State.empower[inst] = (State.empower[inst] || 0) + 1;
+    return true;
+  }
+
   // ============================================================
   // SOULSTONE NODE — a soul fragment (5 → evolution) plus a colorless glyph.
   // Both are offered; both are optional. Reuses the reward commit flow.
@@ -1298,15 +1327,14 @@
     }
   }
 
-  // Calamitous Soul: stamp 'Upgrade' onto every socket that can carry a glyph
-  // and isn't a Devil socket (Devil never mixes). Persists on the beast.
+  // Calamitous Soul: stamp 'Upgrade' onto every socket that can carry a glyph.
+  // Persists on the beast.
   function grantCalamitousUpgrade() {
     const m = State.monsters[firstAlive()] || activeMonster();
     if (!m.slotTypes) m.slotTypes = [];
     for (let i = 0; i < m.sockets; i++) {
       const v = m.slotTypes[i] || 'normal';
       const list = Array.isArray(v) ? v.slice() : (v === 'normal' ? [] : [v]);
-      if (list.indexOf('devil') !== -1) continue;                          // ineligible
       if (list.length && list.every(t => t === 'loopback')) continue;      // holds no glyph
       if (list.indexOf('upgrade') === -1) list.push('upgrade');
       m.slotTypes[i] = list.length === 1 ? list[0] : list;
@@ -1946,7 +1974,7 @@
     repeat: { icon: '×2', label: 'Repeat', tip: 'The glyph placed here resolves <b>twice</b>.' },
     hold: { icon: '⏸', label: 'Hold', tip: 'The glyph placed here is <b>not discarded</b> — it returns next turn as a bonus card that doesn\'t reduce your draw.' },
     catalyst: { icon: '✦', label: 'Catalyst', tip: 'Infuses the <b>next</b> glyph by the color placed here — Red: 3 damage to all · Blue: 3 block · Green: heal 6.' },
-    devil: { icon: '😈', label: 'Devil', tip: 'The glyph resolves, then is <b>devoured</b> — that copy is gone from your deck for the run — granting a permanent boon by color (Red: +1 Strength · Blue: +1 turn shield · Green: +3 max HP) <b>and</b> spitting a disposable <b>Maw-Eaten Scrap</b> into your <b>next hand only</b>. Feed a Scrap back here and it tears away <b>30%</b> of your current HP.' },
+    devil: { icon: '<img class="devil-emote" src="assets/Happy Devil.png" alt="">', label: 'Devil', tip: 'Each turn it <b>craves a specific glyph</b> (shown on the socket) and hides a random <b>boon</b>. Play that glyph here to claim the boon — any other glyph just resolves as normal, no harm done. <b>Ignore it 3 turns running</b> and it bites you for <b>1/3 of your max HP</b>, then craves anew. The hungrier it gets, the rarer the boons it offers.' },
     clone: { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
     empower: { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' },
     upgrade: { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' }
@@ -2192,19 +2220,14 @@
     State.empower[inst] = (State.empower[inst] || 0) + 1;
     return { g: gdef(inst), empower: State.empower[inst] };
   }
-  // Devil slots always sit at the END of the socket chain. Move every 'devil'
-  // type to the back (stable for the rest). Returns { changed, map, order }:
-  // map[oldIndex] = newIndex, and order = old indices in their new arrangement.
+  // Devil sockets used to be pinned to the END of the chain. That rule is gone —
+  // a Devil can live anywhere now — so this is an identity pass-through that
+  // leaves the socket order untouched (kept for the callers' { changed, map, order }).
   function reorderDevilsLast(m) {
     const types = m.slotTypes || [];
-    const keep = [], devils = [];
-    types.forEach((t, i) => (t === 'devil' ? devils : keep).push(i));
-    const order = keep.concat(devils);
-    const map = new Array(order.length);
-    order.forEach((oi, ni) => { map[oi] = ni; });
-    const changed = order.some((oi, ni) => oi !== ni);
-    m.slotTypes = order.map(i => types[i]);
-    return { changed: changed, map: map, order: order };
+    const order = types.map((_, i) => i);
+    const map = order.slice();
+    return { changed: false, map: map, order: order };
   }
   // forge a special power onto one of the active beast's sockets. A normal
   // socket takes its first type (possibly Devil); already-special sockets can
@@ -2215,29 +2238,17 @@
     while (m.slotTypes.length < m.sockets) m.slotTypes.push('normal');
     const open = [];
     m.slotTypes.forEach((t, i) => {
-      if (t === 'devil') return;                  // devil sockets are sealed deals
-      if (slotListOf(t).length < 3) open.push(i); // room for one more type
+      if (slotListOf(t).length < 3) open.push(i);   // room for one more type
     });
     if (!open.length) return null;
     const i = rng(open);
     const cur = slotListOf(m.slotTypes[i]);
-    // Devil is only on the table for a fully normal socket; Empower joins the
-    // pool so hybrids can stack boosts. (Pure Loop stays a born trait — forging
-    // one would eat a glyph slot, which feels like a downgrade.)
-    const pool = cur.length
-      ? ['catalyst', 'repeat', 'hold', 'clone', 'empower']
-      : ['devil', 'catalyst', 'repeat', 'hold', 'clone', 'empower'];
+    // Devil can now share a socket like any other power. (Pure Loop stays a born
+    // trait — forging one would eat a glyph slot, which feels like a downgrade.)
+    // Avoid stacking a second Devil onto the same socket — one craving per slot.
+    const pool = ['catalyst', 'repeat', 'hold', 'clone', 'empower'];
+    if (cur.indexOf('devil') === -1) pool.push('devil');
     const nt = rng(pool);
-    if (nt === 'devil') {
-      m.slotTypes[i] = 'devil';
-      // render the morph in place, commit the devil-to-back reorder now, then
-      // let the modal slide it to the end so data + visuals stay in lockstep.
-      const preTypes = m.slotTypes.slice();
-      const r = reorderDevilsLast(m);
-      showSocketModal({ mode: 'forge', index: i, fromType: 'normal', toType: 'devil',
-        renderTypes: preTypes, reorder: r.changed ? r.order : null });
-      return { i: i, name: SLOT_NAME[nt] };
-    }
     const fromVal = m.slotTypes[i];
     const next = cur.concat([nt]);
     m.slotTypes[i] = next.length === 1 ? nt : next;
@@ -3570,7 +3581,8 @@
 
   root.CG.Game = {
     init, show, renderMap, gameOver, activeMonster, firstAlive, updateTopbar,
-    grantRandomBlessing, consumeRevive, addItem,
+    grantRandomBlessing, consumeRevive, addItem, canAddItem,
+    gainSouls, grantRandomGlyph, permEmpowerBase,
     debugGold, debugToggleAnyNode, debugSecretShop,
     get state() { return State; }
   };

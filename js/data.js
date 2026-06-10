@@ -216,7 +216,7 @@
       id: 'gnaw', name: 'Gnaw', color: 'red', rune: '🜹',
       character: 'ghoul', letter: 'A', rarity: 'common',
       dyn: [{ kind: 'dmg', base: 4 }, { kind: 'heal', base: 2 }],
-      desc: 'Deal {0} to the first enemy and heal {1}. <i>(Cheap red blood — fine Devil fodder.)</i>'
+      desc: 'Deal {0} to the first enemy and heal {1}.'
     },
     grave_rot: {
       id: 'grave_rot', name: 'Grave Rot', color: 'red', rune: '🜺',
@@ -228,7 +228,7 @@
       id: 'mend_flesh', name: 'Mend Flesh', color: 'green', rune: '🜁',
       character: 'ghoul', letter: 'B', rarity: 'common',
       dyn: [{ kind: 'heal', base: 5 }],
-      desc: 'Heal {0} HP. <i>(Stay alive long enough to let the leeches ramp.)</i>'
+      desc: 'Heal {0} HP.'
     },
     bone_wall: {
       id: 'bone_wall', name: 'Bone Wall', color: 'blue', rune: '🜕',
@@ -241,7 +241,7 @@
     raise_dead: {
       id: 'raise_dead', name: 'Raise Dead', color: 'purple', rune: '🜠',
       character: 'ghoul', letter: 'wild', rarity: 'uncommon',
-      desc: 'Summon <b>2 Husks</b> into your next hand — red <b>1</b>-damage tokens that vanish if unused. <i>Feed them to the Devil for free permanent power instead of your real glyphs.</i>'
+      desc: 'Summon <b>2 Husks</b> into your next hand — red <b>1</b>-damage tokens that vanish if unused.'
     },
     exsanguinate: {
       id: 'exsanguinate', name: 'Exsanguinate', color: 'red', rune: '🜹',
@@ -259,7 +259,7 @@
       id: 'soul_harvest', name: 'Soul Harvest', color: 'red', rune: '🜺',
       character: 'ghoul', letter: 'C', rarity: 'uncommon',
       dyn: [{ kind: 'dmg', base: 3 }],
-      desc: 'Deal {0} to <b>all</b> enemies and heal <b>1</b> per enemy hit. <i>(Drain the whole field at once.)</i>'
+      desc: 'Deal {0} to <b>all</b> enemies and heal <b>1</b> per enemy hit.'
     },
 
     /* -- run-pool: rares -- */
@@ -273,7 +273,7 @@
       id: 'glutton', name: 'Glutton', color: 'red', rune: '🜨',
       character: 'ghoul', letter: 'B', rarity: 'rare',
       dyn: [{ kind: 'dmg', base: function (e) { return Math.max(2, 2 * (e.devoured || 0)); } }],
-      desc: 'Deal {0} to the first enemy — <b>2×</b> the glyphs you have <b>Devoured</b> this run (at least 2).'
+      desc: 'Deal {0} to the first enemy — <b>2×</b> the Devils you have <b>fed</b> this run (at least 2).'
     },
     plague: {
       id: 'plague', name: 'Plague', color: 'green', rune: '🜬',
@@ -301,7 +301,7 @@
       id: 'husk', name: 'Husk', color: 'red', rune: '⚰', token: true,
       character: 'ghoul', rarity: 'common',
       dyn: [{ kind: 'dmg', base: 1 }],
-      desc: 'Deal {0} to a random enemy. <i>A risen scrap — feed it to the Devil.</i>'
+      desc: 'Deal {0} to a random enemy.'
     },
 
     /* -- token: spat back by a Devil slot after it devours a glyph. DISPOSABLE
@@ -419,7 +419,7 @@
       id: 'hoarders_flame', name: "Hoarder's Flame", color: 'red', rune: '🜔',
       character: 'kitsune', letter: 'C', rarity: 'uncommon',
       dyn: [{ kind: 'dmg', base: 2 }],
-      desc: 'Deal {0} damage to a random enemy <b>per glyph in your hand</b>. <i>(Held cards swell your hand.)</i>'
+      desc: 'Deal {0} damage to a random enemy <b>per glyph in your hand</b>.'
     },
 
     /* -- run-pool: rares -- */
@@ -447,7 +447,7 @@
       id: 'ember_hoard', name: 'Ember Hoard', color: 'blue', rune: '🜛',
       character: 'kitsune', letter: 'B', rarity: 'rare', unlock: 'kitsune_floor2',
       dyn: [{ kind: 'shield', base: 2 }],
-      desc: 'Gain {0} block <b>per glyph in your hand</b>. <i>(Held cards swell your hand.)</i>'
+      desc: 'Gain {0} block <b>per glyph in your hand</b>.'
     },
     spirit_fire: {
       id: 'spirit_fire', name: 'Spirit Fire', color: 'red', rune: '🜍',
@@ -742,7 +742,7 @@
       maxHp: 50, sockets: 3, slotTypes: ['normal', 'normal', 'devil'],
       passive: 'gravetide', passiveVal: 1,
       passiveText: 'Gravetide: at the start of each turn, gain +1 Strength (rest of battle) for every Leeched enemy.',
-      desc: 'Sap the living to grow stronger. Its Devil socket devours a glyph each turn for permanent power — feed it fodder, not your future.',
+      desc: 'Sap the living to grow stronger, leeching foes and feasting on the fallen.',
       evolveName: 'Lich Sovereign',
       deck: ['leech', 'leech', 'rake', 'rake', 'gnaw', 'vigor', 'blood_harden', 'mend_flesh']
     },
@@ -754,7 +754,7 @@
       maxHp: 32, sockets: 3, slotTypes: ['normal', 'normal', 'hold'],
       passive: 'gatheringTails', passiveVal: 1,
       passiveText: 'Gathering Tails: each glyph gains +1 for every glyph already played this turn.',
-      desc: 'Glass-cannon combo chaos. Three sockets (the third Holds a glyph for next turn), no defense — sequence it right and detonate.',
+      desc: 'Glass-cannon combo chaos. Three sockets — the third Holds a glyph for next turn — and no defense at all.',
       evolveName: 'Nine-Tailed Fox',
       deck: ['flicker', 'flicker', 'foxfire', 'foxfire', 'onslaught', 'spark', 'smolder', 'mirror']
     }

@@ -15,7 +15,13 @@
       'assets/empty glyph.png',
       'assets/map backdrop.png',
       'assets/test battle backdrop.png',
-      'assets/Base Rune.png'
+      'assets/Base Rune.png',
+      'assets/Happy Devil.png',
+      'assets/Impatient Devil.png',
+      'assets/Angry Devil.png',
+      'assets/Frustrated Devil.png',
+      'assets/Devil Finger.png',
+      'assets/Collection Background.png'
     ].forEach(addImg);
     // every art reference declared in the data, harvested generically so new
     // collections (blessings, items, souls, …) and new `img`/`selectBg` fields
