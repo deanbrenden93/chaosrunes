@@ -3258,8 +3258,9 @@ html, body {
 /* inner block hugs its content (so it centers in the section) while the sockets
    inside stay left-aligned and wrap — a full 9-slot row lands perfectly centered */
 .cs-sock-inner { display: inline-flex; flex-wrap: wrap; gap: 14px; justify-content: flex-start; max-width: 100%; vertical-align: top; }
-.collection-sockets .socket { width: 108px; height: 108px; flex: none; cursor: help; transition: transform .14s ease; }
+.collection-sockets .socket { width: 108px; height: 108px; flex: none; cursor: pointer; transition: transform .14s ease, filter .18s ease; }
 .collection-sockets .socket:hover { transform: translateY(-4px); }
+.collection-sockets .socket.selected { transform: translateY(-4px); filter: drop-shadow(0 0 12px var(--gold)) brightness(1.08); }
 /* socket details fill the shared right-hand panel (no floating tip here) */
 .deck-detail-panel .dd-art-socket { border: none; background: none; width: 150px; height: 150px; padding: 0; }
 .deck-detail-panel .dd-art-socket .socket { width: 150px; height: 150px; }

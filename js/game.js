@@ -2976,6 +2976,11 @@
   // the actual socket strip — empty sockets exactly as they read on the forge
   // screen (special-slot tints, badges), built from paintSocketTile. Hovering a
   // socket fills the shared detail panel (same one the glyphs use).
+  // clear the pinned-detail highlight from BOTH the glyph pool and the socket row
+  function clearCollectionDetailSel() {
+    const g = $('collection-glyphs'); if (g) g.querySelectorAll('.glyph.selected').forEach(e => e.classList.remove('selected'));
+    const s = $('collection-sockets'); if (s) s.querySelectorAll('.socket.selected').forEach(e => e.classList.remove('selected'));
+  }
   function buildCollectionSockets() {
     const row = $('collection-sockets');
     if (!row) return;
@@ -2992,6 +2997,14 @@
       const tip = t.querySelector('.slot-tip'); if (tip) tip.remove();   // panel handles it
       t.addEventListener('mouseenter', () => { if (!deckDetailPinned) showSocketDetail(idx); });
       t.addEventListener('mouseleave', () => { if (!deckDetailPinned) hideGlyphDetail(); });
+      // tap-to-pin so the detail panel works on touch (no hover on mobile)
+      t.addEventListener('click', () => {
+        SFX.click();
+        const key = 'socket-' + idx;
+        clearCollectionDetailSel();
+        if (deckDetailPinned === key) { deckDetailPinned = null; hideGlyphDetail(); }
+        else { deckDetailPinned = key; t.classList.add('selected'); showSocketDetail(idx); }
+      });
       inner.appendChild(t);
     }
     row.appendChild(inner);
@@ -3075,10 +3088,10 @@
       t.addEventListener('mouseleave', () => { if (!deckDetailPinned) hideGlyphDetail(); });
       t.addEventListener('click', () => {
         SFX.click();
-        if (deckDetailPinned === key) { deckDetailPinned = null; hideGlyphDetail(); g.querySelectorAll('.glyph.selected').forEach(e => e.classList.remove('selected')); }
+        if (deckDetailPinned === key) { deckDetailPinned = null; hideGlyphDetail(); clearCollectionDetailSel(); }
         else {
           deckDetailPinned = key;
-          g.querySelectorAll('.glyph.selected').forEach(e => e.classList.remove('selected'));
+          clearCollectionDetailSel();
           t.classList.add('selected');
           showGlyphDetail(gl, grp.count, grp.repId);
         }
