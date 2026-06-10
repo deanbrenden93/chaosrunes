@@ -35,7 +35,14 @@
   background: radial-gradient(ellipse at 50% 38%, #1a1230 0%, #0a0810 70%, #050308 100%);
   transition: opacity 0.6s ease;
 }
-.loading-screen.loading-done { opacity: 0; pointer-events: none; }
+.loading-screen.loading-done {
+  opacity: 0; pointer-events: none;
+  /* while fading, composite as one flat layer so mobile doesn't tear */
+  will-change: opacity;
+}
+/* freeze the logo's animated drop-shadow during the fade — an animating filter
+   on a fading full-screen layer is what tears/corrupts on mobile */
+.loading-screen.loading-done .loading-logo { animation: none; filter: none; }
 .loading-inner {
   display: flex; flex-direction: column; align-items: center; gap: 26px;
   width: min(520px, 70vw);
@@ -96,9 +103,10 @@ html, body {
   background:
     radial-gradient(ellipse at 50% 0%, #241936 0%, #120c1e 45%, #0a0712 100%);
   /* letterbox lives on the independent translate/scale props (set by scaling.js)
-     so the `transform` property below stays free for a compositor-friendly,
-     GPU-only screen-shake */
-  backface-visibility: hidden;
+     so the `transform` property stays free for the screen-shake. We deliberately
+     do NOT permanently promote this giant layer (no backface-visibility /
+     translateZ here) — on mobile that caused GPU-memory corruption on reload.
+     The shake classes add `will-change` only while a shake is playing. */
 }
 
 .fx-layer {
@@ -368,17 +376,27 @@ html, body {
   box-shadow: 0 22px 56px rgba(0,0,0,0.6), 0 0 44px color-mix(in srgb, var(--beast) 16%, transparent);
   transform-origin: calc(50% - var(--dir, 1) * 50%) center;
   animation: page-turn .5s cubic-bezier(.2,.85,.3,1) backwards;
-  /* mobile: keep the 3D turn on its own backed layer so it doesn't tear or
-     flash black mid-rotation */
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  will-change: transform, opacity;
-  transform: translateZ(0);
 }
 @keyframes page-turn {
   from {
     opacity: 0;
     transform: rotateY(calc(var(--dir, 1) * -14deg)) translateX(calc(var(--dir, 1) * 90px));
+  }
+}
+/* Mobile/touch fallback: skip the 3D rotateY (which makes iOS/Android GPUs
+   flash & drop image tiles inside the rounded, overflow-clipped panel) and use
+   a flat 2D slide + fade instead. No perspective, no 3D layer = no blink. */
+@media (pointer: coarse) {
+  .beast-page { perspective: none; transform-style: flat; }
+  .bp-content {
+    animation-name: page-turn-2d;
+    will-change: opacity;
+  }
+  @keyframes page-turn-2d {
+    from { opacity: 0; transform: translateX(calc(var(--dir, 1) * 64px)); }
+    to   { opacity: 1; transform: translateX(0); }
   }
 }
 /* a colored crown along the top edge reads the beast's element at a glance */
