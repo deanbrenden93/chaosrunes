@@ -688,6 +688,35 @@
     }
   };
 
+  // Event blessings — granted ONLY by their specific map events. Kept out of the
+  // standard draft/elite/shop pools so they stay tied to the moments that earn them.
+  const EVENT_BLESSINGS = {
+    fearbraid: {
+      id: 'fearbraid', name: 'Fear Braid', icon: '🧿', scope: 'run',
+      desc: 'The <b>second enemy</b> in every battle starts <b>Scared 3</b>.'
+    },
+    shimmer: {
+      id: 'shimmer', name: 'Shimmering Orb', icon: '🔮', scope: 'run',
+      desc: 'When your chain resolves, every glyph is empowered by the number of <b>different glyph colors</b> in the chain.'
+    },
+    blackfeather: {
+      id: 'blackfeather', name: 'Black Feather', icon: '🪶', scope: 'run',
+      desc: 'Begin every battle with <b>+3 Resilience</b>.'
+    },
+    rawmuscle: {
+      id: 'rawmuscle', name: 'Raw Muscle Fiber', icon: '💪', scope: 'run',
+      desc: 'Begin every battle with <b>+3 Strength</b>.'
+    },
+    ratcharm: {
+      id: 'ratcharm', name: 'Rat Charm', icon: '🐀', scope: 'run',
+      desc: 'If you take <b>no glyph</b> from a rewards screen, gain <b>double souls</b> from it.'
+    },
+    chickencharm: {
+      id: 'chickencharm', name: 'Chicken Charm', icon: '🐔', scope: 'run',
+      desc: 'Normal battle rewards also offer a <b>reforge</b> option.'
+    }
+  };
+
   /* ----------------------------------------------------------
      MONSTERS — 3 distinct starters.
      passive: small identity bonus resolved in battle.
@@ -779,6 +808,37 @@
       id: 'bonelet', name: 'Bonelet', emoji: '🦴', maxHp: 9, token: true,
       intents: [ { type: 'attack', value: 3 } ],
       desc: 'A skittering conscript.'
+    },
+
+    /* ---- Event foes: hunted prey & the collector ---- */
+    collector: {
+      id: 'collector', name: 'The Monster Collector', emoji: '🪤', maxHp: 46,
+      // a trapper: snares your sockets, steels himself, then strikes
+      intents: [
+        { type: 'attack', value: 7 },
+        [ { type: 'sunder', value: 1 }, { type: 'defend', value: 8 } ],
+        { type: 'attack', value: 6, hits: 2 }
+      ],
+      desc: 'A wiry trapper who collects rare beasts. He snares your sockets and wears you down to drag you home in a cage.'
+    },
+    giantRat: {
+      id: 'giantRat', name: 'Giant Rat', emoji: '🐀', maxHp: 38,
+      // quick and filthy: a flurry of bites, then a rabid lunge
+      intents: [
+        { type: 'attack', value: 4, hits: 2 },
+        { type: 'attack', value: 9 }
+      ],
+      desc: 'A bristling, sewer-fat rodent the size of a hound. Fast, filthy, and all teeth.'
+    },
+    giantChicken: {
+      id: 'giantChicken', name: 'Giant Chicken', emoji: '🐔', maxHp: 44, thorns: 1,
+      // deceptively vicious: it pecks back at flailers, then flogs with its wings
+      intents: [
+        { type: 'defend', value: 6 },
+        { type: 'attack', value: 5, hits: 2 },
+        { type: 'attack', value: 12, big: true }
+      ],
+      desc: 'An enormous, furious fowl. It pecks back at careless strikes and beats the air to a frenzy before a flogging charge.'
     },
 
     /* ---- Elites ---- */
@@ -999,6 +1059,6 @@
   }
 
   root.CG = root.CG || {};
-  root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc };
+  root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc };
 
 })(window);

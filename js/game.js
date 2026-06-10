@@ -7,7 +7,7 @@
   'use strict';
 
   const DATA = root.CG.DATA;
-  const { GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, MONSTERS, ENEMIES, ITEMS } = DATA;
+  const { GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS, MONSTERS, ENEMIES, ITEMS } = DATA;
   const SFX = root.CG.Audio.SFX;
 
   // neutral preview env for meta screens: no chain/strength, only run-wide buffs
@@ -480,6 +480,7 @@
       for (const f of order) {
         if (f <= 0 || f >= LAST) continue;                 // never the intro or boss row
         if (opt.freshFloor && floors[f].some(n => n.type !== 'battle')) continue;
+        if (opt.uniqueRow && floorHasType(f, type)) continue;   // one of this type per row
         if (opt.noAdjacent && adjHasType(f, type)) continue;
         if (opt.notRows && opt.notRows.indexOf(f) !== -1) continue;
         if (placeOn(f, type)) return f;
@@ -519,17 +520,17 @@
     placeInRange(2, 9, 'soulstone', {});
     placeInRange(8, LAST - 1, 'soulstone', { notRows: [PREBOSS] });
 
-    // --- Fill a portion of the remaining battles with events / caches for texture ---
-    const filler = [];
-    for (let f = 1; f < PREBOSS; f++) floors[f].forEach(n => { if (n.type === 'battle') filler.push(n); });
-    shuffleArr(filler);
-    const wantEvents = 3, wantCaches = 2;
-    let made = 0;
-    for (const n of filler) {
-      if (made < wantEvents) { n.type = 'event'; made++; continue; }
-      if (made < wantEvents + wantCaches) { n.type = 'reward'; made++; continue; }
-      break;
+    // --- Events: the map's spice, and the antidote to long battle streaks.
+    //     Each five-row block seeds two event rows, with a small chance of a
+    //     third, so no vertical region is wall-to-wall combat. ---
+    const blocks = [[1, 4], [5, 9], [10, LAST - 1]];
+    for (const blk of blocks) {
+      const want = 2 + (Math.random() < 0.35 ? 1 : 0);
+      for (let e = 0; e < want; e++) placeInRange(blk[0], blk[1], 'event', { uniqueRow: true });
     }
+    // --- A couple of treasure caches for texture ---
+    placeInRange(2, LAST - 2, 'reward', { uniqueRow: true });
+    placeInRange(2, LAST - 2, 'reward', { uniqueRow: true });
   }
 
   function rangeFloors(lo, hi) {
@@ -925,14 +926,18 @@
     row.innerHTML = '';
     const offers = offerColorless(3);
     if (!offers.length && sub) sub.textContent = 'Claim the stone — no Soul-glyphs remain to offer.';
-    offers.forEach(g => {
+    // Conjoined Soul: one offered Soul-glyph comes pre-empowered +2 here too.
+    const conjoined = !!State.blessings.conjoined;
+    const blessedIdx = (conjoined && offers.length) ? Math.floor(Math.random() * offers.length) : -1;
+    offers.forEach((g, gi) => {
+      const bonus = (gi === blessedIdx) ? 2 : 0;
       const c = glyphRewardCard(g, 1, () => {
-        pendingGlyphPick = { id: g.id, copies: 1 };
+        pendingGlyphPick = { id: g.id, copies: 1, empower: bonus };
         pendingUpgrade = null;
         row.querySelectorAll('.reward-card').forEach(x => x.classList.remove('chosen'));
         c.classList.add('chosen');
         SFX.reward();
-      });
+      }, bonus);
       row.appendChild(c);
     });
   }
@@ -1042,8 +1047,9 @@
       glyphRow.appendChild(c);
     });
 
-    // Elites (and bosses) let you forgo a new glyph to forge an existing one instead.
-    if (tier === 'elite' || tier === 'boss') {
+    // Elites (and bosses) let you forgo a new glyph to forge an existing one
+    // instead — and Chicken Charm extends that same option to normal battles.
+    if (tier === 'elite' || tier === 'boss' || (tier === 'normal' && State.blessings.chickencharm)) {
       $('reward-choose-head').textContent = 'Choose a Glyph — or upgrade one you own';
       const up = el('div', 'reward-card upgrade-choice');
       up.innerHTML =
@@ -1224,7 +1230,6 @@
     const env = bonus ? upgradeEnv(bonus) : metaEnv(g.id);
     c.innerHTML = `
       ${letterChipHTML(g)}
-      ${bonus ? '<div class="rc-empower">Conjoined Soul +' + bonus + '</div>' : ''}
       <div class="rc-kind">${g.color} glyph${copies > 1 ? ' &times;' + copies : ''}</div>
       <div class="gr-art">${glyphArtHTML(g)}</div>
       <div class="rc-name">${g.name}</div>
@@ -1309,7 +1314,7 @@
     const sv = $('tb-souls'); if (sv) sv.textContent = State.souls;
     const blEl = $('tb-blessings');
     if (blEl) {
-      const allBless = Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS);
+      const allBless = Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS);
       const owned = Object.keys(State.blessings).filter(k => State.blessings[k] && allBless[k]);
       blEl.innerHTML = owned.length
         ? owned.map(k => {
@@ -1334,7 +1339,9 @@
     if (!n) return;
     const avail = wrap.clientWidth;          // flex:1 1 0 → exactly the free gap
     if (avail <= 0) return;                   // not laid out yet; a later update retries
-    const maxS = 28, minS = 15;
+    // chips begin as big as the beast portrait (48px) and only shrink once a
+    // growing collection would otherwise crowd the items column.
+    const maxS = 48, minS = 16;
     let gap = 6;
     const fits = s => n * s + (n - 1) * gap <= avail;
     let s = maxS;
@@ -1487,6 +1494,9 @@
   }
 
   function finishReward() {
+    // Rat Charm: walking away without taking a glyph or a forge doubles the
+    // souls from this reward. Note whether a card was taken before we clear it.
+    const tookCard = !!(pendingGlyphPick || pendingUpgrade);
     // commit the chosen glyph (if any) now, not on click
     if (pendingGlyphPick) {
       const bonus = pendingGlyphPick.empower || 0;
@@ -1508,6 +1518,8 @@
     // auto-collect any spoils the player didn't manually click
     pendingClaims.forEach(fn => fn());
     pendingClaims = [];
+    // souls are now tallied — Rat Charm doubles them when no glyph was taken
+    if (!tookCard && State.blessings.ratcharm && pendingNodeSouls > 0) pendingNodeSouls *= 2;
     if (pendingVictory) { pendingVictory = false; gameOver(true); return; }
     if (pendingNextFloor) { pendingNextFloor = false; advanceFloor(); }
     renderMap();
@@ -2282,6 +2294,9 @@
       c.addEventListener('click', () => {
         SFX.reward();
         const res = ch.resolve(c);   // resolve returns a result line OR { text, reveal }
+        // a choice that hands off to combat (or otherwise leaves this screen)
+        // returns { skip:true } so we don't paint a stale outcome panel behind it
+        if (res && res.skip) return;
         if (res && typeof res === 'object') {
           showEventResult(res.text);
           if (res.reveal) showRevealScene(res.reveal);
@@ -2433,7 +2448,159 @@
     });
   }
 
-  const EVENTS = [eventSpirit, eventGambler, eventTrial];
+  // ---- shared helpers for the combat / gift events ----
+  // hurt the active beast for a fraction of its MAX hp (never lethal)
+  function harmActivePct(frac) {
+    const m = activeMonster();
+    const before = m.hp;
+    harmActive(Math.ceil(m.maxHp * frac));
+    return before - m.hp;
+  }
+  // drop one random carried item; returns its display name (or null if empty-handed)
+  function loseRandomItem() {
+    const arr = itemsArr();
+    if (!arr.length) return null;
+    const id = arr[Math.floor(Math.random() * arr.length)];
+    removeFirstItem(id);
+    updateRunUI();
+    return (ITEMS[id] && ITEMS[id].name) || id;
+  }
+  // grant one of the event-only blessings
+  function grantEventBlessing(id) {
+    State.blessings[id] = true;
+    updateRunUI();
+  }
+  // hand an event off to a one-off fight; spec describes the spoils on victory
+  function startEventBattle(enemyId, spec) {
+    const def = ENEMIES[enemyId];
+    if (!def) return;
+    root.CG.Battle.start({
+      enemies: [def],
+      depth: ((State.act || 1) - 1) * 10 + (State.pos.floor || 0),
+      onWin: () => onEventBattleWin(spec || {}),
+      onLose: () => gameOver(false)
+    });
+    if (root.CG.Audio && root.CG.Audio.Music) root.CG.Audio.Music.to('battle');
+  }
+  function onEventBattleWin(spec) {
+    State.cleared++;
+    buildReward('normal');
+    const claims = $('reward-claims');
+    if (spec.soulstone) {
+      claims.appendChild(claimCard('\u25C6', 'Soulstone',
+        'A shard of raw soul. Gather <b>5</b> to evolve <b>' + activeMonster().name + '</b>.',
+        'var(--blue)', () => gainSoulstone()));
+    }
+    if (spec.blessing) {
+      const b = EVENT_BLESSINGS[spec.blessing];
+      if (b && !State.blessings[b.id]) {
+        claims.appendChild(claimCard(b.icon, 'Charm',
+          '<b>' + b.name + '</b> \u2014 ' + b.desc, 'var(--purple)', () => grantEventBlessing(b.id)));
+      }
+    }
+    show('screen-reward');
+  }
+
+  function eventCollector() {   // COMBAT / FLEE / DEAL
+    showEvent({
+      emoji: '🪤', title: 'The Monster Collector',
+      blurb: 'A wiry stranger in a patched coat slips from the trees, uncoiling a net of glittering wire. <i>"Oh, you\'re a fine specimen,"</i> he breathes. <i>"You\'ll fetch a price."</i>',
+      choices: [
+        {
+          tag: 'Fight', icon: '⚔', name: 'Fend Off', color: 'var(--red)',
+          desc: 'Battle the collector. Win to claim a <b>Soulstone</b>.',
+          resolve: () => { startEventBattle('collector', { soulstone: true }); return { skip: true }; }
+        },
+        {
+          tag: 'Flee', icon: '🏃', name: 'Run', color: 'var(--text-dim)',
+          desc: '50% to escape clean. 50% to take <b>20% of max HP</b> in damage.',
+          resolve: () => {
+            if (Math.random() < 0.5) return 'You bolt through the briar and lose him in the dark.';
+            const dmg = harmActivePct(0.20);
+            return 'The net snags your hide — you tear free, but it costs you <b>' + dmg + ' HP</b>.';
+          }
+        },
+        {
+          tag: 'Deal', icon: '🤝', name: 'Make a Deal', color: 'var(--purple)',
+          desc: 'Give up a random item (if you carry one). Gain <b>Fear Braid</b>.',
+          resolve: () => {
+            const lost = loseRandomItem();
+            grantEventBlessing('fearbraid');
+            return (lost ? 'You surrender your <b>' + lost + '</b>. ' : 'You carry nothing he wants, so he settles for a pact. ') +
+              'He braids a charm of dread into your mane — <b>Fear Braid</b>.';
+          }
+        }
+      ]
+    });
+  }
+
+  function eventAliens() {   // FORCED COST + BOON
+    showEvent({
+      emoji: '🛸', title: 'The Shimmering Craft',
+      blurb: 'A silent disc of impossible color swallows you in light. You wake strapped to a humming slab as many-hued figures lean close, fascinated by what burns inside you...',
+      choices: [{
+        tag: 'Abduction', icon: '🔮', name: 'Endure the Experiments', color: 'var(--purple)',
+        desc: 'Lose <b>20% of max HP</b>. Gain <b>Shimmering Orb</b>.',
+        resolve: () => {
+          const dmg = harmActivePct(0.20);
+          grantEventBlessing('shimmer');
+          return 'They peel something luminous from your soul and seal it in a glass orb. It costs you <b>' + dmg + ' HP</b> — but the orb is yours.';
+        }
+      }]
+    });
+  }
+
+  function eventWoman() {   // THREE-SELECT GIFT
+    showEvent({
+      emoji: '👰', title: 'The Lady in White',
+      blurb: 'A woman in flowing white glides between the trees, her feet never touching the earth. She smiles — she finds you <i>darling</i> — and opens a pale hand. Three small things rest there. You may take one.',
+      choices: [
+        {
+          tag: 'Gift', icon: '🪶', name: 'Black Feather', color: 'var(--blue)',
+          desc: 'A permanent <b>+3 Resilience</b> at the start of every battle.',
+          resolve: () => { grantEventBlessing('blackfeather'); return 'You take the black feather. It sinks into your hide — you feel far harder to break.'; }
+        },
+        {
+          tag: 'Gift', icon: '💪', name: 'Raw Muscle Fiber', color: 'var(--red)',
+          desc: 'A permanent <b>+3 Strength</b> at the start of every battle.',
+          resolve: () => { grantEventBlessing('rawmuscle'); return 'You swallow the raw fiber. Strength coils hot through your limbs.'; }
+        },
+        {
+          tag: 'Gift', icon: '🤍', name: 'Touch Her Hand', color: 'var(--green)',
+          desc: 'Refill your active beast to full HP and gain ' + soulsGainPreview(30) + ' souls.',
+          resolve: (card) => {
+            const m = activeMonster();
+            const healed = m.maxHp - m.hp;
+            m.hp = m.maxHp;
+            updateRunUI();
+            gainSouls(30, card ? card.querySelector('.rc-icon') : null);
+            return 'You lay your hand in hers. Warmth floods you — <b>' + healed + ' HP</b> knits shut and souls spill from her smile.';
+          }
+        }
+      ]
+    });
+  }
+
+  function eventHunt() {   // CHOOSE YOUR PREY (two fights)
+    showEvent({
+      emoji: '🍖', title: 'The Hunt',
+      blurb: 'Hunger gnaws at you as you prowl the underbrush. Something fat and slow rustles nearby. What are you craving?',
+      choices: [
+        {
+          tag: 'Prey', icon: '🐀', name: 'Rat', color: 'var(--green)',
+          desc: 'Hunt a <b>Giant Rat</b>. Win to gain the <b>Rat Charm</b>.',
+          resolve: () => { startEventBattle('giantRat', { blessing: 'ratcharm' }); return { skip: true }; }
+        },
+        {
+          tag: 'Prey', icon: '🐔', name: 'Chicken', color: 'var(--gold)',
+          desc: 'Hunt a <b>Giant Chicken</b>. Win to gain the <b>Chicken Charm</b>.',
+          resolve: () => { startEventBattle('giantChicken', { blessing: 'chickencharm' }); return { skip: true }; }
+        }
+      ]
+    });
+  }
+
+  const EVENTS = [eventSpirit, eventGambler, eventTrial, eventCollector, eventAliens, eventWoman, eventHunt];
   function buildEvent() {
     // pick an event, avoiding an immediate repeat
     let pool = EVENTS.map((fn, i) => i).filter(i => i !== State.lastEvent);
@@ -2672,7 +2839,7 @@
 
     const b = $('collection-blessings');
     b.innerHTML = '';
-    const allBless = Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS);
+    const allBless = Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS);
     const owned = Object.keys(State.blessings)
       .filter(k => State.blessings[k] && allBless[k])
       .map(k => allBless[k]);

@@ -148,6 +148,14 @@
     if (monster.passive === 'startShield') B.playerShield = monster.passiveVal;
     // War Banner blessing — begin each battle with bonus Strength
     if (G.state.blessings.warbanner) B.strength += 2;
+    // Raw Muscle Fiber / Black Feather — permanent battle-start stat gifts
+    if (G.state.blessings.rawmuscle) B.strength += 3;
+    if (G.state.blessings.blackfeather) B.resilience += 3;
+    // Fear Braid — the second foe in the formation opens the fight Scared
+    if (G.state.blessings.fearbraid && B.enemies[1]) {
+      B.enemies[1].scare = (B.enemies[1].scare || 0) + 3;
+      B.enemies[1].scareTurns = 3;
+    }
 
     buildDOM();
     root.CG.Game.show('screen-battle');
@@ -1792,6 +1800,12 @@
         if (k + 1 < runSeq.length) empBonus[k + 1] += empCount;
       }
     }
+    // Shimmering Orb: on resolve, every glyph is empowered by the count of
+    // distinct colors woven through the chain.
+    if (root.CG.Game.state.blessings.shimmer && runSeq.length) {
+      const shimmer = new Set(runSeq.map(s => glyph(s.id).color)).size;
+      for (let k = 0; k < empBonus.length; k++) empBonus[k] += shimmer;
+    }
 
     // "Played last" effects (e.g. Rake's Leech payoff) key off the last glyph the
     // player GENUINELY placed — not a Repeat echo, Loopback replay, or any trailing
@@ -2348,6 +2362,11 @@
         if (k > 0) empB[k - 1] += n;
         if (k + 1 < seq.length) empB[k + 1] += n;
       }
+    }
+    // Shimmering Orb mirror — empower every glyph by the chain's distinct colors
+    if (root.CG.Game.state.blessings.shimmer && seq.length) {
+      const shimmer = new Set(seq.map(s => glyph(s.id).color)).size;
+      for (let k = 0; k < empB.length; k++) empB[k] += shimmer;
     }
     let lastGenuineIdx = -1;
     for (let gi = seq.length - 1; gi >= 0; gi--) if (!seq[gi].replay && !seq[gi].repeat2) { lastGenuineIdx = gi; break; }
@@ -4348,6 +4367,8 @@
     B.playerShield = (B.monster.passive === 'startShield') ? B.monster.passiveVal : 0;
     B.strength = B.monster.runStrength || 0; B.resilience = B.monster.runResilience || 0; B.turnStrength = 0;
     if (root.CG.Game.state.blessings.warbanner) B.strength += 2;
+    if (root.CG.Game.state.blessings.rawmuscle) B.strength += 3;
+    if (root.CG.Game.state.blessings.blackfeather) B.resilience += 3;
     B.carryShield = 0; B.playerBurn = 0;
     // adopt the incoming beast's socket layout; clear any held/cloned carry-over
     B.slotTypes = Array.from({ length: B.monster.sockets }, (_, i) => (B.monster.slotTypes && B.monster.slotTypes[i]) || 'normal');
