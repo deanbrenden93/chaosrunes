@@ -18,10 +18,14 @@
     scale = Math.min(w / REF_W, h / REF_H);
     offX = Math.round((w - REF_W * scale) / 2);
     offY = Math.round((h - REF_H * scale) / 2);
-    const tf = `translate(${offX}px, ${offY}px) scale(${scale})`;
-    stage.style.transform = tf;
-    // expose base transform so screen-shake can compose with it
-    stage.style.setProperty('--stage-tf', tf);
+    // Letterbox via the INDEPENDENT translate/scale properties (not `transform`).
+    // This frees the `transform` property for the screen-shake, so the shake can
+    // be a pure compositor-thread animation (no CSS-var keyframes, no nesting) —
+    // which fixes mobile tearing/black-boxes AND the zoom-to-top-left glitch.
+    stage.style.translate = offX + 'px ' + offY + 'px';
+    stage.style.scale = String(scale);
+    // keep a base transform var around for any legacy consumers (harmless)
+    stage.style.setProperty('--stage-tf', `translate(${offX}px, ${offY}px) scale(${scale})`);
   }
 
   // Convert a client (mouse/window) point into stage-space coordinates.

@@ -95,14 +95,9 @@ html, body {
   overflow: hidden;
   background:
     radial-gradient(ellipse at 50% 0%, #241936 0%, #120c1e 45%, #0a0712 100%);
-}
-/* shake layer — a stable GPU layer that only the screen-shake transforms.
-   Decoupling this from #stage's scale lets the shake run on the compositor
-   thread (pure translate3d, no CSS-var transform), which kills the mobile
-   black-box / tearing artifacts during heavy hits. */
-#stage-shake {
-  position: absolute; inset: 0;
-  transform: translateZ(0);
+  /* letterbox lives on the independent translate/scale props (set by scaling.js)
+     so the `transform` property below stays free for a compositor-friendly,
+     GPU-only screen-shake */
   backface-visibility: hidden;
 }
 
@@ -2364,9 +2359,10 @@ html, body {
   100% { opacity: 0; transform: translate(-50%,-50%) scale(0.95); }
 }
 
-/* screen shake — applied to #stage-shake, which is already centered/scaled by
-   its #stage parent. Keyframes use pure translate3d/rotate so the animation
-   stays on the compositor thread (smooth on mobile, no repaints). */
+/* screen shake — applied to #stage. The letterbox sits on translate/scale
+   props, so this `transform` animation composes cleanly with it. Pure
+   translate3d/rotate keyframes keep the shake on the compositor thread
+   (smooth on mobile, no repaints, no zoom glitch). */
 .stage-shake  { animation: shake-hard   0.4s ease;  will-change: transform; }
 .stage-shake-2 { animation: shake-hard-2 0.5s ease;  will-change: transform; }
 .stage-shake-3 { animation: shake-hard-3 0.62s ease; will-change: transform; }

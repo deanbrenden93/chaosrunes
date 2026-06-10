@@ -83,9 +83,7 @@
   // START
   // ============================================================
   function start(opts) {
-    // append combat FX into the shake layer so projectiles/floats/motes shake
-    // in sync with the combatants (and inherit the same GPU compositing)
-    stage = $('stage-shake') || $('stage');
+    stage = $('stage');
     onWinCb = opts.onWin; onLoseCb = opts.onLose;
     const G = root.CG.Game;
     const monster = G.state.monsters[G.firstAlive()];
@@ -1348,12 +1346,9 @@
     setTimeout(() => f.remove(), 1100);
   }
   function shake(level) {
-    // shake the dedicated GPU layer, not the scaled #stage, so mobile
-    // compositing stays smooth (no black boxes / tearing)
-    const box = document.getElementById('stage-shake') || stage;
-    box.classList.remove('stage-shake', 'stage-shake-2', 'stage-shake-3');
-    void box.offsetWidth;
-    box.classList.add(level >= 3 ? 'stage-shake-3' : level === 2 ? 'stage-shake-2' : 'stage-shake');
+    stage.classList.remove('stage-shake', 'stage-shake-2', 'stage-shake-3');
+    void stage.offsetWidth;
+    stage.classList.add(level >= 3 ? 'stage-shake-3' : level === 2 ? 'stage-shake-2' : 'stage-shake');
   }
   // a brief full-stage light flash for big, dramatic moments (boss deaths)
   function deathFlash(maxA, dur, color) {
@@ -3736,7 +3731,7 @@
   // each mote flies outward from where it was born — so it reads as the whole
   // sprite disintegrating, not a single jet near the feet.
   function enemyAsh(en, n, sizeMul) {
-    const stage = $('stage-shake') || $('stage');
+    const stage = $('stage');
     if (!stage || !en.dom) return;
     n = n || 12; sizeMul = sizeMul || 1;
     const a = spriteAnchor(en);
