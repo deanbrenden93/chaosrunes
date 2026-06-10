@@ -3333,6 +3333,37 @@
   }
 
   // ============================================================
+  // SECRET DEBUG UNLOCK — debug button is hidden until the player taps
+  // the main-menu logo 5 times within 3 seconds (persists once unlocked)
+  // ============================================================
+  const DEBUG_KEY = 'cg_debug_v1';
+  function revealDebug() {
+    const btn = $('btn-debug');
+    if (btn) btn.classList.remove('hidden');
+  }
+  function wireDebugUnlock() {
+    // already unlocked on a previous session? show it right away
+    try { if (localStorage.getItem(DEBUG_KEY)) revealDebug(); } catch (e) { /* ignore */ }
+    const logo = document.querySelector('#screen-home .home-logo');
+    if (!logo) return;
+    let taps = [];
+    const onTap = (e) => {
+      if (e) { e.preventDefault(); }
+      const now = Date.now();
+      taps.push(now);
+      taps = taps.filter(t => now - t <= 3000);   // keep only the last 3 seconds
+      if (taps.length >= 5) {
+        taps = [];
+        revealDebug();
+        try { localStorage.setItem(DEBUG_KEY, '1'); } catch (err) { /* ignore */ }
+        SFX.reward && SFX.reward();
+      }
+    };
+    logo.style.cursor = 'pointer';
+    logo.addEventListener('click', onTap);
+  }
+
+  // ============================================================
   // WIRING
   // ============================================================
   function init() {
@@ -3377,6 +3408,9 @@
       try { window.close(); } catch (e) { /* ignore */ }
     });
     $('btn-start-back').addEventListener('click', () => { SFX.click(); show('screen-home'); });
+
+    // ---- secret debug unlock: tap the menu logo 5x within 3s ----
+    wireDebugUnlock();
 
     // turn bestiary pages with ← / → while on the beast-select screen
     document.addEventListener('keydown', (e) => {

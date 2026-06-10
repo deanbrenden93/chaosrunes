@@ -17,11 +17,20 @@
       'assets/test battle backdrop.png',
       'assets/Base Rune.png'
     ].forEach(addImg);
-    // beast + enemy portraits and bespoke glyph art, straight from the data
+    // every art reference declared in the data, harvested generically so new
+    // collections (blessings, items, souls, …) and new `img`/`selectBg` fields
+    // are picked up automatically — nothing has to be reloaded mid-run.
     const D = (root.CG && root.CG.DATA) || {};
-    try { const M = D.MONSTERS || {}; Object.keys(M).forEach(k => { addImg(M[k].img); addImg(M[k].selectBg); }); } catch (e) {}
-    try { const G = D.GLYPHS || {}; Object.keys(G).forEach(k => addImg(G[k].img)); } catch (e) {}
-    try { const E = D.ENEMIES || {}; Object.keys(E).forEach(k => addImg(E[k].img)); } catch (e) {}
+    try {
+      Object.keys(D).forEach(coll => {
+        const map = D[coll];
+        if (!map || typeof map !== 'object') return;        // skip helpers like formatDesc
+        Object.keys(map).forEach(k => {
+          const entry = map[k];
+          if (entry && typeof entry === 'object') { addImg(entry.img); addImg(entry.selectBg); }
+        });
+      });
+    } catch (e) {}
 
     let audio = [];
     try { if (root.CG.Audio && root.CG.Audio.assetUrls) audio = root.CG.Audio.assetUrls(); } catch (e) {}

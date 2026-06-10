@@ -2887,7 +2887,9 @@
     }
     markDestSockets(null, false);
     renderForecast(null);
-    SFX.click();
+    // mouse gets a "lift" click on pickup; on touch the drag IS the play, so we
+    // hold the click until release (placeGlyph) to avoid a double select sound
+    if (!press.isTouch) SFX.click();
   }
   function moveHandDrag(press, p, ev) {
     if (!press.dragging) return;
