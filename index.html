@@ -73,10 +73,10 @@
           </div>
         </div>
         <div class="tb-mid">
-          <div class="tb-group"><span class="tb-label">Blessings</span><div id="tb-blessings" class="tb-blessings"></div></div>
-          <div class="tb-group"><span class="tb-label">Items</span>
+          <div class="tb-group tb-group-bless"><span class="tb-label">Blessings</span><div id="tb-blessings" class="tb-blessings"></div></div>
+          <div class="tb-group tb-group-items"><span class="tb-label">Items</span>
             <div class="tb-items">
-              <div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div>
+              <div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div><div class="item-slot"><span class="hud-tip">Empty item slot</span></div>
             </div>
           </div>
         </div>
@@ -290,12 +290,15 @@
       <div id="debug-modal" class="debug-modal hidden">
         <div class="debug-panel">
           <h2 class="debug-title">Debug Menu</h2>
-          <p class="debug-sub">Cheats apply to the current battle.</p>
+          <p class="debug-sub">Cheats apply to the current run.</p>
           <div class="debug-actions">
             <button class="btn debug-btn" data-debug="heal">❤ 99 Health</button>
             <button class="btn debug-btn" data-debug="strength">💪 99 Strength</button>
             <button class="btn debug-btn" data-debug="allGlyphs">🜲 All Glyphs in Hand</button>
             <button class="btn debug-btn" data-debug="maxSlots">◇ Max Slots (9)</button>
+            <button class="btn debug-btn" data-debug="gold">🪙 9999 Gold</button>
+            <button class="btn debug-btn" data-debug="anyNode">🧭 Any Node: OFF</button>
+            <button class="btn debug-btn debug-wide" data-debug="secretShop">🛒 Secret Shop</button>
             <button class="btn debug-btn debug-danger" data-debug="killAll">☠ Kill All Enemies</button>
           </div>
           <button id="btn-debug-close" class="btn btn-ghost">Close</button>

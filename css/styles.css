@@ -198,6 +198,13 @@ html, body {
   background: rgba(40,30,60,0.7); border-color: rgba(180,150,255,0.35);
 }
 .debug-btn:hover:not(:disabled) { background: rgba(60,45,90,0.85); }
+.debug-btn.debug-wide { grid-column: 1 / -1; }
+.debug-btn.debug-on {
+  background: linear-gradient(180deg, rgba(60,140,90,0.8), rgba(30,90,55,0.8));
+  border-color: rgba(120,235,150,0.6); color: #d6ffe0;
+}
+/* a map node reachable only via the "any node" debug toggle */
+.mapnode.dbg-anynode { outline: 2px dashed rgba(120,235,150,0.7); outline-offset: 3px; }
 .debug-btn.debug-danger {
   grid-column: 1 / -1;
   background: linear-gradient(180deg, rgba(150,40,50,0.7), rgba(90,20,30,0.7));
@@ -321,10 +328,7 @@ html, body {
 }
 .btn-begin { font-size: 29px; padding: 16px 46px; transition: box-shadow .25s, transform .2s; }
 .btn-begin b { color: #ffe9c0; }
-.btn-begin.armed { animation: begin-armed 1.6s ease-in-out infinite; }
-@keyframes begin-armed {
-  50% { box-shadow: 0 0 36px rgba(245,201,105,0.5), 0 0 0 2px rgba(245,201,105,0.55); transform: translateY(-2px); }
-}
+.btn-begin.armed { box-shadow: 0 0 30px rgba(245,201,105,0.40); transform: translateY(-2px); }
 
 /* ---- the pager frame: arrow / page / arrow ---- */
 .beast-pager { display: flex; align-items: center; gap: 18px; margin-top: 16px; }
@@ -711,14 +715,14 @@ html, body {
 
 /* ---------- Global top HUD (map + battle) ---------- */
 .battle-topbar {
-  position: absolute; top: 0; left: 0; right: 0; height: 68px; z-index: 15;
+  position: absolute; top: 0; left: 0; right: 0; height: 84px; z-index: 15;
   display: flex; align-items: center; justify-content: space-between; gap: 24px;
   padding: 0 28px;
   background: linear-gradient(180deg, rgba(8,5,14,0.98), rgba(8,5,14,0.72) 72%, rgba(8,5,14,0.4));
   border-bottom: 1px solid var(--panel-edge);
 }
 .battle-topbar.hidden { display: none; }
-.tb-left { display: flex; align-items: center; gap: 13px; min-width: 320px; }
+.tb-left { display: flex; align-items: center; gap: 13px; min-width: 320px; flex: none; }
 .tb-portrait-wrap {
   width: 48px; height: 48px; border-radius: 50%; flex: none;
   display: flex; align-items: center; justify-content: center;
@@ -735,14 +739,31 @@ html, body {
 }
 .tb-hpfill { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(180deg, #ff7a8c, var(--hp)); transition: transform .35s cubic-bezier(.2,.8,.3,1); }
 .tb-hptext { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px #000; letter-spacing: .04em; }
-.tb-mid { display: flex; align-items: center; gap: 40px; }
+/* the middle takes all the leftover width; blessings get the lion's share so a
+   big collection always stays fully visible (wrapping into rows as needed) */
+.tb-mid { display: flex; align-items: center; gap: 28px; flex: 1 1 auto; min-width: 0; justify-content: center; }
 .tb-group { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.tb-group-bless { flex: 1 1 auto; min-width: 0; max-width: 720px; }
+.tb-group-items { flex: none; }
 .tb-label { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--text-dim); font-family: 'Cinzel', serif; }
-.tb-blessings { display: flex; gap: 6px; min-height: 30px; align-items: center; }
-.tb-bless { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 17px; background: rgba(176,123,255,0.18); border: 1px solid var(--purple); color: var(--purple-glow); }
+/* blessings wrap (centered) so none ever hide behind the items column */
+.tb-blessings {
+  display: flex; flex-wrap: wrap; gap: 5px; align-items: center; justify-content: center;
+  width: 100%; max-height: 62px; overflow-y: auto; padding: 1px;
+}
+.tb-bless { width: 28px; height: 28px; border-radius: 8px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 16px; background: rgba(176,123,255,0.18); border: 1px solid var(--purple); color: var(--purple-glow); }
 .tb-empty { color: var(--text-dim); font-size: 16px; }
-.tb-items { display: flex; gap: 6px; flex-wrap: wrap; max-width: 230px; justify-content: center; }
-.item-slot { width: 30px; height: 30px; border-radius: 7px; border: 1px dashed rgba(160,140,210,0.35); background: rgba(20,14,32,0.5); box-shadow: inset 0 0 8px rgba(0,0,0,0.4); }
+.tb-items { display: flex; gap: 7px; justify-content: center; }
+.item-slot { position: relative; width: 32px; height: 32px; border-radius: 7px; border: 1px dashed rgba(160,140,210,0.35); background: rgba(20,14,32,0.5); box-shadow: inset 0 0 8px rgba(0,0,0,0.4); }
+/* stack count badge on an item icon (only shown when carrying more than one) */
+.item-slot .item-count {
+  position: absolute; right: -5px; bottom: -5px; min-width: 17px; height: 17px; z-index: 3;
+  display: flex; align-items: center; justify-content: center; padding: 0 3px;
+  font-family: 'Cinzel', serif; font-size: 11px; font-weight: 800; line-height: 1;
+  color: #1a120a; background: linear-gradient(180deg, #ffe39a, #f5c969);
+  border: 1px solid rgba(0,0,0,0.45); border-radius: 9px; box-shadow: 0 1px 3px rgba(0,0,0,0.55);
+}
+.tb-items .it-x { color: #ffd36b; font-style: normal; font-weight: 700; }
 /* a carried consumable */
 .item-slot.filled {
   display: flex; align-items: center; justify-content: center;
@@ -768,30 +789,118 @@ html, body {
 .item-choose {
   position: absolute; inset: 0; z-index: 400;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(6,4,12,0.74); backdrop-filter: blur(3px);
   animation: fadeInOverlay 0.18s ease;
+}
+/* the dark/blur sits on its own layer so the reparented combat tooltip (and the
+   panel) can render ABOVE it and stay perfectly readable */
+.item-choose .ic-veil {
+  position: absolute; inset: 0; z-index: 0;
+  background: rgba(6,4,12,0.74); backdrop-filter: blur(3px);
 }
 @keyframes fadeInOverlay { from { opacity: 0; } to { opacity: 1; } }
 .item-choose .ic-panel {
+  position: relative; z-index: 1;
   width: min(820px, 78%); max-height: 76%; overflow-y: auto;
   background: linear-gradient(180deg, rgba(30,22,46,0.98), rgba(16,11,26,0.98));
   border: 1px solid var(--panel-edge); border-radius: 18px; padding: 26px 28px 24px;
   box-shadow: 0 24px 70px rgba(0,0,0,0.65); text-align: center;
+  animation: ic-panel-in .26s cubic-bezier(.2,1.25,.4,1) both;
 }
-.item-choose .ic-title { font-family: 'Cinzel', serif; font-size: 22px; color: var(--gold); margin-bottom: 18px; }
-.item-choose .ic-grid { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 20px; }
+@keyframes ic-panel-in { from { opacity: 0; transform: translateY(18px) scale(.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.item-choose .ic-title { font-family: 'Cinzel', serif; font-size: 30px; color: var(--gold); margin: 4px 0 4px; letter-spacing: .04em; text-shadow: 0 0 18px rgba(245,201,105,0.35); }
+.item-choose .ic-grid { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-bottom: 22px; }
 .item-choose .ic-tile {
-  width: 108px; padding: 12px 8px; border-radius: 14px; cursor: pointer;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--g-color) 18%, rgba(0,0,0,0.35)), rgba(0,0,0,0.4));
+  position: relative; width: 122px; padding: 14px 8px 12px; border-radius: 16px; cursor: pointer;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--g-color) 20%, rgba(0,0,0,0.35)), rgba(0,0,0,0.42));
   border: 1px solid color-mix(in srgb, var(--g-color) 55%, transparent);
-  transition: transform .12s ease, box-shadow .15s ease;
+  box-shadow: inset 0 0 16px color-mix(in srgb, var(--g-color) 14%, transparent);
+  transition: transform .14s cubic-bezier(.2,.85,.3,1), box-shadow .18s ease, border-color .18s ease;
 }
-.item-choose .ic-tile:hover { transform: translateY(-4px); box-shadow: 0 8px 22px color-mix(in srgb, var(--g-color) 40%, transparent); }
-.item-choose .ic-art { height: 64px; display: flex; align-items: center; justify-content: center; }
-.item-choose .ic-art img { max-width: 60px; max-height: 60px; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.6)); }
-.item-choose .ic-rune { font-size: 40px; color: color-mix(in srgb, var(--g-color) 80%, #fff); }
-.item-choose .ic-name { margin-top: 8px; font-family: 'Cinzel', serif; font-size: 14px; color: var(--text); }
+.item-choose .ic-tile:hover {
+  transform: translateY(-7px) scale(1.05);
+  border-color: color-mix(in srgb, var(--g-color) 85%, #fff);
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--g-color) 45%, transparent), 0 0 22px color-mix(in srgb, var(--g-color) 40%, transparent);
+}
+/* the glyph art is the SAME visual used in hand (carved hex plate / bespoke
+   image), sized to sit in the chooser tile */
+.item-choose .ic-art { position: relative; width: 92px; height: 92px; margin: 0 auto; }
+.item-choose .ic-art .g-stack { width: 100%; height: 100%; }
+.item-choose .ic-art .g-hex .g-rune { font-size: 52px; }
+.item-choose .ic-tile:hover .ic-art { filter: drop-shadow(0 4px 14px color-mix(in srgb, var(--g-color) 55%, rgba(0,0,0,0.5))); transition: filter .15s ease; }
+.item-choose .ic-name { margin-top: 8px; font-family: 'Cinzel', serif; font-size: 15px; color: var(--text); }
+.item-choose .ic-src {
+  display: inline-block; margin-top: 6px; padding: 1px 8px; border-radius: 999px;
+  font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  border: 1px solid transparent;
+}
+.item-choose .ic-src.src-draw { color: #cfe6ff; background: rgba(70,120,190,0.22); border-color: rgba(110,170,255,0.4); }
+.item-choose .ic-src.src-disc { color: #e7cda6; background: rgba(150,110,60,0.22); border-color: rgba(210,160,90,0.4); }
+.item-choose .ic-chip {
+  position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; z-index: 2;
+  display: flex; align-items: center; justify-content: center; border-radius: 50%;
+  font-family: 'Cinzel', serif; font-weight: 800; font-size: 14px; color: #1a120a;
+  border: 1px solid rgba(0,0,0,0.4); box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+.item-choose .ic-chip.l-A { background: linear-gradient(180deg,#ff8a5c,#e0502f); color: #fff; }
+.item-choose .ic-chip.l-B { background: linear-gradient(180deg,#7fd0ff,#3a86c8); color: #fff; }
+.item-choose .ic-chip.l-C { background: linear-gradient(180deg,#9be38b,#3f9e4d); color: #fff; }
+.item-choose .ic-chip.wild { background: linear-gradient(180deg,#ffe9a8,#f5c969); }
 .item-choose .ic-cancel { margin-top: 4px; }
+/* ============================================================
+   Emergency Phial chooser — a little "rule of cool"
+   ============================================================ */
+.phial-choose .ic-panel {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--panel-edge));
+  background: linear-gradient(180deg, rgba(40,18,22,0.98), rgba(18,10,16,0.98));
+  box-shadow: 0 24px 70px rgba(0,0,0,0.72), 0 0 70px rgba(190,40,30,0.22), inset 0 0 40px rgba(120,20,16,0.18);
+}
+.phial-choose .ic-title { color: #ffb38a; text-shadow: 0 0 22px rgba(255,110,70,0.5); }
+.phial-choose .ic-sub { font-family: 'Spectral', serif; font-style: italic; font-size: 18px; color: var(--text-dim); margin: 2px auto 20px; max-width: 560px; }
+.phial-choose .ic-tile { animation: phial-tile-in .34s cubic-bezier(.2,1.3,.4,1) both; }
+@keyframes phial-tile-in { from { opacity: 0; transform: translateY(16px) scale(.82); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* ---- the bubbling phial itself (pure CSS glass flask) ---- */
+.phial-choose .ic-phial-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+.phial-choose .ic-phial { position: relative; width: 54px; height: 66px; animation: phial-bob 2.6s ease-in-out infinite; filter: drop-shadow(0 6px 14px rgba(255,80,60,0.45)); }
+.phial-choose .ph-neck {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 16px; height: 20px; border: 2px solid rgba(210,230,255,0.6); border-bottom: none;
+  border-radius: 4px 4px 0 0; background: linear-gradient(180deg, rgba(225,240,255,0.45), rgba(190,215,245,0.15));
+}
+.phial-choose .ph-body {
+  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 46px; height: 48px; overflow: hidden;
+  border: 2px solid rgba(210,230,255,0.6);
+  border-radius: 16px 16px 22px 22px / 12px 12px 24px 24px;
+  background: linear-gradient(180deg, rgba(225,240,255,0.18), rgba(190,215,245,0.06));
+  box-shadow: inset 0 0 12px rgba(190,220,255,0.28), inset -6px 0 10px rgba(255,255,255,0.12);
+}
+.phial-choose .ph-liquid {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 64%;
+  background: linear-gradient(180deg, #ff7a5e, #c12a1d);
+  box-shadow: 0 0 18px rgba(255,80,60,0.7);
+}
+.phial-choose .ph-liquid::before {
+  content: ''; position: absolute; top: -4px; left: 0; right: 0; height: 8px;
+  background: radial-gradient(circle at 30% 50%, #ff9a7e 45%, transparent 70%);
+  animation: phial-slosh 2.8s ease-in-out infinite;
+}
+.phial-choose .ph-bub { position: absolute; bottom: 6px; width: 5px; height: 5px; border-radius: 50%; background: rgba(255,225,215,0.9); opacity: 0; }
+.phial-choose .ph-bub.b1 { left: 13px; animation: phial-bubble 2.2s ease-in infinite; }
+.phial-choose .ph-bub.b2 { left: 24px; animation: phial-bubble 2.9s ease-in .7s infinite; }
+.phial-choose .ph-bub.b3 { left: 32px; animation: phial-bubble 2.5s ease-in 1.2s infinite; }
+.phial-choose .ic-phial-glow {
+  position: absolute; width: 104px; height: 104px; border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, rgba(255,90,70,0.42), transparent 68%);
+  animation: phial-pulse 2.6s ease-in-out infinite;
+}
+@keyframes phial-bob { 50% { transform: translateY(-5px) rotate(-3deg); } }
+@keyframes phial-pulse { 0%,100% { opacity: .5; transform: scale(.9); } 50% { opacity: .95; transform: scale(1.14); } }
+@keyframes phial-slosh { 50% { transform: translateX(4px); } }
+@keyframes phial-bubble { 0% { opacity: 0; transform: translateY(0) scale(.5); } 25% { opacity: .9; } 100% { opacity: 0; transform: translateY(-24px) scale(1); } }
+
+/* the universal tooltip, reparented into the overlay, sits above the dark veil */
+.combat-tip.over-modal { z-index: 600; }
 .tb-right { display: flex; align-items: center; gap: 26px; min-width: 200px; justify-content: flex-end; }
 .tb-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .tb-val { font-family: 'Cinzel', serif; font-size: 25px; color: var(--gold); line-height: 1; filter: drop-shadow(0 0 8px rgba(245,201,105,0.35)); }
@@ -1718,6 +1827,18 @@ html, body {
   0% { opacity: 0; transform: translate(-50%, 0) scale(0.5); }
   20% { opacity: 1; transform: translate(-50%, -30px) scale(1.2); }
   100% { opacity: 0; transform: translate(-50%, -110px) scale(1); }
+}
+/* messages over the bottom-left player UI: anchored to a left margin and grown
+   rightward (origin left) so neither the text nor its scale-up is ever clipped */
+.float-text.float-edge-left {
+  transform-origin: left center; text-align: left;
+  font-size: 46px; animation-name: float-up-left;
+}
+.float-text.float-edge-left.status { font-size: 34px; }
+@keyframes float-up-left {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.55); }
+  20% { opacity: 1; transform: translate(0, -30px) scale(1.12); }
+  100% { opacity: 0; transform: translate(0, -110px) scale(1); }
 }
 
 /* projectile bolt */
@@ -2751,11 +2872,11 @@ html, body {
    left of the enemies; every battle hover feeds it.
    ============================================================ */
 .combat-tip {
-  position: absolute; left: 26px; top: 132px; width: 384px; z-index: 40;
+  position: absolute; left: 26px; top: 132px; width: 432px; z-index: 40;
   background: linear-gradient(180deg, rgba(20,13,32,0.96), rgba(10,6,18,0.97));
   border: 1px solid var(--panel-edge); border-left: 3px solid var(--gold);
-  border-radius: 14px; padding: 18px 20px;
-  font-family: 'Spectral', serif; font-size: 19px; line-height: 1.5;
+  border-radius: 14px; padding: 18px 22px;
+  font-family: 'Spectral', serif; font-size: 26px; line-height: 1.5;
   color: var(--text-dim); text-align: left;
   box-shadow: 0 14px 38px rgba(0,0,0,0.55);
   opacity: 0; transform: translateX(-10px); pointer-events: none;
@@ -2764,7 +2885,7 @@ html, body {
 .combat-tip.show { opacity: 1; transform: none; }
 .combat-tip b { color: var(--text); }
 .combat-tip .ct-head {
-  font-family: 'Cinzel', serif; font-size: 21px; color: var(--gold);
+  font-family: 'Cinzel', serif; font-size: 28px; color: var(--gold);
   letter-spacing: .03em; margin-bottom: 8px;
   /* emblems + name ride one properly-centered line */
   display: flex; align-items: center; flex-wrap: wrap;
@@ -2774,9 +2895,9 @@ html, body {
   height: 1px; margin: 12px 0;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
 }
-.combat-tip .st-name { display: block; font-family: 'Cinzel'; color: var(--gold); font-size: 19px; margin: 2px 0 4px; }
-.combat-tip .sft-turns { display: block; margin-top: 7px; font-family: 'Cinzel'; font-size: 14.5px; color: #c9a3ff; }
-.combat-tip .gt-up { display: inline-block; margin-top: 2px; color: #ffd36b; font-size: 13.5px; letter-spacing: .04em; }
+.combat-tip .st-name { display: block; font-family: 'Cinzel'; color: var(--gold); font-size: 26px; margin: 2px 0 4px; }
+.combat-tip .sft-turns { display: block; margin-top: 7px; font-family: 'Cinzel'; font-size: 19.5px; color: #c9a3ff; }
+.combat-tip .gt-up { display: inline-block; margin-top: 2px; color: #ffd36b; font-size: 18px; letter-spacing: .04em; }
 .combat-tip .dyn-up { color: #8ef58a; text-shadow: 0 0 8px rgba(120,240,120,0.6); }
 .combat-tip .dyn-down { color: #ff8a8a; text-shadow: 0 0 8px rgba(255,120,120,0.5); }
 /* glyph emblems (combo letter / tempers) sit INLINE in the header, just
@@ -3141,7 +3262,7 @@ html, body {
    per-foe projection marks and the destination-socket beacon
    ============================================================ */
 .chain-forecast {
-  position: absolute; right: 26px; top: 152px; width: 286px; z-index: 39;
+  position: absolute; right: 26px; top: 152px; width: 344px; z-index: 39;
   background: linear-gradient(180deg, rgba(20,13,32,0.96), rgba(10,6,18,0.97));
   border: 1px solid var(--panel-edge); border-right: 3px solid var(--gold);
   border-radius: 14px; padding: 16px 20px 14px;
@@ -3152,16 +3273,16 @@ html, body {
 }
 .chain-forecast.show { opacity: 1; transform: none; }
 .chain-forecast .fc-head {
-  font-family: 'Cinzel', serif; font-size: 21px; color: var(--gold); letter-spacing: .04em;
+  font-family: 'Cinzel', serif; font-size: 28px; color: var(--gold); letter-spacing: .04em;
 }
-.chain-forecast .fc-sub { font-size: 16px; font-style: italic; color: var(--text-dim); margin: 2px 0 10px; }
+.chain-forecast .fc-sub { font-size: 22px; font-style: italic; color: var(--text-dim); margin: 2px 0 10px; }
 .chain-forecast .fc-row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; }
-.chain-forecast .fc-ico { width: 28px; text-align: center; font-size: 18px; flex: none; }
+.chain-forecast .fc-ico { width: 36px; text-align: center; font-size: 24px; flex: none; }
 .chain-forecast .fc-val {
-  font-family: 'Cinzel', serif; font-weight: 800; font-size: 23px; color: var(--text);
-  min-width: 56px; font-variant-numeric: lining-nums tabular-nums;
+  font-family: 'Cinzel', serif; font-weight: 800; font-size: 31px; color: var(--text);
+  min-width: 72px; font-variant-numeric: lining-nums tabular-nums;
 }
-.chain-forecast .fc-lab { font-size: 17px; color: var(--text-dim); }
+.chain-forecast .fc-lab { font-size: 23px; color: var(--text-dim); }
 .chain-forecast .fc-row.dmg .fc-val    { color: #ff9c82; }
 .chain-forecast .fc-row.rnd .fc-val    { color: #ffc06a; }
 .chain-forecast .fc-row.lethal .fc-val { color: #ffe08a; }
@@ -3175,7 +3296,7 @@ html, body {
 .chain-forecast .fc-row.warn .fc-val   { color: #ff5470; }
 .chain-forecast .fc-row.lethal { animation: fc-lethal-pulse 1.1s ease-in-out infinite; }
 .chain-forecast .fc-note {
-  margin-top: 10px; padding-top: 8px; font-size: 14.5px; font-style: italic; color: var(--text-dim);
+  margin-top: 10px; padding-top: 8px; font-size: 19.5px; font-style: italic; color: var(--text-dim);
   border-top: 1px solid rgba(255,255,255,0.1);
 }
 /* "left in hand" attribution — explains shield/damage from unplayed glyphs */

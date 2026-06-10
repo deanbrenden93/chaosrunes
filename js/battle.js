@@ -992,12 +992,13 @@
     });
   }
 
-  // Lay the hand out inside a "safe band" that clears the player panel
-  // (bottom-left) and the ACT button (bottom-right). The stage is a fixed 1920
-  // logical layout, so these bounds are constant. Cards keep their natural gap
-  // until they'd overflow the band, then overlap just enough to fit. A small
-  // hand stays centered on the stage; a big hand drifts only as far as needed
-  // to keep every card clear of the UI — so all cards remain clickable.
+  // Lay the hand out so it ALWAYS reads as centered on the stage, no matter the
+  // card count. We use a band that is symmetric around stage center — its reach
+  // is the SMALLER of the clearances to the player panel (left) and the ACT
+  // button (right). Cards keep their natural gap until they'd overflow that
+  // band, then overlap just enough to fit. Because the band is symmetric, the
+  // row never has to drift off-center to clear the UI — adding/removing a glyph
+  // simply tightens or loosens the spacing while the group stays centered.
   const HAND_GAP = 22;
   const ZONE_L = 454;          // right edge of the player panel (+margin)
   const ZONE_R = 1604;         // left edge of the ACT button (-margin)
@@ -1005,11 +1006,12 @@
   function layoutHand() {
     const row = $('hand-row');
     const cards = Array.from(row.children);
-    if (!cards.length) { row.style.transform = ''; return; }
-    const widths = cards.map(() => 150);   // multi-socket glyphs now share the normal footprint
-    const sumW = widths.reduce((a, b) => a + b, 0);
+    if (!cards.length) { row.style.transform = 'translateX(0)'; return; }
+    const sumW = cards.length * 150;       // multi-socket glyphs share the normal footprint
     const n = cards.length;
-    const bandW = ZONE_R - ZONE_L;
+    // symmetric reach: limited by whichever side (panel / ACT button) is tighter
+    const halfBand = Math.min(STAGE_MID - ZONE_L, ZONE_R - STAGE_MID);
+    const bandW = halfBand * 2;
     const natural = sumW + HAND_GAP * (n - 1);
     let step = HAND_GAP;
     if (n > 1 && natural > bandW) step = (bandW - sumW) / (n - 1);   // negative => overlap
@@ -1019,14 +1021,9 @@
       c.dataset.baseZ = i;        // later cards stack above earlier ones
       c.style.zIndex = i;
     });
-    // the row is centered on the stage by flexbox; nudge it only enough to keep
-    // its edges inside the safe band
-    const W = Math.min(natural, bandW);
-    const half = W / 2;
-    let centerX = STAGE_MID;
-    if (centerX - half < ZONE_L) centerX = ZONE_L + half;
-    if (centerX + half > ZONE_R) centerX = ZONE_R - half;
-    row.style.transform = 'translateX(' + (centerX - STAGE_MID) + 'px)';
+    // flexbox already centers the row on the stage; with a symmetric band there
+    // is never any need to nudge it sideways.
+    row.style.transform = 'translateX(0)';
   }
 
   // sockets are rebuilt from scratch on every turn-start/placement; anchoring a
@@ -1316,13 +1313,21 @@
     const f = el('div', 'float-text ' + kind, text);
     f.style.top = pos.y + 'px';
     stage.appendChild(f);
-    // the text is centered on pos.x (translateX(-50%)); clamp so wide strings
-    // near the edges (e.g. the bottom-left player) aren't cut off by the stage
-    const margin = 14;
+    const margin = 16;
     const stageW = stage.offsetWidth || 1920;
-    const half = f.offsetWidth / 2;
-    const x = Math.max(half + margin, Math.min(stageW - half - margin, pos.x));
-    f.style.left = x + 'px';
+    // the float-up keyframe momentarily scales the text to ~1.2x, so account for
+    // that peak when keeping it on-stage
+    const peak = 1.24;
+    const half = (f.offsetWidth / 2) * peak;
+    // near the bottom-left player UI the centered text (and its bounce) would
+    // spill past the screen edge — left-anchor it there so it grows rightward
+    // and is never clipped, while still sitting cleanly over the portrait
+    if (pos.x - half < margin) {
+      f.classList.add('float-edge-left');
+      f.style.left = margin + 'px';
+    } else {
+      f.style.left = Math.min(stageW - half - margin, pos.x) + 'px';
+    }
     setTimeout(() => f.remove(), 1100);
   }
   function shake(level) {
@@ -1803,8 +1808,11 @@
       const lt = comboLetter(ev.id);
       const adv = comboAdv(ev.id);   // Combo-up upgrade advances the chain by 2
       let comboBonus = 0, linked = false;
+      // repeat copies & loopback replays are EXTRA activations — each one extends
+      // the running combo by a step rather than breaking it or counting as one
+      const extraAct = !!(ev.repeat2 || ev.replay);
       if (lt == null) { comboLen = 0; comboPrev = null; }
-      else if (comboLinks(comboPrev, lt)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; linked = true; }
+      else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; linked = true; }
       else { comboLen = adv; comboPrev = lt; }
       if (comboLen > maxCombo) maxCombo = comboLen;
       if (linked && comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
@@ -2498,8 +2506,10 @@
       const ev = seq[k];
       const lt = comboLetter(ev.id), adv = comboAdv(ev.id);
       let comboBonus = 0;
+      // repeat/loop extra activations extend the combo (mirror of the live walk)
+      const extraAct = !!(ev.repeat2 || ev.replay);
       if (lt == null) { comboLen = 0; comboPrev = null; }
-      else if (comboLinks(comboPrev, lt)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; }
+      else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; }
       else { comboLen = adv; comboPrev = lt; }
       // catalysts sown by the previous glyph infuse this one
       stepCursed = false;
@@ -4297,7 +4307,11 @@
         killEnemyVisual(en);
       });
       victory();
-    }
+    },
+    // ---- run/meta cheats (handled by the Game module) ----
+    gold() { const G = root.CG.Game; if (G && G.debugGold) G.debugGold(); },
+    anyNode() { const G = root.CG.Game; return (G && G.debugToggleAnyNode) ? G.debugToggleAnyNode() : false; },
+    secretShop() { const G = root.CG.Game; if (G && G.debugSecretShop) G.debugSecretShop(); }
   };
 
   // ============================================================
@@ -4318,9 +4332,16 @@
       modal.addEventListener('click', e => { if (e.target === modal) close(); });
       modal.querySelectorAll('[data-debug]').forEach(b => {
         b.addEventListener('click', () => {
-          const fn = Debug[b.dataset.debug];
-          if (fn) fn();
-          if (b.dataset.debug === 'killAll') close();
+          const key = b.dataset.debug;
+          const fn = Debug[key];
+          if (!fn) return;
+          const res = fn();
+          if (key === 'anyNode') {
+            b.classList.toggle('debug-on', !!res);
+            b.textContent = res ? '🧭 Any Node: ON' : '🧭 Any Node: OFF';
+          }
+          // navigation cheats leave the menu
+          if (key === 'killAll' || key === 'secretShop') close();
         });
       });
     }
@@ -4337,42 +4358,125 @@
 
   // pull a CHOSEN glyph from the draw/discard pile straight into the hand.
   // Returns a promise: true if a card was taken, false if cancelled/empty.
+  // a glyph's detail formatted for the universal combat-tip panel (header +
+  // body), reused by the Emergency Phial chooser so it shares the same look
+  function chooserTipHTML(id) {
+    const g = glyph(id);
+    let emblems = '';
+    const lc = g.letter;
+    if (lc) emblems += '<span class="te-chip ' + (lc === 'wild' ? 'wild' : 'l-' + lc) + '">' + (lc === 'wild' ? '✦' : lc) + '</span>';
+    const emp = empowerOf(id);
+    if (emp > 0) emblems += '<span class="te-up te-up-power">✦+' + emp + '</span>';
+    if (comboAdv(id) > 1) emblems += '<span class="te-up te-up-combo">▲▲</span>';
+    return '<div class="ct-head">' + (emblems ? '<span class="ct-emblems">' + emblems + '</span>' : '') + g.name + '</div>' +
+      '<div class="ct-body">' + fmtDesc(id, handEnv(id)) + upgradeTipSuffix(id) + '</div>';
+  }
+
+  // add a single glyph to hand and animate ONLY it in (flying from the deck),
+  // while the cards already in hand slide smoothly aside to make room (FLIP)
+  function tutorAddToHand(id) {
+    const row = $('hand-row');
+    const oldTiles = Array.from(row.children);
+    const oldC = oldTiles.map(c => stageRectCenter(c));   // where each card sits now
+    B.hand.push(id);
+    B.drawnThisTurn.push(id);   // a real deck card — routed to discard at end of turn
+    renderHand(false);          // rebuild without the full-hand draw sweep
+    const newTiles = Array.from(row.children);
+    const newCard = newTiles[newTiles.length - 1];
+    // FLIP: every pre-existing card is snapped back to its OLD position, then
+    // released on the next frame so it glides to its new centered spot. The
+    // tiles are fresh DOM nodes (so the CSS margin-transition can't fire), which
+    // is exactly why we drive the slide with an inline transform here.
+    for (let i = 0; i < oldC.length && i < newTiles.length - 1; i++) {
+      const tile = newTiles[i];
+      const nc = stageRectCenter(tile);
+      const dx = oldC[i].x - nc.x, dy = oldC[i].y - nc.y;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+      tile.style.transition = 'none';
+      tile.style.transform = `translate(${dx}px, ${dy}px)`;
+      requestAnimationFrame(() => {
+        tile.style.transition = 'transform .36s cubic-bezier(.2,.85,.3,1)';
+        tile.style.transform = 'translate(0, 0)';
+        setTimeout(() => { tile.style.transition = ''; tile.style.transform = ''; }, 420);
+      });
+    }
+    if (newCard) animateDraw([newCard]);   // only the chosen glyph flies in
+  }
+
   function tutorGlyph() {
     return new Promise(resolve => {
-      const pile = B.draw.concat(B.discard);
+      // recall from BOTH the draw pile and the discard pile
+      const inDraw = {}, inDisc = {};
+      B.draw.forEach(id => { inDraw[id] = true; });
+      B.discard.forEach(id => { inDisc[id] = true; });
       const seen = {}, uniq = [];
-      pile.forEach(id => { if (!seen[id]) { seen[id] = 1; uniq.push(id); } });
-      if (!uniq.length) { floatText(playerPos(), 'Deck is empty', 'status'); resolve(false); return; }
+      B.draw.concat(B.discard).forEach(id => { if (!seen[id]) { seen[id] = 1; uniq.push(id); } });
+      if (!uniq.length) { floatText(playerPos(), 'No glyphs to recall', 'status'); resolve(false); return; }
 
-      const overlay = el('div', 'item-choose');
+      const ct = $('combat-tip');
+      const ctHome = ct ? { parent: ct.parentNode, next: ct.nextSibling } : null;
+      const overlay = el('div', 'item-choose phial-choose');
       overlay.innerHTML =
-        '<div class="ic-panel"><h3 class="ic-title">Emergency Phial — pull a glyph to hand</h3>' +
-        '<div class="ic-grid"></div><button class="btn btn-ghost ic-cancel">Cancel</button></div>';
+        '<div class="ic-veil"></div>' +
+        '<div class="ic-panel">' +
+          '<div class="ic-phial-wrap">' +
+            '<div class="ic-phial">' +
+              '<span class="ph-neck"></span>' +
+              '<span class="ph-body"><span class="ph-liquid"></span>' +
+                '<span class="ph-bub b1"></span><span class="ph-bub b2"></span><span class="ph-bub b3"></span>' +
+              '</span>' +
+            '</div>' +
+            '<span class="ic-phial-glow"></span>' +
+          '</div>' +
+          '<h3 class="ic-title">Emergency Phial</h3>' +
+          '<p class="ic-sub">Shatter the vial and rip one glyph screaming back into your hand.</p>' +
+          '<div class="ic-grid"></div>' +
+          '<button class="btn btn-ghost ic-cancel">Keep it corked</button>' +
+        '</div>';
       const grid = overlay.querySelector('.ic-grid');
-      const close = taken => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); resolve(!!taken); };
-      uniq.forEach(id => {
+      const finish = taken => {
+        if (ct && ctHome) {
+          ct.classList.remove('over-modal');
+          ctHome.parent.insertBefore(ct, ctHome.next);   // return the tip to the battle layer
+        }
+        clearCombatTip();
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(!!taken);
+      };
+      uniq.forEach((id, k) => {
         const g = glyph(id);
         const tile = el('div', 'ic-tile');
         tile.style.setProperty('--g-color', 'var(--' + (g.color || 'gold') + ')');
-        const art = g.img ? '<img src="' + g.img + '" alt="">' : '<span class="ic-rune">' + (g.rune || '◆') + '</span>';
-        tile.innerHTML = '<div class="ic-art">' + art + '</div><div class="ic-name">' + g.name + '</div>';
-        tile.addEventListener('mouseenter', () => SFX.hover());
+        tile.style.animationDelay = (k * 38) + 'ms';
+        // the real hand-style glyph art (carved hex plate or bespoke image),
+        // including the diagonal stack for multi-socket glyphs
+        const artWrap = el('div', 'ic-art');
+        artWrap.appendChild(glyphStack(id, g.slots || 1));
+        tile.appendChild(artWrap);
+        const lc = g.letter;
+        if (lc) tile.appendChild(el('span', 'ic-chip ' + (lc === 'wild' ? 'wild' : 'l-' + lc), lc === 'wild' ? '✦' : lc));
+        tile.appendChild(el('div', 'ic-name', g.name));
+        // show where this copy is being torn from
+        tile.appendChild(el('span', 'ic-src ' + (inDraw[id] ? 'src-draw' : 'src-disc'), inDraw[id] ? 'Deck' : 'Discard'));
+        tile.addEventListener('mouseenter', () => { SFX.hover(); showCombatTip(chooserTipHTML(id)); });
+        tile.addEventListener('mouseleave', () => clearCombatTip());
         tile.addEventListener('click', () => {
           let i = B.draw.indexOf(id);
           if (i !== -1) B.draw.splice(i, 1);
           else { i = B.discard.indexOf(id); if (i !== -1) B.discard.splice(i, 1); }
-          B.hand.push(id);
-          B.drawnThisTurn.push(id);   // it's a real deck card — route it to discard at end of turn
           SFX.recall();
-          renderHand(true);
+          finish(true);          // clear the overlay so the glyph flies into a clean hand
+          tutorAddToHand(id);    // only the chosen glyph animates in; the rest slide aside
           updatePiles();
-          close(true);
         });
         grid.appendChild(tile);
       });
-      overlay.querySelector('.ic-cancel').addEventListener('click', () => { SFX.click(); close(false); });
-      overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
+      overlay.querySelector('.ic-cancel').addEventListener('click', () => { SFX.click(); finish(false); });
+      overlay.querySelector('.ic-veil').addEventListener('click', () => finish(false));
       $('stage').appendChild(overlay);
+      // move the universal tooltip INTO the overlay (after the blur veil) so it
+      // renders above the dark backdrop and stays fully readable while choosing
+      if (ct) { ct.classList.add('over-modal'); overlay.appendChild(ct); clearCombatTip(); }
     });
   }
 

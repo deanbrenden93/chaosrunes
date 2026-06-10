@@ -558,8 +558,12 @@
       n.innerHTML = `<span>${NODE_ICON[node.type]}</span><span class="node-label">${nodeLabel(node)}</span>`;
       if (node.id === curId) n.classList.add('current');
       else if (node.visited) n.classList.add('visited');
-      if (reachIds.indexOf(node.id) !== -1) {
+      // debug "any node" lets every node (except the one we're standing on) be entered
+      const normallyReachable = reachIds.indexOf(node.id) !== -1;
+      const clickable = normallyReachable || (dbgAnyNode && node.id !== curId);
+      if (clickable) {
         n.classList.add('reachable');
+        if (dbgAnyNode && !normallyReachable) n.classList.add('dbg-anynode');
         n.addEventListener('mouseenter', () => { if (!mapLocked) SFX.hover(); });
         n.addEventListener('click', () => { if (mapLocked) return; enterNode(node); });
       }
@@ -713,6 +717,7 @@
   let pendingUpgrade = null;     // chosen glyph upgrade (elite alt to taking a card)
   let pendingNodeSouls = 0;      // souls owed by the cleared node, paid out on the map
   let mapLocked = false;         // blocks node entry while the node's gold is flying in
+  let dbgAnyNode = false;        // debug: let the player jump to ANY node on the map
 
   function soulsFor(tier) {
     if (tier === 'boss') return 60 + Math.floor(Math.random() * 21);   // 60-80
@@ -1082,24 +1087,46 @@
   // ============================================================
   // ITEMS / INVENTORY (top-HUD consumable tray)
   // ============================================================
-  const MAX_ITEMS = 6;
-  const ITEM_SLOTS = 5;   // baseline empty slots shown in the HUD
+  const MAX_ITEM_STACKS = 3;   // how many item STACKS you can carry
+  const STACK_MAX = 3;         // copies per stack
+  const ITEM_SLOTS = MAX_ITEM_STACKS;   // empty slots shown in the HUD
   function itemsArr() { return (State && State.items) || []; }
-  function itemsFull() { return itemsArr().length >= MAX_ITEMS; }
+  function idCount(id) { return itemsArr().filter(x => x === id).length; }
+  // group the flat item list into display stacks: chunks of STACK_MAX per id, in
+  // first-seen order. Several stacks of the SAME item are allowed (×3 ×3 ×3).
+  function itemStacks() {
+    const order = [], counts = {};
+    itemsArr().forEach(id => { if (!(id in counts)) { counts[id] = 0; order.push(id); } counts[id]++; });
+    const stacks = [];
+    order.forEach(id => { let c = counts[id]; while (c > 0) { const n = Math.min(STACK_MAX, c); stacks.push({ id: id, count: n }); c -= n; } });
+    return stacks;
+  }
+  // room for one more of THIS item? (top off a partial stack, else open a new one)
+  function canAddItem(id) {
+    if (!State || !ITEMS[id]) return false;
+    if (idCount(id) % STACK_MAX !== 0) return true;     // a partial stack has room
+    return itemStacks().length < MAX_ITEM_STACKS;       // otherwise need a fresh stack
+  }
+  // generic "no free stack slot" gate used when offering items
+  function itemsFull() { return itemStacks().length >= MAX_ITEM_STACKS; }
 
   function addItem(id) {
     if (!State || !ITEMS[id]) return false;
     if (!State.items) State.items = [];
-    if (State.items.length >= MAX_ITEMS) return false;
+    if (!canAddItem(id)) return false;
     State.items.push(id);
     renderItems(); saveGame();
     return true;
   }
-  function removeItemAt(idx, id) {
+  function removeFirstItem(id) {
     if (!State || !State.items) return;
-    if (State.items[idx] === id) State.items.splice(idx, 1);
-    else { const i = State.items.indexOf(id); if (i !== -1) State.items.splice(i, 1); }
-    renderItems(); saveGame();
+    const i = State.items.indexOf(id);
+    if (i !== -1) State.items.splice(i, 1);
+    renderItems();
+    // Mid-combat consumption isn't committed to the save until the encounter is
+    // actually resolved — so abandoning/continuing a reset encounter keeps the
+    // item (the pre-combat save still holds it). saveGame fires on victory/map.
+    if (!inCombatNow()) saveGame();
   }
   // Soul Jar death-save: spend one if carried, so a fallen beast revives.
   function consumeRevive() {
@@ -1107,7 +1134,8 @@
     const i = State.items.indexOf('soul_jar');
     if (i === -1) return false;
     State.items.splice(i, 1);
-    renderItems(); saveGame();
+    renderItems();
+    if (!inCombatNow()) saveGame();   // committed when the fight is survived
     return true;
   }
   function grantRandomBlessing(rarity) {
@@ -1125,9 +1153,7 @@
   function inCombatNow() {
     return !!(root.CG.Battle && root.CG.Battle.inCombat && root.CG.Battle.inCombat());
   }
-  function flashItemDenied(idx) {
-    const tray = document.querySelector('.tb-items');
-    const chip = tray && tray.children[idx];
+  function flashDeny(chip) {
     if (chip) { chip.classList.add('item-deny'); setTimeout(() => chip.classList.remove('item-deny'), 380); }
   }
   // out-of-combat use for the non-combat consumables
@@ -1139,30 +1165,29 @@
     else if (e.kind === 'blessing') { grantRandomBlessing(e.rarity); SFX.reward(); }
     updateTopbar();
   }
-  function useItem(idx) {
-    const id = itemsArr()[idx];
+  function useStack(id, chip) {
     const it = id && ITEMS[id];
     if (!it) return;
     const inB = inCombatNow();
-    if (it.combatOnly && !inB) { (SFX.error || SFX.click)(); flashItemDenied(idx); return; }
+    if (it.combatOnly && !inB) { (SFX.error || SFX.click)(); flashDeny(chip); return; }
     if (inB) {
-      if (root.CG.Battle.busy && root.CG.Battle.busy()) { (SFX.error || SFX.click)(); flashItemDenied(idx); return; }
+      if (root.CG.Battle.busy && root.CG.Battle.busy()) { (SFX.error || SFX.click)(); flashDeny(chip); return; }
       // combat effect is animated by the battle engine; consume only if it fired
-      root.CG.Battle.useItem(id).then(used => { if (used) removeItemAt(idx, id); });
+      root.CG.Battle.useItem(id).then(used => { if (used) removeFirstItem(id); });
       return;
     }
     applyMetaItem(it);
-    removeItemAt(idx, id);
+    removeFirstItem(id);
   }
   function renderItems() {
     const tray = document.querySelector('.tb-items');
     if (!tray) return;
     tray.innerHTML = '';
-    const items = itemsArr();
+    const stacks = itemStacks();
     const inB = inCombatNow();
-    const count = Math.max(ITEM_SLOTS, items.length);
+    const count = Math.max(ITEM_SLOTS, stacks.length);
     for (let idx = 0; idx < count; idx++) {
-      if (idx >= items.length) {
+      if (idx >= stacks.length) {
         if (idx < ITEM_SLOTS) {
           const slot = el('div', 'item-slot');
           slot.innerHTML = '<span class="hud-tip">Empty item slot</span>';
@@ -1170,19 +1195,20 @@
         }
         continue;
       }
-      const id = items[idx];
-      const it = ITEMS[id];
+      const st = stacks[idx];
+      const it = ITEMS[st.id];
       if (!it) continue;
       const usableNow = !it.combatOnly || inB;
       const chip = el('div', 'item-slot filled rarity-' + (it.rarity || 'common') + (usableNow ? '' : ' item-locked'));
       chip.innerHTML =
         '<span class="item-icon">' + it.icon + '</span>' +
-        '<span class="hud-tip"><b>' + it.name + '</b><br>' + it.desc +
+        (st.count > 1 ? '<span class="item-count">' + st.count + '</span>' : '') +
+        '<span class="hud-tip"><b>' + it.name + '</b>' + (st.count > 1 ? ' <span class="it-x">×' + st.count + '</span>' : '') + '<br>' + it.desc +
           (it.combatOnly ? '<br><i class="item-hint">Combat only</i>' : '') +
           (it.passive ? '<br><i class="item-hint">Revives a fallen beast while carried</i>' : '') +
           '<br><i class="item-hint">' + (usableNow ? 'Click to use' : 'Use in combat') + '</i></span>';
       chip.addEventListener('mouseenter', () => SFX.hover());
-      chip.addEventListener('click', () => useItem(idx));
+      chip.addEventListener('click', () => useStack(st.id, chip));
       tray.appendChild(chip);
     }
   }
@@ -2152,9 +2178,12 @@
     };
     refreshAfford();
     c.addEventListener('mouseenter', () => SFX.hover());
+    const reject = () => { SFX.error ? SFX.error() : SFX.hover(); c.classList.add('shake-no'); setTimeout(() => c.classList.remove('shake-no'), 350); };
     c.addEventListener('click', () => {
       if (c.classList.contains('sold')) return;
-      if (State.souls < opts.price) { SFX.error ? SFX.error() : SFX.hover(); c.classList.add('shake-no'); setTimeout(() => c.classList.remove('shake-no'), 350); return; }
+      if (State.souls < opts.price) { reject(); return; }
+      // e.g. an item you have no room to carry — block the buy with an error
+      if (opts.canBuy && !opts.canBuy()) { reject(); return; }
       SFX.reward();
       spendSouls(opts.price);
       opts.onBuy(c);
@@ -2173,6 +2202,11 @@
     const am = activeMonster();
     const grid = $('shop-grid');
     grid.innerHTML = '';
+    // reset the heading in case the secret-shop debug renamed it
+    const sHead = document.querySelector('#screen-shop .reward-head');
+    const sSub = document.querySelector('#screen-shop .reward-sub');
+    if (sHead) sHead.textContent = 'The Glyph Bazaar';
+    if (sSub) sSub.textContent = 'Spend your souls, forger. Click to buy.';
 
     // --- 3 glyphs for sale ---
     const glyphs = offerGlyphs(3);
@@ -2203,6 +2237,7 @@
         grid.appendChild(shopCard({
           kind: 'Item', icon: offered.icon, name: offered.name, color: 'var(--gold)',
           desc: offered.desc, price: offered.price,
+          canBuy: () => canAddItem(offered.id),
           onBuy: () => { addItem(offered.id); }
         }));
       }
@@ -2648,9 +2683,86 @@
   }
 
   root.CG = root.CG || {};
+  // ============================================================
+  // DEBUG HOOKS — called from the battle.js debug menu
+  // ============================================================
+  function debugGold() {
+    if (!State) return;
+    State.souls = 9999;
+    setSoulCounters(State.souls);
+    updateTopbar();
+  }
+  function debugToggleAnyNode() {
+    dbgAnyNode = !dbgAnyNode;
+    const onMap = $('screen-map') && $('screen-map').classList.contains('is-active');
+    if (onMap) renderMap();
+    return dbgAnyNode;
+  }
+  // A "secret shop": every hero/neutral glyph, every blessing, every item — all free.
+  function buildSecretShop() {
+    if (!State) return;
+    const am = activeMonster();
+    const grid = $('shop-grid');
+    grid.innerHTML = '';
+    const head = document.querySelector('#screen-shop .reward-head');
+    const sub = document.querySelector('#screen-shop .reward-sub');
+    if (head) head.textContent = 'Secret Shop';
+    if (sub) sub.textContent = 'Everything is free, forger. Take what you need.';
+
+    // every glyph the chosen hero can wield (their own + neutral)
+    eligibleGlyphs().forEach(g => {
+      grid.appendChild(shopCard({
+        kind: 'Glyph', name: g.name, color: 'var(--' + g.color + ')',
+        art: '<div class="sc-art">' + glyphArtHTML(g) + '</div>', chip: letterChipHTML(g),
+        desc: DATA.formatDesc(g, metaEnv(g.id)), price: 0,
+        onBuy: () => { State.pool.push(g.id); }
+      }));
+    });
+
+    // every blessing (basic + power)
+    const allBless = Object.values(BLESSINGS).concat(Object.values(POWER_BLESSINGS));
+    const seenBless = {};
+    allBless.forEach(b => {
+      if (!b || seenBless[b.id]) return; seenBless[b.id] = 1;
+      grid.appendChild(shopCard({
+        kind: 'Blessing', icon: b.icon, name: b.name, color: 'var(--purple)',
+        desc: b.desc, price: 0,
+        onBuy: () => applyBlessing(b)
+      }));
+    });
+
+    // every consumable item
+    Object.values(ITEMS).forEach(it => {
+      grid.appendChild(shopCard({
+        kind: 'Item', icon: it.icon, name: it.name, color: 'var(--gold)',
+        desc: it.desc, price: 0,
+        canBuy: () => canAddItem(it.id),
+        onBuy: () => { addItem(it.id); }
+      }));
+    });
+
+    // a couple of always-useful services, also free
+    grid.appendChild(shopCard({
+      kind: 'Service', icon: '🔥', name: 'Mend Wounds', color: 'var(--red)',
+      desc: 'Heal your active beast (' + am.name + ') for 45% of max HP.', price: 0,
+      onBuy: () => healActive(0.45)
+    }));
+    grid.appendChild(shopCard({
+      kind: 'Service', icon: '🜨', name: 'Reforge a Slot', color: 'var(--blue)',
+      desc: 'Add a random special power to a socket.', price: 0,
+      onBuy: () => forgeRandomSlot()
+    }));
+  }
+  function debugSecretShop() {
+    if (!State) return;
+    buildSecretShop();
+    show('screen-shop');
+  }
+
   root.CG.Game = {
     init, show, renderMap, gameOver, activeMonster, firstAlive, updateTopbar,
     grantRandomBlessing, consumeRevive, addItem,
+    debugGold, debugToggleAnyNode, debugSecretShop,
     get state() { return State; }
   };
 
