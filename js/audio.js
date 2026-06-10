@@ -157,7 +157,8 @@
   const MUSIC_SRC = {
     node: 'assets/node screen.mp3',
     battle: 'assets/normal battle.mp3',
-    elite: 'assets/elite battle.mp3'
+    elite: 'assets/elite battle.mp3',
+    boss: 'assets/Floor Boss.mp3'
   };
   const FADE_MS = 900;          // gentle fade-in / track-to-track crossfade
   const LOOP_XFADE_MS = 10000;  // default: crossfade the loop 10s before the end

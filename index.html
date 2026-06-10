@@ -232,20 +232,33 @@
       </section>
 
       <!-- ============ COLLECTION OVERLAY ============ -->
-      <section id="screen-collection" class="screen overlay">
-        <div class="collection-panel">
-          <h2 class="reward-head">Your Menagerie</h2>
-          <div id="collection-row" class="collection-row"></div>
-          <div class="collection-deck">
-            <h3>Glyph Pool</h3>
-            <div id="collection-glyphs" class="collection-glyphs"></div>
-            <div id="deck-detail" class="deck-detail hidden"></div>
+      <section id="screen-collection" class="screen">
+        <div class="map-bg" aria-hidden="true"></div>
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="collection-screen">
+          <header class="cs-topbar">
+            <button id="btn-close-collection" class="btn btn-ghost">‹ Back</button>
+            <h2 class="cs-title">Your Stats So Far</h2>
+            <span class="cs-topbar-spacer" aria-hidden="true"></span>
+          </header>
+
+          <div class="cs-body">
+            <aside id="collection-hero" class="cs-hero"><!-- hero panel injected --></aside>
+
+            <main class="cs-glyphs">
+              <div class="collection-sec-head"><span class="csh-line"></span><h3>Sockets <em id="collection-socket-count"></em></h3><span class="csh-line"></span></div>
+              <div id="collection-sockets" class="collection-sockets"></div>
+              <div class="collection-sec-head"><span class="csh-line"></span><h3>Glyph Pool <em id="collection-glyph-count"></em></h3><span class="csh-line"></span></div>
+              <div class="cs-pool-row">
+                <div class="cs-glyphs-scroll">
+                  <div id="collection-glyphs" class="collection-glyphs"></div>
+                </div>
+                <aside id="deck-detail" class="deck-detail deck-detail-panel"></aside>
+              </div>
+              <div class="collection-sec-head"><span class="csh-line"></span><h3>Blessings <em id="collection-bless-count"></em></h3><span class="csh-line"></span></div>
+              <div id="collection-blessings" class="collection-blessings-row"></div>
+            </main>
           </div>
-          <div class="collection-blessings">
-            <h3>Blessings</h3>
-            <div id="collection-blessings" class="collection-blessings-row"></div>
-          </div>
-          <button id="btn-close-collection" class="btn btn-primary">Close</button>
         </div>
       </section>
 
@@ -296,6 +309,18 @@
             <button id="btn-confirm-cancel" class="btn opt-exit-btn">Cancel</button>
             <button id="btn-confirm-ok" class="btn btn-primary">Confirm</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ============ BLESSING DETAIL MODAL ============ -->
+      <div id="bless-modal" class="options-modal hidden">
+        <div class="bless-modal-panel">
+          <button id="btn-bless-close" class="bless-modal-x" aria-label="Close">✕</button>
+          <div class="bm-aura" aria-hidden="true"></div>
+          <div id="bm-art" class="bm-art"></div>
+          <div id="bm-tier" class="bm-tier"></div>
+          <h2 id="bm-name" class="bm-name"></h2>
+          <p id="bm-desc" class="bm-desc"></p>
         </div>
       </div>
 

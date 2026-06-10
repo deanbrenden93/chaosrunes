@@ -129,10 +129,11 @@
   // fight themes by node type (null = no dedicated track yet)
   function battleMusic(node) {
     if (node.type === 'elite' || node.type === 'shadow') return 'elite';
-    if (node.type === 'boss') return null;   // boss theme not supplied yet
+    if (node.type === 'boss') return 'boss';  // floor + final boss theme
     return 'battle';                          // normal battles & regular fights
   }
   let lastScreen = null;
+  let collectionReturn = 'screen-map';   // where the Collection screen's Back returns to
   function show(screenId) {
     const prev = document.querySelector('.screen.is-active');
     // clear any stale fade-outs, then deactivate everything but the target
@@ -292,9 +293,14 @@
     const dots = (m.deck || []).map(id =>
       '<span class="bc-dot" style="--c:var(--' + ((GLYPHS[id] && GLYPHS[id].color) || 'gold') + ')"></span>').join('');
 
+    // some beasts ship a bespoke select-screen backdrop that stands in for the
+    // floating sprite — applied to the panel, with the sprite hidden (but its
+    // layout space preserved so nothing else shifts).
+    const bgCls = m.selectBg ? ' has-select-bg' : '';
+    const bgVar = m.selectBg ? ` style="background-image:url('${m.selectBg}')"` : '';
     // a fresh .bp-content node each turn — its entrance animation IS the page turn
     page.innerHTML = `
-      <div class="bp-content">
+      <div class="bp-content${bgCls}"${bgVar}>
         <div class="bc-aura" aria-hidden="true"></div>
         <div class="bc-numeral" aria-hidden="true">${flair.numeral}</div>
         <div class="bp-art-col">
@@ -1005,14 +1011,14 @@
     // --- Item drop (non-boss tiers, when there's room to carry one) ---
     if (tier !== 'boss' && !itemsFull() && Math.random() < 0.5) {
       const it = rng(Object.values(ITEMS));
-      if (it) claims.appendChild(claimCard(it.icon, 'Item',
+      if (it) claims.appendChild(claimCard(itemArtHTML(it), 'Item',
         '<b>' + it.name + '</b> — ' + it.desc, 'var(--gold)', () => addItem(it.id)));
     }
 
     // --- Blessing (elite + boss) ---
     if (tier === 'elite' || tier === 'boss') {
       const bless = pickBlessing(tier);
-      claims.appendChild(claimCard(bless.icon, tier === 'boss' ? 'Powerful Blessing' : 'Blessing',
+      claims.appendChild(claimCard(blessArtHTML(bless), tier === 'boss' ? 'Powerful Blessing' : 'Blessing',
         '<b>' + bless.name + '</b> — ' + bless.desc, 'var(--purple)', () => applyBlessing(bless)));
     }
 
@@ -1045,7 +1051,7 @@
       const sbId = { A: 'conjoined', B: 'conniving', C: 'calamitous' }[form];
       const sb = SOUL_BLESSINGS[sbId];
       if (sb && !State.blessings[sb.id]) {
-        claims.appendChild(claimCard(sb.icon, 'Soul Blessing \u2014 Form ' + form,
+        claims.appendChild(claimCard(blessArtHTML(sb), 'Soul Blessing \u2014 Form ' + form,
           '<b>' + sb.name + '</b> \u2014 ' + sb.desc, 'var(--purple)', () => applyBlessing(sb)));
       }
       // this form is spent — the next Soulhunter you face rises one form stronger
@@ -1319,6 +1325,24 @@
 
   const BLESS_ICON = { recall: '↺', emberward: '🜂', overload: '🜳', emberstorm: '⚝' };
 
+  // A blessing's emblem: its real art when it has one (rendered box-free), else
+  // its glyph icon. `cls` lets each surface size the image via CSS.
+  function blessArtHTML(bl, cls) {
+    if (bl && bl.img) {
+      return '<img class="bless-art-img ' + (cls || '') + '" src="' + bl.img +
+        '" alt="" draggable="false">';
+    }
+    return (bl && (BLESS_ICON[bl.id] || bl.icon)) || '✦';
+  }
+  function blessHasImg(bl) { return !!(bl && bl.img); }
+  // an item's art: bespoke image when present, else its emoji glyph
+  function itemArtHTML(it, cls) {
+    if (it && it.img) {
+      return '<img class="item-art-img ' + (cls || '') + '" src="' + it.img + '" alt="" draggable="false">';
+    }
+    return '<span class="item-icon">' + ((it && it.icon) || '✦') + '</span>';
+  }
+
   // The global top HUD is shared by the map and battle screens; it always
   // reflects the active beast + run meta.
   function updateTopbar() {
@@ -1348,7 +1372,7 @@
       blEl.innerHTML = owned.length
         ? owned.map(k => {
             const b = allBless[k];
-            return '<span class="tb-bless">' + (BLESS_ICON[k] || b.icon || '✦') +
+            return '<span class="tb-bless' + (b.img ? ' has-img' : '') + '" data-bless="' + b.id + '">' + blessArtHTML(b) +
               '<span class="hud-tip"><b>' + b.name + '</b><br>' + b.desc + '</span></span>';
           }).join('')
         : '<span class="tb-empty">—</span>';
@@ -1496,9 +1520,9 @@
       const it = ITEMS[st.id];
       if (!it) continue;
       const usableNow = !it.combatOnly || inB;
-      const chip = el('div', 'item-slot filled rarity-' + (it.rarity || 'common') + (usableNow ? '' : ' item-locked'));
+      const chip = el('div', 'item-slot filled rarity-' + (it.rarity || 'common') + (it.img ? ' has-img' : '') + (usableNow ? '' : ' item-locked'));
       chip.innerHTML =
-        '<span class="item-icon">' + it.icon + '</span>' +
+        itemArtHTML(it) +
         (st.count > 1 ? '<span class="item-count">' + st.count + '</span>' : '') +
         '<span class="hud-tip"><b>' + it.name + '</b>' + (st.count > 1 ? ' <span class="it-x">×' + st.count + '</span>' : '') + '<br>' + it.desc +
           (it.combatOnly ? '<br><i class="item-hint">Combat only</i>' : '') +
@@ -2270,7 +2294,7 @@
     c.style.setProperty('--g-color', 'var(--purple)');
     c.innerHTML = `
       <div class="rc-kind">Blessing</div>
-      <div class="rc-icon" style="color:var(--purple)">${bl.icon}</div>
+      <div class="rc-icon${blessHasImg(bl) ? ' has-img' : ''}" style="color:var(--purple)">${blessArtHTML(bl)}</div>
       <div class="rc-name">${bl.name}</div>
       <div class="rc-desc">${bl.desc}</div>`;
     c.addEventListener('mouseenter', () => SFX.hover());
@@ -2523,7 +2547,7 @@
     if (spec.blessing) {
       const b = EVENT_BLESSINGS[spec.blessing];
       if (b && !State.blessings[b.id]) {
-        claims.appendChild(claimCard(b.icon, 'Charm',
+        claims.appendChild(claimCard(blessArtHTML(b), 'Charm',
           '<b>' + b.name + '</b> \u2014 ' + b.desc, 'var(--purple)', () => grantEventBlessing(b.id)));
       }
     }
@@ -2707,6 +2731,7 @@
     if (bless) {
       grid.appendChild(shopCard({
         kind: 'Blessing', icon: bless.icon, name: bless.name, color: 'var(--purple)',
+        art: '<div class="sc-icon' + (blessHasImg(bless) ? ' has-img' : '') + '" style="color:var(--purple)">' + blessArtHTML(bless) + '</div>',
         desc: bless.desc, price: 88,
         onBuy: () => applyBlessing(bless)
       }));
@@ -2718,6 +2743,7 @@
       if (offered) {
         grid.appendChild(shopCard({
           kind: 'Item', icon: offered.icon, name: offered.name, color: 'var(--gold)',
+          art: '<div class="sc-icon' + (offered.img ? ' has-img' : '') + '" style="color:var(--gold)">' + itemArtHTML(offered) + '</div>',
           desc: offered.desc, price: offered.price,
           canBuy: () => canAddItem(offered.id),
           onBuy: () => { addItem(offered.id); }
@@ -2786,41 +2812,237 @@
       ? '<span class="dd-letter ' + (gl.letter === 'wild' ? 'wild' : 'l-' + gl.letter) + '">' +
         (gl.letter === 'wild' ? '✦ Wild' : gl.letter) + '</span>'
       : '';
-    d.className = 'deck-detail color-' + gl.color;
+    d.className = 'deck-detail deck-detail-panel has-detail color-' + gl.color;
     d.style.setProperty('--g-color', 'var(--' + gl.color + ')');
     d.innerHTML =
-      '<div class="dd-art">' + art + '</div>' +
-      '<div class="dd-body">' +
-        '<div class="dd-name">' + gl.name + (count > 1 ? ' <span class="dd-count">×' + count + '</span>' : '') + '</div>' +
-        '<div class="dd-meta"><span class="dd-kind">' + (GLYPH_KIND[gl.color] || gl.color) + '</span>' + letter +
-          '<span class="dd-owner">' + glyphOwner(gl) + '</span></div>' +
-        '<div class="dd-desc">' + DATA.formatDesc(gl, metaEnv(repId)) + '</div>' +
-        (tags.length ? '<div class="dd-tags">' + tags.map(t => '<span>' + t + '</span>').join('') + '</div>' : '') +
+      '<div class="dd-inner">' +
+        '<div class="dd-art">' + art + '</div>' +
+        '<div class="dd-body">' +
+          '<div class="dd-name">' + gl.name + (count > 1 ? ' <span class="dd-count">×' + count + '</span>' : '') + '</div>' +
+          '<div class="dd-meta"><span class="dd-kind">' + (GLYPH_KIND[gl.color] || gl.color) + '</span>' + letter +
+            '<span class="dd-owner">' + glyphOwner(gl) + '</span></div>' +
+          '<div class="dd-desc">' + DATA.formatDesc(gl, metaEnv(repId)) + '</div>' +
+          (tags.length ? '<div class="dd-tags">' + tags.map(t => '<span>' + t + '</span>').join('') + '</div>' : '') +
+        '</div>' +
       '</div>';
   }
+  // the panel is always present; "hidden" just swaps to the resting placeholder,
+  // which animates in the same way real content does.
   function hideGlyphDetail() {
     const d = $('deck-detail');
-    if (d) { d.className = 'deck-detail hidden'; }
+    if (!d) return;
+    d.className = 'deck-detail deck-detail-panel';
+    d.style.removeProperty('--g-color');
+    d.innerHTML =
+      '<div class="dd-inner dd-empty">' +
+        '<span class="dd-empty-rune">❖</span>' +
+        '<span class="dd-empty-text">Hover a glyph<br>to inspect it</span>' +
+      '</div>';
+  }
+
+  // the evolution ladder: Current → ??? → ??? — future forms stay a mystery to
+  // build anticipation, gated by the Soulstone meter (5 → next evolution).
+  function evolutionTrackHTML(m) {
+    const lvl = m.evolveLevel || 0;
+    const have = State.soulstones || 0;
+    const base = (typeof MONSTERS !== 'undefined' && MONSTERS[m.id]) || {};
+    const known = [base.name || m.name, lvl >= 1 ? m.name : null, null]; // only stage 0 (and current) are revealed
+    const stages = [0, 1, 2].map(i => {
+      const reached = i <= lvl;
+      const isNow = i === lvl;
+      const name = reached ? (known[i] || m.name) : '???';
+      const art = reached
+        ? (m.img ? '<img class="evo-art-img" src="' + m.img + '" alt="">' : '<span class="evo-art-emoji">' + m.emoji + '</span>')
+        : '<span class="evo-art-q">?</span>';
+      return '<div class="evo-stage' + (isNow ? ' now' : reached ? ' done' : ' future') + '">' +
+        '<div class="evo-orb">' + art + (isNow ? '<span class="evo-now-tag">Current</span>' : '') + '</div>' +
+        '<div class="evo-stage-name">' + name + '</div></div>';
+    });
+    const maxed = lvl >= 2;
+    // Soulstones read as a glowing gem + big number, with a full-width row of
+    // large soul sockets that fill as they're gathered.
+    const gems = [0, 1, 2, 3, 4].map(i =>
+      '<span class="soul-pip' + (i < Math.min(5, have) ? ' lit' : '') + '">' +
+        '<span class="soul-pip-core"></span></span>').join('');
+    const meter = maxed
+      ? '<div class="evo-soul maxed">' +
+          '<div class="soul-top">' +
+            '<div class="soul-gem"><span class="soul-gem-core"></span><span class="soul-gem-spark">✦</span></div>' +
+            '<div class="soul-read"><span class="soul-num">MAX</span><span class="soul-lab">Fully evolved</span></div>' +
+          '</div>' +
+          '<div class="soul-pips">' +
+            [0, 1, 2, 3, 4].map(() => '<span class="soul-pip lit"><span class="soul-pip-core"></span></span>').join('') +
+          '</div>' +
+        '</div>'
+      : '<div class="evo-soul">' +
+          '<div class="soul-top">' +
+            '<div class="soul-gem"><span class="soul-gem-core"></span><span class="soul-gem-spark">✦</span></div>' +
+            '<div class="soul-read">' +
+              '<span class="soul-num"><b>' + have + '</b><i>/ 5</i></span>' +
+              '<span class="soul-lab">Soulstones — gather <b>5</b> to evolve</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="soul-pips">' + gems + '</div>' +
+        '</div>';
+    return '<div class="evo-block">' +
+      '<div class="evo-head">Evolution</div>' +
+      '<div class="evo-track">' + stages.join('<span class="evo-arrow">→</span>') + '</div>' +
+      meter + '</div>';
+  }
+
+  function buildCollectionHero() {
+    const host = $('collection-hero');
+    if (!host) return;
+    const m = activeMonster();
+    if (!m) { host.innerHTML = ''; return; }
+    host.style.setProperty('--hero', m.color);
+    const pcColor = m.color || 'var(--gold)';
+    // --- mirror of battle.js renderPlayer(): the exact lower-left combat UI ---
+    const face = m.img
+      ? '<img class="c-sprite" src="' + m.img + '" alt="">'
+      : '<span class="c-sprite"' + (m.color ? ' style="color:' + m.color + '"' : '') + '>' + m.emoji + '</span>';
+    const passiveFull = m.passiveText || '';
+    const ci = passiveFull.indexOf(':');
+    const passiveName = ci > 0 ? passiveFull.slice(0, ci).trim() : (m.passive || '');
+    const passiveDesc = ci > 0 ? passiveFull.slice(ci + 1).trim() : passiveFull;
+    // beast-select style passive box (instead of the small combat emblem)
+    const passiveHTML = passiveName
+      ? '<div class="bc-feature bc-passive cs-passive-box">' +
+          '<span class="bcf-badge">✦</span>' +
+          '<span class="bcf-text"><b>' + passiveName + '</b>' + passiveDesc + '</span>' +
+        '</div>'
+      : '';
+    const ratio = Math.max(0, Math.min(1, m.hp / m.maxHp));
+    const C = 2 * Math.PI * 66;
+    host.innerHTML =
+      '<div class="cs-charcard">' +
+        '<div class="player-combat cs-player" style="--pc-color:' + pcColor + '">' +
+          '<div class="pc-disc-wrap"><div class="pc-disc">' +
+            '<svg class="pc-hp-ring" viewBox="0 0 160 160" aria-hidden="true">' +
+              '<circle class="hp-track" cx="80" cy="80" r="66"></circle>' +
+              '<circle class="hp-arc' + (ratio <= 0.3 ? ' low' : '') + '" cx="80" cy="80" r="66" ' +
+                'style="stroke-dasharray:' + C + ';stroke-dashoffset:' + ((1 - ratio) * C) + '"></circle>' +
+            '</svg>' +
+            '<div class="pc-gear"></div>' +
+            '<div class="pc-rune"></div>' +
+            '<div class="pc-portrait">' + face + '</div>' +
+            '<div class="shield-pip"><span class="sp-ico">◆</span><span class="sv">0</span></div>' +
+            '<div class="pc-hp-num">' + Math.max(0, Math.round(m.hp)) + ' / ' + m.maxHp + '</div>' +
+          '</div></div>' +
+          '<div class="pc-name">' + m.name + '</div>' +
+          '<div class="pc-role">' + (m.role || '') + '</div>' +
+          '<div class="statuses"></div>' +
+        '</div>' +
+      '</div>' +
+      passiveHTML +
+      evolutionTrackHTML(m) +
+      '<div class="cs-items-block">' +
+        '<div class="evo-head">Items</div>' +
+        '<div id="collection-items" class="cs-items"></div>' +
+      '</div>';
+    buildCollectionItems();
+  }
+
+  // the carried items, shown as item slots (filled + empty) centered in the
+  // hero panel so the "Stats So Far" screen reflects the run's loadout.
+  function buildCollectionItems() {
+    const row = $('collection-items');
+    if (!row) return;
+    row.innerHTML = '';
+    const stacks = itemStacks();
+    const total = Math.max(MAX_ITEM_STACKS, stacks.length);
+    for (let i = 0; i < total; i++) {
+      if (i >= stacks.length) {
+        const slot = el('div', 'cs-item-slot empty');
+        slot.innerHTML = '<span class="cs-item-empty">✦</span>';
+        row.appendChild(slot);
+        continue;
+      }
+      const st = stacks[i];
+      const it = ITEMS[st.id];
+      if (!it) continue;
+      const slot = el('div', 'cs-item-slot filled rarity-' + (it.rarity || 'common') + (it.img ? ' has-img' : ''));
+      slot.innerHTML =
+        itemArtHTML(it) +
+        (st.count > 1 ? '<span class="item-count">' + st.count + '</span>' : '') +
+        '<span class="hud-tip"><b>' + it.name + '</b>' + (st.count > 1 ? ' <span class="it-x">×' + st.count + '</span>' : '') +
+          '<br>' + it.desc +
+          (it.combatOnly ? '<br><i class="item-hint">Combat only</i>' : '') + '</span>';
+      slot.addEventListener('mouseenter', () => SFX.hover());
+      row.appendChild(slot);
+    }
+  }
+
+  // the actual socket strip — empty sockets exactly as they read on the forge
+  // screen (special-slot tints, badges), built from paintSocketTile. Hovering a
+  // socket fills the shared detail panel (same one the glyphs use).
+  function buildCollectionSockets() {
+    const row = $('collection-sockets');
+    if (!row) return;
+    row.innerHTML = '';
+    const m = activeMonster();
+    const n = (m && m.sockets) || 0;
+    // inner block stays left-aligned but is centered within the section so a
+    // full 9-socket loadout reads perfectly balanced.
+    const inner = el('div', 'cs-sock-inner');
+    for (let i = 0; i < n; i++) {
+      const idx = i;
+      const t = el('div', 'socket');
+      paintSocketTile(t, (m.slotTypes && m.slotTypes[i]) || 'normal', i + 1);
+      const tip = t.querySelector('.slot-tip'); if (tip) tip.remove();   // panel handles it
+      t.addEventListener('mouseenter', () => { if (!deckDetailPinned) showSocketDetail(idx); });
+      t.addEventListener('mouseleave', () => { if (!deckDetailPinned) hideGlyphDetail(); });
+      inner.appendChild(t);
+    }
+    row.appendChild(inner);
+    const sc = $('collection-socket-count'); if (sc) sc.textContent = '· ' + n;
+  }
+
+  // just the descriptions for a list of slot types (name handled separately)
+  function slotDescHTMLOf(list) {
+    const order = [], counts = {};
+    list.forEach(t => { if (!(t in counts)) { counts[t] = 0; order.push(t); } counts[t]++; });
+    const parts = order.map(t => SLOT_INFO[t] && SLOT_INFO[t].tip ? SLOT_INFO[t].tip : '').filter(Boolean);
+    return parts.join('<br><br>');
+  }
+  // a clean socket tile (no floating tip) for the detail panel art
+  function socketArtHTML(type, num) {
+    const tmp = el('div', 'socket');
+    paintSocketTile(tmp, type, num);
+    const tip = tmp.querySelector('.slot-tip'); if (tip) tip.remove();
+    return tmp.outerHTML;
+  }
+  function showSocketDetail(i) {
+    const d = $('deck-detail');
+    const m = activeMonster();
+    if (!d || !m) return;
+    const type = (m.slotTypes && m.slotTypes[i]) || 'normal';
+    const list = slotListOf(type);
+    const label = (list.length ? slotLabelOf(type) : 'Normal') + ' Socket';
+    const desc = list.length
+      ? slotDescHTMLOf(list)
+      : 'A plain socket. It holds one glyph — when the chain reaches it, that glyph resolves.';
+    d.className = 'deck-detail deck-detail-panel has-detail socket-detail';
+    d.style.setProperty('--g-color', 'var(--gold)');
+    d.innerHTML =
+      '<div class="dd-inner">' +
+        '<div class="dd-art dd-art-socket">' + socketArtHTML(type, i + 1) + '</div>' +
+        '<div class="dd-body">' +
+          '<div class="dd-name">' + label + '</div>' +
+          '<div class="dd-meta"><span class="dd-kind">Socket ' + (i + 1) + '</span></div>' +
+          '<div class="dd-desc">' + desc + '</div>' +
+        '</div>' +
+      '</div>';
   }
 
   function buildCollection() {
-    const row = $('collection-row');
-    row.innerHTML = '';
-    State.monsters.forEach((m, i) => {
-      const c = el('div', 'mini-monster' + (m.alive ? '' : ' dead') + (i === State.activeIndex && m.alive ? ' active' : ''));
-      c.style.color = m.color;
-      c.innerHTML = `
-        <div class="mm-emoji">${m.emoji}</div>
-        <div class="mm-name" style="color:var(--text)">${m.name}</div>
-        <div class="mm-hp">${m.alive ? m.hp + '/' + m.maxHp + '♥ · ' + m.sockets + ' sockets' : 'Fallen'}</div>`;
-      row.appendChild(c);
-    });
+    buildCollectionHero();
+    buildCollectionSockets();
 
     const g = $('collection-glyphs');
     g.innerHTML = '';
-    const detail = $('deck-detail');
-    if (detail) { detail.className = 'deck-detail hidden'; detail.innerHTML = ''; }
     deckDetailPinned = null;
+    hideGlyphDetail();   // seat the resting placeholder in the detail panel
 
     // group cards by glyph AND forge signature, so a single upgraded copy reads
     // as its own stack (cards are individuals) while plain duplicates compress.
@@ -2835,36 +3057,35 @@
     order.forEach(key => {
       const grp = map[key];
       const gl = grp.def;
-      const t = el('div', 'deck-glyph color-' + gl.color + (grp.empower || grp.combo ? ' forged' : ''));
+      // render the EXACT combat hand-card look (.glyph) so the pool stays
+      // consistent with the forge screen — no flat squares.
+      const t = el('div', 'glyph color-' + gl.color +
+        ((gl.slots || 1) > 1 ? ' wide' : '') + (gl.junk ? ' junk' : '') +
+        (grp.empower || grp.combo ? ' forged' : ''));
       t.style.setProperty('--g-color', 'var(--' + gl.color + ')');
-      if (gl.img) {
-        const im = el('img', 'deck-glyph-img');
-        im.src = gl.img; im.alt = gl.name; im.draggable = false;
-        t.appendChild(im);
-      } else {
-        t.appendChild(el('span', 'deck-glyph-rune', gl.rune));
-      }
-      if (gl.letter) {
-        const cls = gl.letter === 'wild' ? 'wild' : 'l-' + gl.letter;
-        t.appendChild(el('div', 'letter-chip ' + cls, gl.letter === 'wild' ? '✦' : gl.letter));
-      }
+      t.dataset.color = gl.color;
+      const body = el('div', 'g-body');
+      body.innerHTML = glyphArtHTML(gl) + letterChipHTML(gl);
+      t.appendChild(body);
+      t.appendChild(el('span', 'g-name', gl.name));
+      if (grp.empower > 0) t.appendChild(el('span', 'g-up g-up-power', '✦+' + grp.empower));
+      if (grp.combo) t.appendChild(el('span', 'g-up g-up-combo', '▲▲'));
       if (grp.count > 1) t.appendChild(el('span', 'deck-glyph-count', '×' + grp.count));
-      if (grp.empower > 0) t.appendChild(el('span', 'deck-glyph-emp', '✦+' + grp.empower));
-      if (grp.combo) t.appendChild(el('span', 'deck-glyph-combo', '▲▲'));
       t.addEventListener('mouseenter', () => { if (!deckDetailPinned) showGlyphDetail(gl, grp.count, grp.repId); });
       t.addEventListener('mouseleave', () => { if (!deckDetailPinned) hideGlyphDetail(); });
       t.addEventListener('click', () => {
         SFX.click();
-        if (deckDetailPinned === key) { deckDetailPinned = null; hideGlyphDetail(); g.querySelectorAll('.deck-glyph.selected').forEach(e => e.classList.remove('selected')); }
+        if (deckDetailPinned === key) { deckDetailPinned = null; hideGlyphDetail(); g.querySelectorAll('.glyph.selected').forEach(e => e.classList.remove('selected')); }
         else {
           deckDetailPinned = key;
-          g.querySelectorAll('.deck-glyph.selected').forEach(e => e.classList.remove('selected'));
+          g.querySelectorAll('.glyph.selected').forEach(e => e.classList.remove('selected'));
           t.classList.add('selected');
           showGlyphDetail(gl, grp.count, grp.repId);
         }
       });
       g.appendChild(t);
     });
+    const gc = $('collection-glyph-count'); if (gc) gc.textContent = '· ' + State.pool.length;
 
     const b = $('collection-blessings');
     b.innerHTML = '';
@@ -2872,12 +3093,17 @@
     const owned = Object.keys(State.blessings)
       .filter(k => State.blessings[k] && allBless[k])
       .map(k => allBless[k]);
-    if (!owned.length) b.innerHTML = '<span style="color:var(--text-dim);font-style:italic">None yet — claim one from an elite or boss.</span>';
+    if (!owned.length) b.innerHTML = '<span class="collection-empty">None yet — claim one from an elite or boss.</span>';
     owned.forEach(bl => {
-      const badge = el('div', 'bless-badge', bl.icon + ' ' + bl.name);
-      badge.appendChild(el('span', 'hud-tip', '<b>' + bl.name + '</b><br>' + bl.desc));
-      b.appendChild(badge);
+      const relic = el('div', 'relic' + (blessHasImg(bl) ? ' has-img' : ''));
+      relic.dataset.bless = bl.id;
+      relic.innerHTML =
+        '<div class="relic-art">' + blessArtHTML(bl) + '</div>' +
+        '<div class="relic-name">' + bl.name + '</div>' +
+        '<span class="hud-tip"><b>' + bl.name + '</b><br>' + bl.desc + '</span>';
+      b.appendChild(relic);
     });
+    const bc = $('collection-bless-count'); if (bc) bc.textContent = owned.length ? '· ' + owned.length : '';
   }
 
   // ============================================================
@@ -3067,6 +3293,46 @@
   }
 
   // ============================================================
+  // BLESSING DETAIL MODAL — click any blessing to see it big
+  // ============================================================
+  function blessTier(id) {
+    if (POWER_BLESSINGS[id]) return 'Powerful Blessing';
+    if (SOUL_BLESSINGS[id]) return 'Soul Blessing';
+    if (EVENT_BLESSINGS[id]) return 'Relic Blessing';
+    return 'Blessing';
+  }
+  function showBlessingModal(id) {
+    const all = Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS);
+    const bl = all[id];
+    const modal = $('bless-modal');
+    if (!bl || !modal) return;
+    const art = $('bm-art');
+    art.className = 'bm-art' + (blessHasImg(bl) ? ' has-img' : '');
+    art.innerHTML = blessArtHTML(bl, 'bm-art-img');
+    $('bm-tier').textContent = blessTier(id);
+    $('bm-name').textContent = bl.name;
+    $('bm-desc').innerHTML = bl.desc;
+    modal.classList.remove('hidden');
+    SFX.click();
+  }
+  function hideBlessingModal() {
+    const modal = $('bless-modal');
+    if (modal && !modal.classList.contains('hidden')) { modal.classList.add('hidden'); SFX.click(); }
+  }
+  function wireBlessModal() {
+    const close = $('btn-bless-close');
+    if (close) close.addEventListener('click', hideBlessingModal);
+    const modal = $('bless-modal');
+    if (modal) modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'bless-modal') hideBlessingModal(); });
+    // any blessing tagged with data-bless opens the detail view on click
+    document.addEventListener('click', (e) => {
+      const t = e.target.closest && e.target.closest('[data-bless]');
+      if (t) showBlessingModal(t.getAttribute('data-bless'));
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideBlessingModal(); });
+  }
+
+  // ============================================================
   // WIRING
   // ============================================================
   function init() {
@@ -3074,6 +3340,7 @@
     loadSettings();
     wireOptions();
     wireConfirm();
+    wireBlessModal();
     refreshContinueBtn();
 
     // ---- Home / main menu ----
@@ -3133,10 +3400,17 @@
     $('btn-leave-shop').addEventListener('click', () => { SFX.click(); renderMap(); show('screen-map'); });
 
     $('btn-collection').addEventListener('click', () => {
-      SFX.click(); buildCollection(); $('screen-collection').classList.add('is-active');
+      SFX.click();
+      const cur = document.querySelector('.screen.is-active');
+      collectionReturn = (cur && cur.id && cur.id !== 'screen-collection') ? cur.id : 'screen-map';
+      buildCollection();
+      show('screen-collection');
     });
     $('btn-close-collection').addEventListener('click', () => {
-      SFX.click(); $('screen-collection').classList.remove('is-active');
+      SFX.click();
+      const back = collectionReturn || 'screen-map';
+      if (back === 'screen-map') renderMap();
+      show(back);
     });
 
     $('btn-upgrade-cancel').addEventListener('click', () => { SFX.click(); closeUpgradeModal(); });
@@ -3212,6 +3486,7 @@
       if (!b || seenBless[b.id]) return; seenBless[b.id] = 1;
       grid.appendChild(shopCard({
         kind: 'Blessing', icon: b.icon, name: b.name, color: 'var(--purple)',
+        art: '<div class="sc-icon' + (blessHasImg(b) ? ' has-img' : '') + '" style="color:var(--purple)">' + blessArtHTML(b) + '</div>',
         desc: b.desc, price: 0,
         onBuy: () => applyBlessing(b)
       }));
@@ -3221,6 +3496,7 @@
     Object.values(ITEMS).forEach(it => {
       grid.appendChild(shopCard({
         kind: 'Item', icon: it.icon, name: it.name, color: 'var(--gold)',
+        art: '<div class="sc-icon' + (it.img ? ' has-img' : '') + '" style="color:var(--gold)">' + itemArtHTML(it) + '</div>',
         desc: it.desc, price: 0,
         canBuy: () => canAddItem(it.id),
         onBuy: () => { addItem(it.id); }

@@ -623,39 +623,39 @@
      ---------------------------------------------------------- */
   const BLESSINGS = {
     recall: {
-      id: 'recall', name: 'Recall', icon: '↺', scope: 'run',
+      id: 'recall', name: 'Recall', icon: '↺', img: 'assets/Recall Stone.png', scope: 'run',
       desc: 'Once per turn, click an equipped glyph to return it to your hand before acting.'
     },
     emberward: {
-      id: 'emberward', name: 'Ember Ward', icon: '🜂', scope: 'run',
+      id: 'emberward', name: 'Ember Ward', icon: '🜂', img: 'assets/Ember Ward.png', scope: 'run',
       desc: 'Gain 2 shield each time a red glyph is played this turn.'
     },
     emberstorm: {
-      id: 'emberstorm', name: 'Emberstorm', icon: '⚝', scope: 'run',
+      id: 'emberstorm', name: 'Emberstorm', icon: '⚝', img: 'assets/Firestorm Jar.png', scope: 'run',
       desc: 'All of your red glyphs deal +1 damage.'
     },
     overload: {
-      id: 'overload', name: 'Overload', icon: '🜳', scope: 'run',
+      id: 'overload', name: 'Overload', icon: '🜳', img: 'assets/Overload Crown.png', scope: 'run',
       desc: 'Draw 6 glyphs each turn instead of 5.'
     },
     aegis: {
-      id: 'aegis', name: 'Aegis', icon: '🛡', scope: 'run',
+      id: 'aegis', name: 'Aegis', icon: '🛡', img: 'assets/Aegis Shield.png', scope: 'run',
       desc: 'Gain 3 shield at the start of every turn.'
     },
     warbanner: {
-      id: 'warbanner', name: 'War Banner', icon: '⚔', scope: 'run',
+      id: 'warbanner', name: 'War Banner', icon: '⚔', img: 'assets/War Banner.png', scope: 'run',
       desc: 'Begin every battle with +2 Strength.'
     },
     lifebloom: {
-      id: 'lifebloom', name: 'Lifebloom', icon: '🌿', scope: 'run',
+      id: 'lifebloom', name: 'Lifebloom', icon: '🌿', img: 'assets/Lifebloom Bud.png', scope: 'run',
       desc: 'Heal 2 HP at the start of every turn.'
     },
     greed: {
-      id: 'greed', name: 'Greed', icon: '🪙', scope: 'run',
+      id: 'greed', name: 'Greed', icon: '🪙', img: 'assets/Greed Coin.png', scope: 'run',
       desc: 'Gain 50% more souls from every source.'
     },
     stoneblood: {
-      id: 'stoneblood', name: 'Stoneblood', icon: '🪨', scope: 'run',
+      id: 'stoneblood', name: 'Stoneblood', icon: '🪨', img: 'assets/Bloodstone.png', scope: 'run',
       desc: 'Reduce all incoming damage by 1 (minimum 1).'
     }
   };
@@ -663,11 +663,11 @@
   // Powerful blessings — only offered by floor bosses & the back room of the shop.
   const POWER_BLESSINGS = {
     pyreheart: {
-      id: 'pyreheart', name: 'Pyreheart', icon: '🔥', scope: 'run',
+      id: 'pyreheart', name: 'Pyreheart', icon: '🔥', img: 'assets/Pyre Heart.png', scope: 'run',
       desc: 'All of your red glyphs deal +2 damage.'
     },
     bastionheart: {
-      id: 'bastionheart', name: 'Bastion Heart', icon: '🏰', scope: 'run',
+      id: 'bastionheart', name: 'Bastion Core', icon: '🏰', img: 'assets/Bastion Core.png', scope: 'run',
       desc: 'Gain 5 shield at the start of every turn.'
     }
   };
@@ -675,15 +675,15 @@
   // Soul blessings — wrested ONLY from the Soulhunter, one per form (A → B → C).
   const SOUL_BLESSINGS = {
     conjoined: {
-      id: 'conjoined', name: 'Conjoined Soul', icon: '🜸', scope: 'run', form: 'A',
+      id: 'conjoined', name: 'Conjoined Soul', icon: '🜸', img: 'assets/Conjoined Soul.png', scope: 'run', form: 'A',
       desc: 'Every set of reward glyphs guarantees a <b>+2 empowered</b> glyph among the choices.'
     },
     conniving: {
-      id: 'conniving', name: 'Conniving Soul', icon: '🜹', scope: 'run', form: 'B',
+      id: 'conniving', name: 'Conniving Soul', icon: '🜹', img: 'assets/Conniving Soul.png', scope: 'run', form: 'B',
       desc: 'Every fifth turn, the enemies <b>skip their turn</b> entirely.'
     },
     calamitous: {
-      id: 'calamitous', name: 'Calamitous Soul', icon: '🜺', scope: 'run', form: 'C',
+      id: 'calamitous', name: 'Calamitous Soul', icon: '🜺', img: 'assets/Calamitous Soul.png', scope: 'run', form: 'C',
       desc: 'On pickup, every eligible socket gains <b>Upgrade</b> — glyphs played there gain +1 empower for the rest of each battle.'
     }
   };
@@ -725,6 +725,7 @@
     troll: {
       id: 'troll', name: 'Goblin', role: 'Bulwark', emoji: '👺',
       img: 'assets/goblin.png',
+      selectBg: 'assets/Goblin Select Backdrop.png',
       color: 'var(--green)',
       maxHp: 75, sockets: 3, slotTypes: ['normal', 'empower', 'normal'],
       passive: 'stonehide', passiveVal: 2,
@@ -736,6 +737,7 @@
     ghoul: {
       id: 'ghoul', name: 'Ghoul', role: 'Leech', emoji: '🧟',
       img: 'assets/ghoul.png',
+      selectBg: 'assets/Ghoul Select Backdrop.png',
       color: 'var(--purple)',
       maxHp: 50, sockets: 3, slotTypes: ['normal', 'normal', 'devil'],
       passive: 'gravetide', passiveVal: 1,
@@ -747,6 +749,7 @@
     kitsune: {
       id: 'kitsune', name: 'Kitsune', role: 'Glass Cannon', emoji: '🦊',
       img: 'assets/kitsune.png',
+      selectBg: 'assets/Kitsune Select Backdrop.png',
       color: 'var(--red)',
       maxHp: 32, sockets: 3, slotTypes: ['normal', 'normal', 'hold'],
       passive: 'gatheringTails', passiveVal: 1,
@@ -987,13 +990,13 @@
      Effects are resolved in battle.js (combat) / game.js (out of combat).
      ---------------------------------------------------------- */
   const ITEMS = {
-    blood_phial:     { id: 'blood_phial', name: 'Blood Phial', icon: '🩸', rarity: 'common', price: 30, combatOnly: false,
+    blood_phial:     { id: 'blood_phial', name: 'Blood Phial', icon: '🩸', img: 'assets/Blood Phial.png', rarity: 'common', price: 30, combatOnly: false,
                        desc: 'Heal <b>30%</b> of your active beast\'s max HP.', effect: { kind: 'heal', pct: 0.30 } },
-    unmelting_ice:   { id: 'unmelting_ice', name: 'Unmelting Ice', icon: '❄️', rarity: 'common', price: 32, combatOnly: true,
+    unmelting_ice:   { id: 'unmelting_ice', name: 'Unmelting Ice', icon: '❄️', img: 'assets/Unmelting Ice.png', rarity: 'common', price: 32, combatOnly: true,
                        desc: 'Gain <b>15</b> shield. It lingers all combat until chipped away.', effect: { kind: 'shield', value: 15 } },
-    acid_phial:      { id: 'acid_phial', name: 'Acid Phial', icon: '🧪', rarity: 'uncommon', price: 46, combatOnly: true,
+    acid_phial:      { id: 'acid_phial', name: 'Acid Phial', icon: '🧪', img: 'assets/Acid Phial.png', rarity: 'uncommon', price: 46, combatOnly: true,
                        desc: 'Strip the shields off <b>all</b> enemies and apply <b>Weak 3</b>.', effect: { kind: 'acid', weak: 3 } },
-    throwing_knife:  { id: 'throwing_knife', name: 'Throwing Knife', icon: '🔪', rarity: 'common', price: 34, combatOnly: true,
+    throwing_knife:  { id: 'throwing_knife', name: 'Dagger', icon: '🔪', img: 'assets/Dagger.png', rarity: 'common', price: 34, combatOnly: true,
                        desc: 'Deal <b>10</b> damage to all enemies.', effect: { kind: 'damageAll', value: 10 } },
     explosive_knife: { id: 'explosive_knife', name: 'Explosive Knife', icon: '💣', rarity: 'uncommon', price: 58, combatOnly: true,
                        desc: 'Deal <b>30</b> damage to all enemies.', effect: { kind: 'damageAll', value: 30 } },

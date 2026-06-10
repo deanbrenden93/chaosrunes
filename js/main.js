@@ -19,7 +19,7 @@
     ].forEach(addImg);
     // beast + enemy portraits and bespoke glyph art, straight from the data
     const D = (root.CG && root.CG.DATA) || {};
-    try { const M = D.MONSTERS || {}; Object.keys(M).forEach(k => addImg(M[k].img)); } catch (e) {}
+    try { const M = D.MONSTERS || {}; Object.keys(M).forEach(k => { addImg(M[k].img); addImg(M[k].selectBg); }); } catch (e) {}
     try { const G = D.GLYPHS || {}; Object.keys(G).forEach(k => addImg(G[k].img)); } catch (e) {}
     try { const E = D.ENEMIES || {}; Object.keys(E).forEach(k => addImg(E[k].img)); } catch (e) {}
 
