@@ -3517,3 +3517,9 @@ html, body {
 }
 .drag-clone .g-tip { display: none !important; }
 .drag-clone .g-body { animation: none !important; }
+/* mobile: the lifted glyph brightens + lifts when it's aimed at the sockets,
+   signalling "release to play" */
+.drag-clone.drag-to-socket {
+  transform: translate(-50%, -64%) rotate(0deg) scale(1.16);
+  filter: drop-shadow(0 26px 36px rgba(0,0,0,0.7)) drop-shadow(0 0 26px var(--g-color)) brightness(1.12);
+}

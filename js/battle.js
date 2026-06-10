@@ -2778,12 +2778,15 @@
       if (!B || B.resolving || B.ended) return;
       if (e.button != null && e.button !== 0) return;
       e.preventDefault();
+      // On touch (mobile) a glyph is PLAYED by dragging it onto the sockets, not
+      // by tapping. Reordering still works by dragging sideways within the hand.
+      const isTouch = (e.pointerType === 'touch');
       const start = Scale.toStage(e.clientX, e.clientY);
       const stepRaw = parseFloat($('hand-row').dataset.step);
       const press = {
         idx, tile, dragging: false, clone: null, centers: null,
         pitch: 150 + (isNaN(stepRaw) ? HAND_GAP : stepRaw),
-        targetIdx: idx
+        targetIdx: idx, isTouch, playable, overDrop: false
       };
       const unwire = () => {
         tile.removeEventListener('pointermove', onMove);
@@ -2794,21 +2797,62 @@
         const p = Scale.toStage(ev.clientX, ev.clientY);
         if (!press.dragging) {
           if (Math.hypot(p.x - start.x, p.y - start.y) < DRAG_SLOP) return;
-          if (B.hand.length < 2) return;   // nothing to reorder
+          // mouse drag only reorders, so it needs ≥2 cards; a touch drag PLAYS a
+          // glyph, so it must engage even for a single card in hand
+          if (!isTouch && B.hand.length < 2) return;
           beginHandDrag(press);
         }
-        moveHandDrag(press, p);
+        moveHandDrag(press, p, ev);
       };
-      const onUp = () => {
+      const onUp = (ev) => {
         unwire();
-        if (press.dragging) endHandDrag(press);
-        else if (playable && !B.resolving) placeGlyph(idx, tile);
+        if (press.dragging) { endHandDrag(press, false, ev); return; }
+        // no drag happened (a tap)
+        if (isTouch) {
+          // mobile: a tap never plays — it just previews the glyph's tooltip and
+          // shows where it would land (there is no hover on touch)
+          if (playable && !B.resolving) showGlyphTipPreview(tile, idx);
+        } else if (playable && !B.resolving) {
+          placeGlyph(idx, tile);
+        }
       };
       const onCancel = () => { unwire(); if (press.dragging) endHandDrag(press, true); };
       try { tile.setPointerCapture(e.pointerId); } catch (err) {}
       tile.addEventListener('pointermove', onMove);
       tile.addEventListener('pointerup', onUp);
       tile.addEventListener('pointercancel', onCancel);
+    });
+  }
+  // mobile: the play "drop zone" is anywhere above the hand row (i.e. aimed at
+  // the socket strip / battlefield). Dragging up = play; staying level = reorder.
+  function pointerOverSocketDrop(ev) {
+    if (!ev) return false;
+    const hr = $('hand-row');
+    if (!hr) return false;
+    return ev.clientY < hr.getBoundingClientRect().top - 4;
+  }
+  // show a hand glyph's tooltip in the universal combat-tip panel (used while a
+  // touch drag is in flight, and on a mobile tap to preview)
+  function showGlyphDragTip(tile) {
+    const html = tipHTMLFor(tile);
+    if (html) { ctSource = tile; showCombatTip(html); }
+  }
+  function showGlyphTipPreview(tile, idx) {
+    showGlyphDragTip(tile);
+    markDestSockets(B.hand[idx], true);
+    renderForecast(B.hand[idx]);
+  }
+  // neighbours glide aside to open a reorder gap as the dragged card passes them
+  function reorderPreview(press, p) {
+    const n = press.centers.length;
+    const t = Math.max(0, Math.min(n - 1, Math.round((p.x - press.centers[0]) / press.pitch)));
+    if (t === press.targetIdx) return;
+    press.targetIdx = t;
+    Array.from($('hand-row').children).forEach((c, j) => {
+      if (j === press.idx) return;
+      const pos = j - (j > press.idx ? 1 : 0);
+      const fin = pos + (pos >= t ? 1 : 0);
+      c.style.transform = fin === j ? '' : 'translateX(' + ((fin - j) * press.pitch) + 'px)';
     });
   }
   function beginHandDrag(press) {
@@ -2827,34 +2871,57 @@
     stage.appendChild(clone);
     press.clone = clone;
     press.tile.classList.add('drag-origin');
-    clearCombatTip();
+    if (press.isTouch) {
+      // mobile: lifting a glyph reveals its tooltip (no hover exists on touch)
+      showGlyphDragTip(press.tile);
+    } else {
+      clearCombatTip();
+    }
     markDestSockets(null, false);
     renderForecast(null);
     SFX.click();
   }
-  function moveHandDrag(press, p) {
+  function moveHandDrag(press, p, ev) {
     if (!press.dragging) return;
     press.clone.style.left = p.x + 'px';
     press.clone.style.top = p.y + 'px';
-    const n = press.centers.length;
-    const t = Math.max(0, Math.min(n - 1, Math.round((p.x - press.centers[0]) / press.pitch)));
-    if (t === press.targetIdx) return;
-    press.targetIdx = t;
-    // the neighbours glide aside to open the drop gap
-    Array.from($('hand-row').children).forEach((c, j) => {
-      if (j === press.idx) return;
-      const pos = j - (j > press.idx ? 1 : 0);
-      const fin = pos + (pos >= t ? 1 : 0);
-      c.style.transform = fin === j ? '' : 'translateX(' + ((fin - j) * press.pitch) + 'px)';
-    });
+    if (press.isTouch) {
+      // touch: are we aiming at the sockets (play) or sliding within the hand (reorder)?
+      const overDrop = press.playable && pointerOverSocketDrop(ev);
+      if (overDrop !== press.overDrop) {
+        press.overDrop = overDrop;
+        press.clone.classList.toggle('drag-to-socket', overDrop);
+        if (overDrop) {
+          // entering play mode: clear any reorder gaps, light the landing sockets
+          press.targetIdx = press.idx;
+          Array.from($('hand-row').children).forEach(c => { c.style.transform = ''; });
+          markDestSockets(B.hand[press.idx], true);
+          renderForecast(B.hand[press.idx]);
+        } else {
+          markDestSockets(null, false);
+          renderForecast(null);
+        }
+      }
+      if (!overDrop) reorderPreview(press, p);
+      return;
+    }
+    reorderPreview(press, p);
   }
-  function endHandDrag(press, cancelled) {
+  function endHandDrag(press, cancelled, ev) {
     const row = $('hand-row');
     row.classList.remove('dragging');
     Array.from(row.children).forEach(c => { c.style.transform = ''; });
     if (press.clone) press.clone.remove();
     press.tile.classList.remove('drag-origin');
     handDrag.active = false;
+    // mobile: dropping a glyph onto the sockets PLAYS it into the next free socket
+    if (!cancelled && press.isTouch && press.playable && !B.resolving && pointerOverSocketDrop(ev)) {
+      markDestSockets(null, false);
+      renderForecast(null);
+      placeGlyph(press.idx, press.tile);   // re-renders hand + sockets itself
+      return;
+    }
+    markDestSockets(null, false);
     if (!cancelled && press.targetIdx !== press.idx) {
       const moved = B.hand.splice(press.idx, 1)[0];
       B.hand.splice(press.targetIdx, 0, moved);
