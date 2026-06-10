@@ -2379,11 +2379,15 @@ html, body {
 
 /* screen shake — applied to #stage. The letterbox sits on translate/scale
    props, so this `transform` animation composes cleanly with it. Pure
-   translate3d/rotate keyframes keep the shake on the compositor thread
-   (smooth on mobile, no repaints, no zoom glitch). */
-.stage-shake  { animation: shake-hard   0.4s ease;  will-change: transform; }
-.stage-shake-2 { animation: shake-hard-2 0.5s ease;  will-change: transform; }
-.stage-shake-3 { animation: shake-hard-3 0.62s ease; will-change: transform; }
+   translate3d/rotate keyframes auto-promote to the compositor for the duration
+   of the run (smooth on mobile, no repaints, no zoom glitch). We deliberately
+   DON'T set `will-change` here: the shake class lingers on #stage after the
+   animation ends, and a lingering `will-change` would leave the giant stage
+   permanently layer-promoted — which caused mobile tearing on the reward
+   screen and beyond. */
+.stage-shake  { animation: shake-hard   0.4s ease; }
+.stage-shake-2 { animation: shake-hard-2 0.5s ease; }
+.stage-shake-3 { animation: shake-hard-3 0.62s ease; }
 .bolt { transform: translate(-50%, -50%); }
 @keyframes shake-hard {
   0%,100% { transform: translate3d(0,0,0); }

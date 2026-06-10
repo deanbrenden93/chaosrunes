@@ -1345,10 +1345,18 @@
     }
     setTimeout(() => f.remove(), 1100);
   }
+  let shakeClear = null;
   function shake(level) {
     stage.classList.remove('stage-shake', 'stage-shake-2', 'stage-shake-3');
     void stage.offsetWidth;
     stage.classList.add(level >= 3 ? 'stage-shake-3' : level === 2 ? 'stage-shake-2' : 'stage-shake');
+    // strip the class once the shake is over so nothing lingers on #stage when we
+    // move on to the reward screen (prevents stale GPU layers on mobile)
+    clearTimeout(shakeClear);
+    const dur = level >= 3 ? 700 : level === 2 ? 560 : 460;
+    shakeClear = setTimeout(() => {
+      stage.classList.remove('stage-shake', 'stage-shake-2', 'stage-shake-3');
+    }, dur);
   }
   // a brief full-stage light flash for big, dramatic moments (boss deaths)
   function deathFlash(maxA, dur, color) {
