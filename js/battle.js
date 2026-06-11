@@ -85,6 +85,7 @@
   // ============================================================
   function start(opts) {
     stage = $('stage');
+    clearChargeOrb(true);   // no charge hoard carries between separate battles
     onWinCb = opts.onWin; onLoseCb = opts.onLose;
     const G = root.CG.Game;
     const monster = G.state.monsters[G.firstAlive()];
@@ -1697,20 +1698,98 @@
     const c = B.charge || {};
     return (c.dmg || 0) > 0 || (c.weak || 0) > 0 || (c.scare || 0) > 0 || (c.burn || 0) > 0;
   }
+  function chargeTotal() {
+    const c = B.charge || {};
+    return (c.dmg || 0) + (c.weak || 0) + (c.scare || 0) + (c.burn || 0);
+  }
+
+  // ---- the Charge Orb: a growing ball of stored power on the left of the field.
+  // It swells as the chain feeds it, drinks each incoming charge with a flowing
+  // mote, then overloads and unleashes the AOE at the end of the chain. ----
+  function chargeOrbEl() {
+    let o = $('charge-orb');
+    if (!o) {
+      o = el('div', 'charge-orb');
+      o.id = 'charge-orb';
+      o.innerHTML =
+        '<div class="co-glow"></div>' +
+        '<div class="co-scale">' +
+          '<div class="co-ring"></div>' +
+          '<div class="co-ball"><span class="co-core"></span><span class="co-spark"></span></div>' +
+        '</div>' +
+        '<div class="co-num"><span class="co-val">0</span></div>';
+      $('screen-battle').appendChild(o);
+    }
+    return o;
+  }
+  function chargeOrbCenter() {
+    const o = $('charge-orb');
+    if (!o) return null;
+    return center(o.querySelector('.co-ball') || o);
+  }
+  // re-read the pool and size the orb to match (smooth grow via CSS transition)
+  function refreshChargeOrb() {
+    const total = chargeTotal();
+    const o = chargeOrbEl();
+    const lvl = Math.min(6, Math.floor(total / 4));
+    o.className = 'charge-orb show lvl-' + lvl;
+    const scale = Math.min(2.7, 1 + total * 0.07);
+    o.style.setProperty('--co-scale', scale.toFixed(3));
+    o.querySelector('.co-val').textContent = (B.charge && B.charge.dmg) || total;
+    return o;
+  }
+  // a single charge streaks from where it was earned into the orb, which drinks it
+  function flowChargeInto(fromPos) {
+    const o = refreshChargeOrb();
+    const to = chargeOrbCenter();
+    if (!to) return;
+    const mote = el('div', 'charge-flow');
+    mote.style.left = fromPos.x + 'px';
+    mote.style.top = fromPos.y + 'px';
+    stage.appendChild(mote);
+    // arc up-and-over so it reads as energy being drawn across the field
+    const cx = (fromPos.x + to.x) / 2 + (Math.random() * 120 - 60);
+    const cy = Math.min(fromPos.y, to.y) - (110 + Math.random() * 80);
+    const dur = 360 + Math.random() * 130;
+    mote.animate([
+      { transform: 'translate(-50%,-50%) scale(0.7)', opacity: 0.2, offset: 0 },
+      { opacity: 1, offset: 0.18 },
+      { transform: 'translate(-50%,-50%) translate(' + (cx - fromPos.x) + 'px,' + (cy - fromPos.y) + 'px) scale(1.25)', opacity: 1, offset: 0.55 },
+      { transform: 'translate(-50%,-50%) translate(' + (to.x - fromPos.x) + 'px,' + (to.y - fromPos.y) + 'px) scale(0.35)', opacity: 0.85, offset: 1 }
+    ], { duration: dur, easing: 'cubic-bezier(.42,.05,.5,1)', fill: 'forwards' }).onfinish = () => {
+      mote.remove();
+      o.classList.remove('drink'); void o.offsetWidth; o.classList.add('drink');
+    };
+  }
+  function clearChargeOrb(immediate) {
+    const o = $('charge-orb');
+    if (!o) return;
+    if (immediate) { o.remove(); return; }
+    o.classList.remove('show'); o.classList.add('spent');
+    setTimeout(() => { if (o.parentNode) o.remove(); }, 520);
+  }
+
   async function detonateCharge(maxCombo) {
     if (!B.charge) B.charge = { dmg: 0, weak: 0, scare: 0, burn: 0 };
     const c = B.charge;
     if (chargeHasContent()) {
       const foes = alive();
       if (foes.length) {
-        banner('Charge Attack', 720);
-        const pPos = center(playerArt());
-        fxRing(pPos, '#ff9a3c', 720);
-        fxMotes(pPos, 16, '#ffd070', 'fx-mote-rise', 90);
+        const o = refreshChargeOrb();
+        const orbPos = chargeOrbCenter();
+        banner('Charge Attack', 760);
+        // wind-up: the orb overloads, straining at the seams
+        o.classList.add('overload');
+        SFX.comboFinish(Math.max(3, maxCombo));
         shake();
-        await wait(300);
-        foes.forEach(e => { if (e.alive) boltP(playerPos(), center(e.dom), 'var(--gold)'); });
-        await wait(160);
+        await wait(440);
+        // unleash: a lance of light from the orb to every foe, then it bursts
+        foes.forEach(e => { if (e.alive && orbPos) boltP(orbPos, center(e.dom), 'var(--gold)'); });
+        if (orbPos) {
+          fxRing(orbPos, '#ffce5e', 660);
+          fxMotes(orbPos, 22, '#ffd070', 'fx-mote-spark', 140);
+        }
+        await wait(170);
         for (const e of foes) {
           if (!e.alive) continue;
           if ((c.dmg || 0) > 0) applyDamage(e, c.dmg, { strength: false, charge: true });
@@ -1725,9 +1804,13 @@
     // Eternal Charge (All-Knowing Colossus): combo 5+ keeps the whole state alive
     // to snowball into next turn; otherwise the hoard is spent and resets to empty.
     if (hasPassive('eternalcharge') && maxCombo >= 5 && chargeHasContent()) {
-      floatText(offset(playerPos(), 0, -150), 'Charge held!', 'status');
+      const o = chargeOrbEl();
+      o.classList.remove('overload');
+      o.classList.add('held');
+      floatText(offset(chargeOrbCenter() || playerPos(), 0, -90), 'Charge held!', 'status');
     } else {
       B.charge = { dmg: 0, weak: 0, scare: 0, burn: 0 };
+      clearChargeOrb();
     }
   }
 
@@ -3975,7 +4058,10 @@
     // opts.reflect, so neither feeds back into the engines)
     if (dealt > 0 && !opts.noFloat && !opts.charge && !opts.reflect) {
       B.tickCount = (B.tickCount || 0) + 1;                      // Berserk Frenzy: combo per tick
-      if (hasPassive('overcharge')) B.charge.dmg = (B.charge.dmg || 0) + 1;   // Overcharge: 1 Damage Charge per tick
+      if (hasPassive('overcharge')) {                            // Overcharge: 1 Damage Charge per tick
+        B.charge.dmg = (B.charge.dmg || 0) + 1;
+        flowChargeInto(center(en.dom));                          // energy flows into the orb
+      }
       if (hasPassive('goringhide')) B.playerThorns = (B.playerThorns || 0) + 1;   // Goring Hide: 1 Thorns per hit (this combat)
     }
     return dealt;
@@ -5069,6 +5155,7 @@
     B.comboCarry = 0; B.comboNow = 0;
     B.playerThorns = 0; B.dmgTakenBank = 0;
     B.charge = { dmg: 0, weak: 0, scare: 0, burn: 0 };   // a swapped-in beast starts with a clean Charge
+    clearChargeOrb(true);
     // adopt the incoming beast's socket layout; clear any held/cloned carry-over
     B.slotTypes = Array.from({ length: B.monster.sockets }, (_, i) => (B.monster.slotTypes && B.monster.slotTypes[i]) || 'normal');
     B.extras = []; B.injected = []; B.tempGlyphs = {}; B.lastTurnPlays = [];

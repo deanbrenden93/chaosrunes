@@ -742,7 +742,7 @@
             id: 'orc', name: 'Orc', img: 'assets/Orc.png', hp: 20,
             tagline: 'Defense Is Offense',
             passive: { id: 'shieldlash', name: 'Shieldlash',
-              text: 'Whenever you gain Shield, deal that much damage to a random enemy (a genuine hit — your Strength counts).' },
+              text: 'Whenever you gain <b>Shield</b>, deal that much damage to a random enemy.' },
             socket: { type: 'repeat', index: 0, label: 'Repeat' }
           },
           {
@@ -768,7 +768,7 @@
                 text: 'Each damage tick of a multi-hit raises your combo (the alphabet still decides whether it carries or resets).' } },
             { id: 'allknowingcolossus', name: 'All-Knowing Colossus', img: 'assets/All-Knowing Colossus.png', hp: 20, tagline: 'Eternal Charge',
               passive: { id: 'eternalcharge', name: 'Eternal Charge',
-                text: 'Your Charge Attack still fires every turn \u2014 but if your combo is <b>5 or higher</b> at end of turn, its full state carries over to keep snowballing.' } }
+                text: 'If your combo is <b>5 or higher</b> at end of turn, your Charge Attack carries its full state into next turn and keeps snowballing.' } }
           ]
         }
       },

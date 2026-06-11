@@ -551,9 +551,16 @@ html, body {
   box-shadow: 0 0 14px color-mix(in srgb, var(--sig) 40%, transparent);
 }
 .bcf-text { font-size: 23.5px; line-height: 1.38; color: var(--text-dim); }
-.bcf-text b {
+/* the FIRST bold is the passive/socket title — the big Cinzel headline */
+.bcf-text b:first-child {
   display: block; font-family: 'Cinzel', serif; font-size: 26px; letter-spacing: 0.03em;
   color: color-mix(in srgb, var(--sig) 70%, #fff); margin-bottom: 3px;
+}
+/* any bold inside the description is a quiet inline highlight — same size/font
+   as the body, just a warm tint + weight, never a second headline */
+.bcf-text b:not(:first-child) {
+  display: inline; font-family: inherit; font-size: inherit; letter-spacing: 0; margin: 0;
+  font-weight: 700; color: color-mix(in srgb, var(--sig) 55%, #fff);
 }
 
 /* how it actually plays, in one italic line */
@@ -1684,10 +1691,13 @@ html, body {
 .socket.slot-repeat:not(.filled) .slot-img   { filter: drop-shadow(0 0 6px #c9a3ff) brightness(1) sepia(0.4) saturate(2.4) hue-rotate(230deg); }
 .socket.slot-hold:not(.filled) .slot-img     { filter: drop-shadow(0 0 6px #9fd6c0) brightness(1) sepia(0.35) saturate(2) hue-rotate(95deg); }
 .socket.slot-empower:not(.filled) .slot-img  { filter: drop-shadow(0 0 7px #ffd98a) brightness(1.1) sepia(0.55) saturate(2.6) hue-rotate(-8deg); }
+.socket.slot-combo:not(.filled) .slot-img    { filter: drop-shadow(0 0 8px #ffb347) brightness(1.12) sepia(0.6) saturate(3.4) hue-rotate(-16deg); }
 .socket.slot-devil .slot-type-name    { color: #ff8aa0; }
 .socket.slot-clone .slot-type-name    { color: #aee0ff; }
 .socket.slot-catalyst .slot-type-name { color: var(--gold); }
 .socket.slot-empower .slot-type-name  { color: #ffe6a8; }
+.socket.slot-repeat .slot-type-name   { color: #d7bdff; }
+.socket.slot-combo .slot-type-name    { color: #ffce8a; }
 
 /* ---------- hybrid sockets: one slot, up to 3 stacked special types ---------- */
 .slot-badge .sb-ic { display: inline-flex; align-items: center; }
@@ -3721,6 +3731,95 @@ html, body {
 }
 
 /* ============================================================
+   CHARGE ORB — the Big-Hit payoff gathering on the left of the field.
+   Swells as the chain feeds it, drinks each charge, then overloads + fires.
+   ============================================================ */
+.charge-orb {
+  position: absolute; left: 78px; top: 296px; z-index: 30; width: 96px; height: 96px;
+  pointer-events: none; --co-scale: 1;
+  opacity: 0; transform: scale(0.55);
+  transition: opacity .35s ease, transform .4s cubic-bezier(.2,1.5,.4,1);
+}
+.charge-orb.show { opacity: 1; transform: scale(1); }
+.charge-orb.spent { opacity: 0; transform: scale(2.4); transition: opacity .5s ease, transform .5s ease; }
+.charge-orb .co-glow {
+  position: absolute; inset: -46px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255,150,50,0.4), rgba(255,90,20,0.12) 45%, transparent 70%);
+  animation: co-glow-pulse 2.2s ease-in-out infinite;
+}
+.charge-orb .co-scale {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  transform: scale(var(--co-scale));
+  transition: transform .4s cubic-bezier(.2,1.5,.4,1);
+}
+.charge-orb .co-ball {
+  position: relative; width: 78px; height: 78px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #ffffff 0%, #ffe79a 16%, #ff9a3c 50%, #d8521a 76%, rgba(120,30,0,0.25) 100%);
+  box-shadow:
+    0 0 26px 6px rgba(255,150,50,0.7),
+    0 0 64px 20px rgba(255,90,20,0.38),
+    inset 0 0 22px rgba(255,240,180,0.75);
+  animation: co-bob 2.6s ease-in-out infinite;
+}
+.charge-orb .co-core {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 50% 46%, rgba(255,255,255,0.95), rgba(255,255,255,0) 52%);
+  animation: co-core-pulse 1.5s ease-in-out infinite;
+}
+.charge-orb .co-spark {
+  position: absolute; inset: -7%; border-radius: 50%; pointer-events: none;
+  background:
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.9), transparent 9%),
+    radial-gradient(circle at 18% 72%, rgba(255,235,180,0.8), transparent 8%),
+    radial-gradient(circle at 62% 84%, rgba(255,210,140,0.8), transparent 7%);
+  animation: co-spin 5.5s linear infinite;
+}
+.charge-orb .co-ring {
+  position: absolute; width: 104px; height: 104px; border-radius: 50%;
+  border: 2px solid rgba(255,205,120,0.55); border-top-color: rgba(255,255,255,0.95);
+  box-shadow: 0 0 14px rgba(255,170,70,0.5); pointer-events: none;
+  animation: co-spin 4s linear infinite;
+}
+.charge-orb .co-num {
+  position: absolute; left: 50%; bottom: -30px; transform: translateX(-50%);
+  font-family: 'Cinzel', serif; font-weight: 800; font-size: 27px; color: #ffe1a0;
+  text-shadow: 0 0 12px rgba(255,150,40,0.9), 0 2px 4px rgba(0,0,0,0.6);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.charge-orb .co-num::before { content: '\26A1'; font-size: 19px; margin-right: 3px; opacity: .9; }
+/* escalating intensity as the pool deepens */
+.charge-orb.lvl-3 .co-ball { box-shadow: 0 0 30px 8px rgba(255,150,50,0.8), 0 0 78px 26px rgba(255,90,20,0.42), inset 0 0 24px rgba(255,240,180,0.8); }
+.charge-orb.lvl-4 .co-ball { background: radial-gradient(circle at 38% 32%, #ffffff 0%, #ffe79a 14%, #ff7a2a 48%, #d83a14 78%, rgba(120,20,0,0.25) 100%); }
+.charge-orb.lvl-5 .co-ball, .charge-orb.lvl-6 .co-ball {
+  background: radial-gradient(circle at 38% 32%, #ffffff 0%, #fff0c0 13%, #ff8edb 44%, #b23bff 76%, rgba(70,0,90,0.3) 100%);
+  box-shadow: 0 0 34px 10px rgba(255,120,230,0.7), 0 0 90px 30px rgba(150,60,255,0.45), inset 0 0 26px rgba(255,240,255,0.85);
+}
+.charge-orb.lvl-5 .co-num, .charge-orb.lvl-6 .co-num { color: #ffd0f4; text-shadow: 0 0 14px rgba(255,120,230,0.9), 0 2px 4px rgba(0,0,0,0.6); }
+/* drinking a charge: a quick swell + glow flare */
+.charge-orb.drink .co-glow { animation: co-flare .36s ease; }
+.charge-orb.drink .co-core { animation: co-drink-flash .36s ease; }
+/* overload before it fires: violent straining */
+.charge-orb.overload .co-ball { animation: co-overload .26s ease-in-out infinite alternate; }
+.charge-orb.overload .co-glow { animation: co-flare .5s ease-in-out infinite; }
+/* held over to next turn (Eternal Charge): a calmer banked glow */
+.charge-orb.held .co-ball { animation: co-bob 2.6s ease-in-out infinite; filter: saturate(0.9) brightness(0.94); }
+.charge-orb.held .co-ring { border-style: dashed; }
+@keyframes co-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes co-spin { to { transform: rotate(360deg); } }
+@keyframes co-glow-pulse { 0%,100% { opacity: .55; transform: scale(1); } 50% { opacity: .9; transform: scale(1.12); } }
+@keyframes co-core-pulse { 0%,100% { opacity: .8; } 50% { opacity: 1; } }
+@keyframes co-flare { 0% { opacity: .55; transform: scale(1); } 35% { opacity: 1; transform: scale(1.35); } 100% { opacity: .55; transform: scale(1); } }
+@keyframes co-drink-flash { 0% { opacity: .8; } 30% { opacity: 1; filter: brightness(1.6); } 100% { opacity: .8; filter: brightness(1); } }
+@keyframes co-overload { from { transform: scale(1); filter: brightness(1); } to { transform: scale(1.1); filter: brightness(1.45) drop-shadow(0 0 20px #fff); } }
+/* the energy mote that streaks across the field into the orb */
+.charge-flow {
+  position: absolute; width: 16px; height: 16px; border-radius: 50%; z-index: 29; pointer-events: none;
+  transform: translate(-50%,-50%);
+  background: radial-gradient(circle at 40% 38%, #fff, #ffe08a 40%, #ff9a3c 72%, transparent 100%);
+  box-shadow: 0 0 14px 4px rgba(255,170,70,0.85), 0 0 26px 8px rgba(255,110,30,0.45);
+}
+
+/* ============================================================
    HAND GLYPH: fade emblems on hover, re-collect them in the tip
    ============================================================ */
 .hand-row .glyph:hover .g-body .letter-chip,
@@ -4097,9 +4196,11 @@ html, body {
     #07060e;
 }
 .evo-burst-bg {
-  position: absolute; inset: -20%;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--acc, #ffcf6a) 28%, transparent), transparent 70%);
-  opacity: .5; filter: blur(20px);
+  position: absolute; inset: -40%;
+  /* a soft, screen-filling bloom that feathers out long before the box edge,
+     so no hard circular rim is visible on tall phone screens */
+  background: radial-gradient(60% 50% at 50% 42%, color-mix(in srgb, var(--acc, #ffcf6a) 26%, transparent), transparent 80%);
+  opacity: .5; filter: blur(30px);
   animation: evoBgPulse 3.2s ease-in-out infinite;
   pointer-events: none;
 }
@@ -4200,6 +4301,8 @@ html, body {
 }
 .ecp-name { font-weight: 800; color: var(--acc); font-size: 14px; }
 .ecp-text { color: var(--ink-soft, #cfc7e6); font-size: 13.5px; line-height: 1.45; }
+.ecp-text b { font-weight: 800; color: color-mix(in srgb, var(--acc) 55%, #fff); }
+.erp-text b { font-weight: 800; color: color-mix(in srgb, var(--acc) 55%, #fff); }
 .evo-card-pick {
   margin-top: 2px; text-align: center; font-weight: 800; font-size: 14px;
   padding: 10px; border-radius: 11px; color: #1a1326;
@@ -4212,9 +4315,14 @@ html, body {
 /* ---- MORPH PHASE ---- */
 .evo-phase-morph { background: radial-gradient(120% 90% at 50% 45%, rgba(20,14,34,0.5), #050409 72%); }
 .evo-rays {
-  position: absolute; width: 200vmax; height: 200vmax; z-index: 1;
+  position: absolute; left: 50%; top: 50%;
+  width: 200vmax; height: 200vmax; margin: -100vmax 0 0 -100vmax; z-index: 1;
   background: repeating-conic-gradient(from 0deg,
     color-mix(in srgb, var(--acc) 38%, transparent) 0deg 4deg, transparent 4deg 12deg);
+  /* fade the spokes out toward the rim so the rotating square never shows an edge */
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 0%, #000 30%, transparent 58%);
+          mask-image: radial-gradient(circle at 50% 50%, #000 0%, #000 30%, transparent 58%);
+  transform-origin: 50% 50%;
   opacity: 0; mix-blend-mode: screen; pointer-events: none;
   animation: evoRaysSpin 16s linear infinite, evoFadeIn .8s ease .3s forwards;
 }
@@ -4309,7 +4417,27 @@ html, body {
   100% { opacity: 0; transform: scale(9); border-width: 1px; }
 }
 @media (max-width: 880px) {
-  .evo-cards { flex-direction: column; align-items: center; }
-  .evo-title { font-size: 34px; }
-  .evo-card { max-width: 480px; width: 100%; }
+  /* keep the two evolutions side-by-side; just make them more compact */
+  .evo-title { font-size: 32px; }
+  .evo-cards { gap: 10px; align-items: stretch; }
+  .evo-card { max-width: none; padding: 16px 14px; gap: 9px; border-radius: 16px; }
+  .evo-or { font-size: 12px; letter-spacing: 1px; }
+  .evo-card-port { width: 110px; height: 110px; }
+  .evo-card-emoji { font-size: 78px; }
+  .evo-card-name { font-size: 21px; }
+  .evo-card-tag { font-size: 10px; letter-spacing: 1.5px; }
+  .ecs-hp, .evo-card-socket { font-size: 11.5px; padding: 4px 8px; }
+  .evo-card-passive { padding: 10px 11px; }
+  .ecp-name { font-size: 13px; }
+  .ecp-text { font-size: 12px; line-height: 1.4; }
+  .evo-card-pick { font-size: 13px; padding: 9px; }
+}
+@media (max-width: 560px) {
+  .evo-title { font-size: 26px; }
+  .evo-cards { gap: 7px; }
+  .evo-card { padding: 13px 10px; gap: 8px; }
+  .evo-card-port { width: 84px; height: 84px; }
+  .evo-card-emoji { font-size: 60px; }
+  .evo-card-name { font-size: 17px; }
+  .ecp-text { font-size: 11px; }
 }
