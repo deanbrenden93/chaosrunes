@@ -189,7 +189,8 @@
     hold:     { icon: '⏸', name: 'Hold', blurb: 'Keeps its glyph for next turn as a bonus card — no discard.', color: '#9fd6c0' },
     clone:    { icon: '⧉', name: 'Clone', blurb: 'Copies its glyph into your next hand, empowered +1.', color: '#aee0ff' },
     catalyst: { icon: '✦', name: 'Catalyst', blurb: 'Infuses the next glyph by color — damage, block, or heal.', color: 'var(--gold)' },
-    repeat:   { icon: '×2', name: 'Repeat', blurb: 'The glyph placed here resolves twice.', color: '#c9a3ff' }
+    repeat:   { icon: '×2', name: 'Repeat', blurb: 'The glyph placed here resolves twice.', color: '#c9a3ff' },
+    combo:    { icon: '⛓', name: 'Combo', blurb: 'The glyph placed here doubles your running combo (a fresh chain starts at 2).', color: '#ffb347' }
   };
   // pull out a beast's distinctive (non-normal) socket type(s) for its card
   // (hybrid sockets store arrays — flatten them into unique types)
@@ -1374,7 +1375,11 @@
   const EVO_ACCENT = {
     emberkin: '#ff7a3c', tricktail: '#b98cff',
     inferna: '#ff4326', cinderdancer: '#ffae3a',
-    foxlights: '#5ff0c8', spectralWeaver: '#7cd6ff'
+    foxlights: '#5ff0c8', spectralWeaver: '#7cd6ff',
+    // Goblin line
+    orc: '#7fd06a', troll: '#ff9a3c',
+    hornedgolem: '#8fe08f', irongolem: '#bcd2e0',
+    berserkcolossus: '#ff5a4a', allknowingcolossus: '#ffce5e'
   };
   function evoAccent(form) { return (form && EVO_ACCENT[form.id]) || 'var(--gold)'; }
   // the two forms offered at the beast's current evolution step
@@ -1469,7 +1474,11 @@
     if (tier === 1 && form.socket && m.sockets < 6) {
       if (!m.slotTypes) m.slotTypes = [];
       while (m.slotTypes.length < m.sockets) m.slotTypes.push('normal');
-      const idx = form.socket.after < 0 ? m.sockets : Math.min(m.sockets, form.socket.after + 1);
+      // `index` pins the new socket to an exact position (0 = new first socket);
+      // otherwise `after` inserts just past that slot (after < 0 = append at end).
+      const idx = (form.socket.index != null)
+        ? Math.max(0, Math.min(m.sockets, form.socket.index))
+        : (form.socket.after < 0 ? m.sockets : Math.min(m.sockets, form.socket.after + 1));
       m.sockets += 1;
       m.slotTypes.splice(idx, 0, form.socket.type);
       socketAdded = { index: idx, label: form.socket.label, type: form.socket.type };
@@ -2151,7 +2160,8 @@
     devil: { icon: '<img class="devil-emote" src="assets/Happy Devil.png" alt="">', label: 'Devil', tip: 'Each turn it <b>craves a specific glyph</b> (shown on the socket) and hides a random <b>boon</b>. Play that glyph here to claim the boon — any other glyph just resolves as normal, no harm done. <b>Ignore it 3 turns running</b> and it bites you for <b>1/3 of your max HP</b>, then craves anew. The hungrier it gets, the rarer the boons it offers.' },
     clone: { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
     empower: { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' },
-    upgrade: { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' }
+    upgrade: { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' },
+    combo: { icon: '⛓', label: 'Combo', tip: 'The glyph placed here sets your combo to <b>double</b> the running combo so far (a fresh chain starts at <b>2</b>), then the chain keeps climbing.' }
   };
   // build the hover tooltip body for one or more slot types (forge modal)
   function slotTipHTMLOf(list) {

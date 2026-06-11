@@ -728,10 +728,50 @@
       selectBg: 'assets/Goblin Select Backdrop.png',
       color: 'var(--green)',
       maxHp: 75, sockets: 3, slotTypes: ['normal', 'empower', 'normal'],
-      passive: 'stonehide', passiveVal: 2,
-      passiveText: 'Stonehide: reduce all incoming damage by 2 (min 1).',
-      desc: 'Sturdy turtle-and-punish. High HP and flat damage reduction — it survives your mistakes.',
+      passive: 'wargrudge', passiveVal: 10,
+      passiveText: 'War Grudge: for every <b>10 damage</b> you take, gain <b>+1 Strength</b> for the rest of the battle.',
+      desc: 'A bruiser who turns punishment into power — the more he bleeds, the harder he hits.',
       evolveName: 'Goblin Warlord',
+      // Branching evolution. Evo 1 (5 soulstones) commits Shield-thorns (Orc) vs
+      // Charge/Big-Hit (Troll) and grants a complementary socket. Evo 2 (10) refines
+      // each into a pure or multi-hit-hybrid form. Multi-hit is the thread woven
+      // through every form. Art falls back to the base portrait until it lands.
+      evolution: {
+        tier1: [
+          {
+            id: 'orc', name: 'Orc', img: 'assets/Orc.png', hp: 20,
+            tagline: 'Defense Is Offense',
+            passive: { id: 'shieldlash', name: 'Shieldlash',
+              text: 'Whenever you gain Shield, deal that much damage to a random enemy (a genuine hit — your Strength counts).' },
+            socket: { type: 'repeat', index: 0, label: 'Repeat' }
+          },
+          {
+            id: 'troll', name: 'Troll', img: 'assets/Troll.png', hp: 20,
+            tagline: 'The Slow Apocalypse',
+            passive: { id: 'overcharge', name: 'Overcharge',
+              text: 'Every tick of damage you deal adds <b>1 Damage Charge</b> to this turn\u2019s Charge Attack.' },
+            socket: { type: 'combo', index: 2, label: 'Combo' }
+          }
+        ],
+        tier2: {
+          orc: [
+            { id: 'hornedgolem', name: 'Horned Golem', img: 'assets/Horned Golem.png', hp: 20, tagline: 'Living Bramble',
+              passive: { id: 'goringhide', name: 'Goring Hide',
+                text: 'Every time an enemy takes damage, gain <b>1 Thorns</b> for the rest of combat \u2014 multi-hits bristle you fast.' } },
+            { id: 'irongolem', name: 'Iron Golem', img: 'assets/Iron Golem.png', hp: 20, tagline: 'Immovable',
+              passive: { id: 'ironwall', name: 'Iron Wall',
+                text: 'Your Shield <b>never fades</b> between turns, and you gain <b>+1 Strength</b> for every 10 Shield you currently hold.' } }
+          ],
+          troll: [
+            { id: 'berserkcolossus', name: 'Berserk Colossus', img: 'assets/Berserk Colossus.png', hp: 20, tagline: 'Combo Frenzy',
+              passive: { id: 'berserkfrenzy', name: 'Berserk Frenzy',
+                text: 'Each damage tick of a multi-hit raises your combo (the alphabet still decides whether it carries or resets).' } },
+            { id: 'allknowingcolossus', name: 'All-Knowing Colossus', img: 'assets/All-Knowing Colossus.png', hp: 20, tagline: 'Eternal Charge',
+              passive: { id: 'eternalcharge', name: 'Eternal Charge',
+                text: 'Your Charge Attack still fires every turn \u2014 but if your combo is <b>5 or higher</b> at end of turn, its full state carries over to keep snowballing.' } }
+          ]
+        }
+      },
       deck: ['smash', 'smash', 'brace', 'brace', 'quake', 'bulwark_slam', 'hammer', 'steady']
     },
     ghoul: {

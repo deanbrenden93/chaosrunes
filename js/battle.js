@@ -38,7 +38,8 @@
     devil:    { icon: '<img class="devil-emote" src="assets/Happy Devil.png" alt="">', label: 'Devil', tip: 'Each turn it <b>craves a specific glyph</b> (shown on the socket) and hides a random <b>boon</b>. Play that glyph here to claim the boon — any other glyph just resolves as normal, no harm done. <b>Ignore it 3 turns running</b> and it bites you for <b>1/3 of your max HP</b>, then craves anew. The hungrier it gets, the rarer the boons it offers.' },
     clone:    { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
     empower:  { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' },
-    upgrade:  { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' }
+    upgrade:  { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' },
+    combo:    { icon: '⛓', label: 'Combo', tip: 'The glyph placed here sets your combo to <b>double</b> the running combo so far (a fresh chain starts at <b>2</b>), then the chain keeps climbing from there.' }
   };
   // ---- hybrid sockets ----
   // a socket's slotTypes entry may be a plain string ('normal'/'devil'/'repeat'…)
@@ -140,6 +141,9 @@
       socketIntro: true,   // first socket render of the battle plays the "runes appear" reveal
       devil: {},           // per-socket Devil state (craving / boon / ignore), keyed by index
       extraTurn: false,    // Devil "Extra Turn" boon: skip the enemy response once
+      dmgTakenBank: 0,     // War Grudge: HP damage accrued toward the next +1 Strength
+      charge: { dmg: 0, weak: 0, scare: 0, burn: 0 },   // Big-Hit Charge Attack, assembled each chain
+      tickCount: 0,        // genuine enemy hits during the current glyph (Berserk Frenzy)
       ended: false
     };
     B.slotFx = Array.from({ length: monster.sockets }, () => ({ disabled: 0, cursed: 0, caster: null }));
@@ -708,8 +712,8 @@
     chompStarvedDevils();
     if (B.ended) return;
 
-    // shield is a per-turn response to telegraphs
-    B.playerShield = 0;
+    // shield is a per-turn response to telegraphs — but Iron Wall never lets it fade
+    B.playerShield = hasPassive('ironwall') ? (B.playerShield || 0) : 0;
     if (B.monster.passive === 'turnShield') B.playerShield += B.monster.passiveVal;
     if (B.monster.passive === 'startShield' && B.turn === 1) B.playerShield += B.monster.passiveVal;
     B.playerShield += (B.monster.runTurnShield || 0);   // Devil(blue) run buff
@@ -1685,6 +1689,48 @@
     setTimeout(() => f.remove(), 1300);
   }
 
+  // ---- Charge Attack: the Big-Hit payoff (Troll line) ----
+  // Damage Charges and rider charges pile up across a chain; at the end they
+  // erupt as ONE AOE that strikes every foe at once. Strength is baked into each
+  // charge as it is applied, so detonation deals the raw accumulated pool.
+  function chargeHasContent() {
+    const c = B.charge || {};
+    return (c.dmg || 0) > 0 || (c.weak || 0) > 0 || (c.scare || 0) > 0 || (c.burn || 0) > 0;
+  }
+  async function detonateCharge(maxCombo) {
+    if (!B.charge) B.charge = { dmg: 0, weak: 0, scare: 0, burn: 0 };
+    const c = B.charge;
+    if (chargeHasContent()) {
+      const foes = alive();
+      if (foes.length) {
+        banner('Charge Attack', 720);
+        const pPos = center(playerArt());
+        fxRing(pPos, '#ff9a3c', 720);
+        fxMotes(pPos, 16, '#ffd070', 'fx-mote-rise', 90);
+        shake();
+        await wait(300);
+        foes.forEach(e => { if (e.alive) boltP(playerPos(), center(e.dom), 'var(--gold)'); });
+        await wait(160);
+        for (const e of foes) {
+          if (!e.alive) continue;
+          if ((c.dmg || 0) > 0) applyDamage(e, c.dmg, { strength: false, charge: true });
+          if ((c.weak || 0) > 0) { e.weak = (e.weak || 0) + c.weak; weakFx(e.dom); }
+          if ((c.scare || 0) > 0) { e.scare = (e.scare || 0) + c.scare; e.scareTurns = Math.max(e.scareTurns || 0, 3); scareFx(e.dom); }
+          if ((c.burn || 0) > 0) addBurn(e, c.burn);
+        }
+        refreshAll();
+        await wait(220);
+      }
+    }
+    // Eternal Charge (All-Knowing Colossus): combo 5+ keeps the whole state alive
+    // to snowball into next turn; otherwise the hoard is spent and resets to empty.
+    if (hasPassive('eternalcharge') && maxCombo >= 5 && chargeHasContent()) {
+      floatText(offset(playerPos(), 0, -150), 'Charge held!', 'status');
+    } else {
+      B.charge = { dmg: 0, weak: 0, scare: 0, burn: 0 };
+    }
+  }
+
   // ---- live combo meter (right of the field, ticks up as the chain fires) ----
   function comboMeterEl() {
     let m = $('combo-meter');
@@ -1893,23 +1939,29 @@
       // ----- Alphabet combo: figure this glyph's link + bonus before it fires -----
       const lt = comboLetter(ev.id);
       const adv = comboAdv(ev.id);   // Combo-up upgrade advances the chain by 2
+      const comboBefore = comboLen;  // running combo before this glyph (for the Combo socket)
       let comboBonus = 0, linked = false;
       // repeat copies & loopback replays are EXTRA activations — each one extends
       // the running combo by a step rather than breaking it or counting as one
       const extraAct = !!(ev.repeat2 || ev.replay);
       if (lt == null) { comboLen = 0; comboPrev = null; comboCarry = 0; comboSeeded = true; }
-      else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; linked = true; }
+      else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboPrev = lt; linked = true; }
       else {
         comboLen = adv;
         // first fresh combo of the turn inherits the carried count (Lingering Cadence)
-        if (!comboSeeded && comboCarry > 0) { comboLen += comboCarry; comboBonus = comboLen - 1; linked = comboLen > 1; }
+        if (!comboSeeded && comboCarry > 0) { comboLen += comboCarry; linked = comboLen > 1; }
         comboPrev = lt;
       }
       comboSeeded = true;
       // Devil "Combo +N" boons stretch the running chain right as the fed glyph fires
       let comboExtend = 0;
       devilFeeds.forEach(ci => { const b = B.devil[ci].bonus; if (b && b.preCombo) comboExtend += b.preCombo; });
-      if (comboExtend > 0) { comboLen = Math.max(0, comboLen) + comboExtend; comboBonus = Math.max(comboBonus, comboLen - 1); linked = comboLen > 1; }
+      if (comboExtend > 0) { comboLen = Math.max(0, comboLen) + comboExtend; linked = comboLen > 1; }
+      // Combo socket (Troll line): this glyph's combo becomes DOUBLE the running
+      // combo so far — a fresh chain starts at 2 — then keeps climbing onward.
+      const comboSocketHere = lt != null && (ev.covered || [slot]).reduce((n, ci) => n + slotCountAt(ci, 'combo'), 0) > 0;
+      if (comboSocketHere) { comboLen = Math.max(2, comboBefore * 2); linked = true; }
+      comboBonus = comboBonusOf(comboLen);
       // Cinderfall: each time the combo climbs to a NEW number, throw that much
       // Burn at a random foe (a chain to 5 lobs 2 → 3 → 4 → 5).
       if (comboLen >= 2 && comboLen > maxCombo && hasPassive('cinderfall')) {
@@ -1917,8 +1969,8 @@
         if (ct[0]) addBurn(ct[0], comboLen);
       }
       if (comboLen > maxCombo) maxCombo = comboLen;
-      B.comboNow = comboLen;   // Smoldering Tails reads this on every hit it lands
-      if (linked && comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
+      B.comboNow = comboLen;   // Smoldering Tails / charges read this on every hit
+      if (comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
       prevComboEl = (lt == null) ? null : sEl;
 
       // Catalysts placed earlier infuse this glyph's resolution (one per instance)
@@ -1953,12 +2005,24 @@
 
       // a multi-socket glyph is fully cursed if ANY socket it covers is cursed
       const cursedSlot = (ev.covered || [slot]).find(ci => slotCursed(ci));
+      B.tickCount = 0;   // Berserk Frenzy counts only THIS glyph's hits as it resolves
       await resolveGlyph(ev.id, g, {
         slot, chainPos, prevId, redAfter, totalRed, counts, originEl, originEls,
         comboBonus: comboBonus + empBonus[k],   // Empower slots fold in as a flat +1 to neighbors
         cursed: cursedSlot != null, curseCaster: cursedSlot != null ? (B.slotFx[cursedSlot] || {}).caster : null,
         isFirst: chainPos === 0, isLast: k === lastGenuineIdx
       });
+
+      // Berserk Frenzy (Berserk Colossus): a multi-hit's extra ticks each raise the
+      // running combo — the glyph's first hit is the normal step, every hit after it
+      // pushes the chain higher (carry/reset already settled by the alphabet above).
+      if (hasPassive('berserkfrenzy') && B.tickCount > 1) {
+        comboLen += (B.tickCount - 1);
+        if (comboLen > maxCombo) maxCombo = comboLen;
+        B.comboNow = comboLen;
+        const fb = comboBonusOf(comboLen);
+        if (fb > 0) showComboMeter(comboLen, fb);
+      }
 
       // a curse-slot recoil (or burn) can KO your last beast mid-chain — stop cold
       // instead of resolving the rest of the chain to an empty stage
@@ -2027,6 +2091,10 @@
     // Lingering Cadence: the standing combo number rides into next turn (a turn
     // that played nothing leaves the carry untouched).
     if (hasPassive('lingeringCadence') && runSeq.length > 0) B.comboCarry = comboLen;
+
+    // Charge Attack (Troll line): the Big-Hit payoff erupts across the enemy line
+    await detonateCharge(maxCombo);
+    if (B.ended) return;
 
     // the Devil's fed boons take the stage where the combo number just was
     await resolveDevilRewards();
@@ -2102,8 +2170,30 @@
   // so heal/shield/strength FX land dead-center over the monster image
   function playerArt() { const pc = $('player-monster'); return (pc && pc.querySelector('.pc-portrait')) || pc; }
   function playerPos() { return offset(center(playerArt()), 0, -40); }
-  // total strength = persistent battle strength + temporary "this turn" strength
-  function effStrength() { return B.strength + (B.turnStrength || 0); }
+  // Combo bonus rule (game-wide): a lone glyph (combo 1) earns nothing; from combo 2
+  // onward the bonus equals the combo number, so a chain pays +0, +2, +3, +4 …
+  function comboBonusOf(n) { return n >= 2 ? n : 0; }
+
+  // Iron Wall (Goblin / Iron Golem): +1 Strength for every 10 Shield currently held.
+  // Derived live, so it rises and falls exactly with the wall.
+  function ironWallStrength() { return hasPassive('ironwall') ? Math.floor((B.playerShield || 0) / 10) : 0; }
+  // total strength = persistent battle strength + temporary "this turn" strength + wall bonus
+  function effStrength() { return B.strength + (B.turnStrength || 0) + ironWallStrength(); }
+
+  // War Grudge (Goblin base): every 10 HP of punishment banks +1 Strength for the battle
+  function grudgeFromDamage(hpLost) {
+    if (!B.monster || B.monster.passive !== 'wargrudge' || hpLost <= 0) return;
+    const per = B.monster.passiveVal || 10;
+    B.dmgTakenBank = (B.dmgTakenBank || 0) + hpLost;
+    let gained = 0;
+    while (B.dmgTakenBank >= per) { B.dmgTakenBank -= per; gained++; }
+    if (gained > 0) {
+      B.strength += gained;
+      floatText(offset(center(playerArt()), 0, -120), 'Grudge +' + gained + ' Strength', 'status');
+      strengthFx(playerArt());
+      refreshAll();
+    }
+  }
 
   // ---- Alphabet combos: linear A→B→C (C ends the chain), Wild links to anything ----
   const COMBO_SUCC = { A: 'B', B: 'C' };   // no C→A wraparound
@@ -2210,19 +2300,22 @@
       const id = B.sockets[i];
       const lt = comboLetter(id);
       const adv = comboAdv(id);
-      // the first fresh letter of the turn inherits the carried combo count
-      let combo;
-      if (lt != null && comboLinks(sim.prev, lt)) combo = sim.len + (adv - 1);
-      else if (lt != null && !seeded && carry > 0) combo = carry + (adv - 1);
-      else combo = 0;
+      const isComboSock = lt != null && slotCountAt(i, 'combo') > 0;
+      // this glyph's resulting combo number (Combo socket doubles the running count)
+      let num;
+      if (isComboSock) num = Math.max(2, sim.len * 2);
+      else if (lt != null && comboLinks(sim.prev, lt)) num = sim.len + adv;
+      else if (lt != null && !seeded && carry > 0) num = carry + adv;
+      else if (lt != null) num = adv;
+      else num = 0;
+      const combo = comboBonusOf(num);
       const gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
       const gt = gather + combo + (glyph(id).cloneEmpower || 0) + empowerOf(id);
       // cursed slots still grant you the shield (it just also feeds the caster), so always bank it
       sim.shield += simShieldGain(id, gt, sim);
       if (baseOf(id) === 'fortify' || baseOf(id) === 'unbreakable') sim.resilience += 1 + (gt - gather);
       if (lt == null) { sim.len = 0; sim.prev = null; carry = 0; seeded = true; }
-      else if (comboLinks(sim.prev, lt)) { sim.len += adv; sim.prev = lt; seeded = true; }
-      else { sim.len = adv; if (!seeded && carry > 0) sim.len += carry; sim.prev = lt; seeded = true; }
+      else { sim.len = num; sim.prev = lt; seeded = true; }
       sim.pos += 1;
     }
     return sim;
@@ -2275,11 +2368,11 @@
     const linked = comboLinks(sim.prev, lt);
     const e = envFromSim(sim);
     e.gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
-    e.comboBonus = linked ? (sim.len + (comboAdv(id) - 1)) : 0;
+    e.comboBonus = linked ? comboBonusOf(sim.len + comboAdv(id)) : comboBonusOf(lt != null ? comboAdv(id) : 0);
     // Lingering Cadence: a card played first onto an empty board inherits the carry
     if (!linked && lt != null && placedHeadCount() === 0) {
       const carry = lingerCarry();
-      if (carry > 0) e.comboBonus = carry + (comboAdv(id) - 1);
+      if (carry > 0) e.comboBonus = comboBonusOf(carry + comboAdv(id));
     }
     // if the last placed glyph sits in Empower slot(s), a card played next is "after" them
     const order = placedOrder();
@@ -2297,11 +2390,16 @@
     const linked = comboLinks(sim.prev, lt);
     const e = envFromSim(sim);
     e.gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
-    let cb = (lt == null) ? 0 : (linked ? (sim.len + (comboAdv(id) - 1)) : 0);
+    const isComboSock = lt != null && slotCountAt(slotIndex, 'combo') > 0;
+    const num = (lt == null) ? 0
+      : isComboSock ? Math.max(2, sim.len * 2)
+      : linked ? sim.len + comboAdv(id)
+      : comboAdv(id);
+    let cb = comboBonusOf(num);
     // Lingering Cadence: if this is the chain's first fresh letter, fold in the carry
-    if (!linked && lt != null && placedOrder().indexOf(slotIndex) === 0) {
+    if (!isComboSock && !linked && lt != null && placedOrder().indexOf(slotIndex) === 0) {
       const carry = lingerCarry();
-      if (carry > 0) cb = carry + (comboAdv(id) - 1);
+      if (carry > 0) cb = comboBonusOf(carry + comboAdv(id));
     }
     e.comboBonus = cb + empowerBonusForSlot(slotIndex);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
@@ -2488,6 +2586,8 @@
       if (T.frail) a = Math.floor(a * 0.5);
       if (a <= 0) return 0;
       T.shield += a; T.shieldGain += a;
+      // Shieldlash (Orc): every point of Shield gained lashes a random foe for that much
+      if (hasPassive('shieldlash')) fcHit('random', a);
       return a;
     }
     function fcHeal(n) { if (n > 0) T.heal += n; }
@@ -2741,16 +2841,22 @@
     for (let k = 0; k < seq.length; k++) {
       const ev = seq[k];
       const lt = comboLetter(ev.id), adv = comboAdv(ev.id);
+      const comboBefore = comboLen;
       let comboBonus = 0;
       // repeat/loop extra activations extend the combo (mirror of the live walk)
       const extraAct = !!(ev.repeat2 || ev.replay);
       if (lt == null) { comboLen = 0; comboPrev = null; carry = 0; seeded = true; }
-      else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; seeded = true; }
+      else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboPrev = lt; seeded = true; }
       else {
         comboLen = adv;
-        if (!seeded && carry > 0) { comboLen += carry; comboBonus = comboLen - 1; }
+        if (!seeded && carry > 0) { comboLen += carry; }
         comboPrev = lt; seeded = true;
       }
+      // Combo socket: this glyph's combo is double the running count (fresh = 2)
+      if (lt != null && (ev.covered || [ev.slot]).reduce((n, ci) => n + slotCountAt(ci, 'combo'), 0) > 0) {
+        comboLen = Math.max(2, comboBefore * 2);
+      }
+      comboBonus = comboBonusOf(comboLen);
       // Cinderfall: each climb to a new combo height throws that much Burn at a random foe
       const newHeight = comboLen >= 2 && comboLen > fcMax;
       if (comboLen > fcMax) fcMax = comboLen;
@@ -3823,6 +3929,14 @@
     if (en.alive && !opts.noFloat && (B.comboNow || 0) > 0 && hasPassive('smolderingTails')) {
       addBurn(en, B.comboNow);
     }
+    // ---- Goblin engines: every genuine tick of YOUR damage feeds the bruiser ----
+    // (the Charge Attack's own hits pass opts.charge, and thorns recoil passes
+    // opts.reflect, so neither feeds back into the engines)
+    if (dealt > 0 && !opts.noFloat && !opts.charge && !opts.reflect) {
+      B.tickCount = (B.tickCount || 0) + 1;                      // Berserk Frenzy: combo per tick
+      if (hasPassive('overcharge')) B.charge.dmg = (B.charge.dmg || 0) + 1;   // Overcharge: 1 Damage Charge per tick
+      if (hasPassive('goringhide')) B.playerThorns = (B.playerThorns || 0) + 1;   // Goring Hide: 1 Thorns per hit (this combat)
+    }
     return dealt;
   }
 
@@ -4046,6 +4160,15 @@
       en.shield += a;
       setShieldPip(en.dom, en.shield);
       floatText(offset(center(en.dom), 0, -50), '+' + a + '◆', 'shield');
+    }
+    // Shieldlash (Orc): every point of Shield gained lashes a random foe for that
+    // much — a genuine hit, so Strength rides along and it feeds combos/charges.
+    if (a > 0 && hasPassive('shieldlash')) {
+      const t = targetRandom();
+      if (t[0] && t[0].alive) {
+        bolt(center(playerArt()), center(t[0].dom), '#9fe0ff');
+        applyDamage(t[0], a);
+      }
     }
   }
   function heal(amt) {
@@ -4864,6 +4987,7 @@
       pd.classList.add('hit-flash');
       setTimeout(() => pd.classList.remove('hit-flash'), 400);
       shake();
+      grudgeFromDamage(remaining);   // War Grudge: punishment becomes power
     }
     if (B.monster.hp <= 0) handlePlayerDeath();
   }
@@ -4902,6 +5026,8 @@
     if (root.CG.Game.state.blessings.blackfeather) B.resilience += 3;
     B.carryShield = 0; B.playerBurn = 0;
     B.comboCarry = 0; B.comboNow = 0;
+    B.playerThorns = 0; B.dmgTakenBank = 0;
+    B.charge = { dmg: 0, weak: 0, scare: 0, burn: 0 };   // a swapped-in beast starts with a clean Charge
     // adopt the incoming beast's socket layout; clear any held/cloned carry-over
     B.slotTypes = Array.from({ length: B.monster.sockets }, (_, i) => (B.monster.slotTypes && B.monster.slotTypes[i]) || 'normal');
     B.extras = []; B.injected = []; B.tempGlyphs = {}; B.lastTurnPlays = [];
