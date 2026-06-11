@@ -753,9 +753,48 @@
       color: 'var(--red)',
       maxHp: 32, sockets: 3, slotTypes: ['normal', 'normal', 'hold'],
       passive: 'gatheringTails', passiveVal: 1,
-      passiveText: 'Gathering Tails: each glyph gains +1 for every glyph already played this turn.',
+      passiveText: 'Gathering Tails: each glyph you play deals +1 damage for every glyph already played this turn.',
       desc: 'Glass-cannon combo chaos. Three sockets — the third Holds a glyph for next turn — and no defense at all.',
       evolveName: 'Nine-Tailed Fox',
+      // Branching evolution. Evo 1 fires at 5 soulstones, Evo 2 at 10. Each form
+      // stacks a NEW passive on top of the ones before it; Evo 1 also grants a
+      // socket. Evo 2's options depend on which Evo 1 form was chosen.
+      evolution: {
+        tier1: [
+          {
+            id: 'emberkin', name: 'Emberkin', img: 'assets/Emberkin.png', hp: 20,
+            tagline: 'The Burning Path',
+            passive: { id: 'smolderingTails', name: 'Smoldering Tails',
+              text: 'Every hit you land applies Burn equal to your current combo.' },
+            socket: { type: 'loopback', after: 1, label: 'Loop' }
+          },
+          {
+            id: 'tricktail', name: 'Tricktail', img: 'assets/Tricktail.png', hp: 20,
+            tagline: 'The Trickster Path',
+            passive: { id: 'willOWisps', name: 'Will-o\u2019-Wisps',
+              text: 'At end of turn, each glyph left in hand \u2014 junk included \u2014 strikes a random enemy for your highest combo this turn.' },
+            socket: { type: 'hold', after: -1, label: 'Hold' }
+          }
+        ],
+        tier2: {
+          emberkin: [
+            { id: 'inferna', name: 'Inferna', img: 'assets/Inferna.png', hp: 20, tagline: 'Pure Burn',
+              passive: { id: 'conflagration', name: 'Conflagration',
+                text: 'Your Burn never decays \u2014 its full stack burns every turn until they die \u2014 and your Burn applications are doubled.' } },
+            { id: 'cinderdancer', name: 'Cinderdancer', img: 'assets/Cinderdancer.png', hp: 20, tagline: 'Burn \u00D7 Combo',
+              passive: { id: 'cinderfall', name: 'Cinderfall',
+                text: 'Each time your combo climbs to a new number, deal that much Burn to a random enemy.' } }
+          ],
+          tricktail: [
+            { id: 'foxlights', name: 'Foxlights', img: 'assets/Foxlights.png', hp: 20, tagline: 'Prismatic Draw',
+              passive: { id: 'foxlights', name: 'Foxlights',
+                text: 'At turn start, each drawn glyph flickers by color \u2014 red: deal 1 (+Strength) to a random foe; blue: gain 1 (+Resilience) shield; green: heal 5% max HP; colorless: a random one of the three.' } },
+            { id: 'spectralWeaver', name: 'Spectral Weaver', img: 'assets/Spectral Weaver.png', hp: 20, tagline: 'Eternal Combo',
+              passive: { id: 'lingeringCadence', name: 'Lingering Cadence',
+                text: 'Your combo number carries across turns \u2014 the chain letters reset, but the count keeps climbing.' } }
+          ]
+        }
+      },
       deck: ['flicker', 'flicker', 'foxfire', 'foxfire', 'onslaught', 'spark', 'smolder', 'mirror']
     }
   };

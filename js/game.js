@@ -124,7 +124,8 @@
     'screen-shop': 'node',
     'screen-soulstone': 'node',
     'screen-blessing': 'node',
-    'screen-collection': 'node'
+    'screen-collection': 'node',
+    'screen-evolve': 'node'
   };
   // fight themes by node type (null = no dedicated track yet)
   function battleMusic(node) {
@@ -359,6 +360,10 @@
       maxHp: b.maxHp, hp: b.maxHp, sockets: b.sockets, baseSockets: b.sockets,
       passive: b.passive, passiveVal: b.passiveVal, passiveText: b.passiveText,
       evolveName: b.evolveName || null,
+      evolution: b.evolution || null,   // branching evolution tree (null = simple bump)
+      evolveLevel: 0,                    // 0 = base, 1 = first evo, 2 = final form
+      evoChoices: [],                    // form ids chosen at each tier, in order
+      evoPassives: [],                   // stacked {id,name,text} from each evolution
       slotTypes: (b.slotTypes || []).slice(),
       runStrength: 0, runTurnShield: 0, runResilience: 0,   // permanent buffs gained from Devil slots / unlocks
       alive: true
@@ -959,11 +964,20 @@
   }
   function gainSoulstone() {
     State.soulstones = (State.soulstones || 0) + 1;
-    let evolved = false;
-    if (State.soulstones >= 5) { State.soulstones -= 5; evolveMonster(); evolved = true; }
     const meter = $('soulstone-meter');
     if (meter) meter.innerHTML = soulstoneMeterHTML();
-    if (evolved) {
+    if (State.soulstones >= 5) {
+      State.soulstones -= 5;
+      const m = State.monsters[firstAlive()] || activeMonster();
+      if (meter) meter.innerHTML = soulstoneMeterHTML();
+      // Beasts with a defined tree get the full cinematic choice; others keep
+      // the old quiet stat bump so nothing breaks.
+      if (m && m.evolution && (m.evolveLevel || 0) < 2) {
+        updateRunUI();
+        openEvolution(m);
+        return;
+      }
+      evolveMonster();
       const sub = $('soulstone-sub');
       if (sub) sub.innerHTML = '<b>The fragments fuse — ' + activeMonster().name + ' EVOLVES!</b>';
       SFX.reward();
@@ -1349,6 +1363,166 @@
     m.evolveLevel = (m.evolveLevel || 0) + 1;
     if (m.evolveName && m.evolveLevel === 1) m.name = m.evolveName;
     updateRunUI();
+  }
+
+  // ============================================================
+  // EVOLUTION — the big cinematic moment at the 5th & 10th Soulstone.
+  // A branching choice (two forms), then a Pokémon-style transformation.
+  // Art is a stylized fallback for now; real PNGs drop straight into the
+  // form data later with no code change.
+  // ============================================================
+  const EVO_ACCENT = {
+    emberkin: '#ff7a3c', tricktail: '#b98cff',
+    inferna: '#ff4326', cinderdancer: '#ffae3a',
+    foxlights: '#5ff0c8', spectralWeaver: '#7cd6ff'
+  };
+  function evoAccent(form) { return (form && EVO_ACCENT[form.id]) || 'var(--gold)'; }
+  // the two forms offered at the beast's current evolution step
+  function evoFormsFor(m) {
+    const tree = m && m.evolution;
+    if (!tree) return null;
+    const lvl = m.evolveLevel || 0;
+    if (lvl === 0) return tree.tier1 || null;
+    if (lvl === 1) {
+      const prev = m.evoChoices[0];
+      return (tree.tier2 && tree.tier2[prev]) || null;
+    }
+    return null;
+  }
+  // the portrait used for a form — its own art when it exists, else the
+  // current beast image as a tinted fallback (handled via onerror).
+  function evoFormImg(form, m, cls) {
+    const fallback = m && m.img ? m.img : '';
+    const src = (form && form.img) || fallback;
+    if (!src) return '<span class="evo-card-emoji">' + ((m && m.emoji) || '✦') + '</span>';
+    const fb = fallback && fallback !== src
+      ? ' onerror="this.onerror=null;this.src=\'' + fallback + '\'"' : '';
+    return '<img class="' + (cls || 'evo-card-img') + '" src="' + src + '" alt="" draggable="false"' + fb + '>';
+  }
+
+  let pendingEvoReturn = 'screen-soulstone';
+  function openEvolution(m) {
+    const forms = evoFormsFor(m);
+    if (!forms || forms.length < 2) { evolveMonster(); return; }
+    const active = document.querySelector('.screen.is-active');
+    pendingEvoReturn = active ? active.id : 'screen-map';
+    const tier = (m.evolveLevel || 0) + 1;
+    const host = $('evolve-stage');
+    if (!host) { evolveMonster(); return; }
+
+    const cards = forms.map((form, i) => {
+      const acc = evoAccent(form);
+      const p = form.passive || {};
+      const hp = form.hp || 20;
+      const socket = (tier === 1 && form.socket && m.sockets < 6)
+        ? '<div class="evo-card-socket"><span class="ecs-ico">' +
+            (SLOT_INFO[form.socket.type] ? SLOT_INFO[form.socket.type].icon : '◆') +
+          '</span> New <b>' + (form.socket.label || 'special') + '</b> socket</div>'
+        : '';
+      return '<button class="evo-card" data-idx="' + i + '" style="--acc:' + acc + '">' +
+          '<div class="evo-card-tag">' + (form.tagline || '') + '</div>' +
+          '<div class="evo-card-port">' + evoFormImg(form, m) +
+            '<span class="evo-card-glow"></span></div>' +
+          '<div class="evo-card-name">' + form.name + '</div>' +
+          '<div class="evo-card-stats">' +
+            '<span class="ecs-hp">+' + hp + ' Max HP</span>' + socket +
+          '</div>' +
+          '<div class="evo-card-passive">' +
+            '<span class="ecp-name">✦ ' + (p.name || '') + '</span>' +
+            '<span class="ecp-text">' + (p.text || '') + '</span>' +
+          '</div>' +
+          '<span class="evo-card-pick">Choose ' + form.name + '</span>' +
+        '</button>';
+    }).join('<div class="evo-or">OR</div>');
+
+    host.className = 'evo-stage evo-phase-choose';
+    host.innerHTML =
+      '<div class="evo-burst-bg"></div>' +
+      '<div class="evo-choose">' +
+        '<div class="evo-banner">' +
+          '<span class="evo-banner-spark">✦</span>' +
+          '<h1 class="evo-title">' + m.name + ' is <em>EVOLVING!</em></h1>' +
+          '<p class="evo-sub">Choose the path your power will take — this cannot be undone.</p>' +
+        '</div>' +
+        '<div class="evo-cards">' + cards + '</div>' +
+      '</div>';
+
+    host.querySelectorAll('.evo-card').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        chooseEvoForm(m, forms[idx], tier);
+      });
+    });
+    show('screen-evolve');
+    SFX.reward();
+  }
+
+  function applyEvoForm(m, form, tier) {
+    const hp = form.hp || 20;
+    m.maxHp += hp;
+    m.hp = Math.min(m.maxHp, m.hp + hp);
+    if (form.passive) m.evoPassives.push({ id: form.passive.id, name: form.passive.name, text: form.passive.text });
+    m.evoChoices.push(form.id);
+    m.name = form.name;
+    m.evoFormImg = form.img || m.evoFormImg || null;   // remembered for when art lands
+    let socketAdded = null;
+    if (tier === 1 && form.socket && m.sockets < 6) {
+      if (!m.slotTypes) m.slotTypes = [];
+      while (m.slotTypes.length < m.sockets) m.slotTypes.push('normal');
+      const idx = form.socket.after < 0 ? m.sockets : Math.min(m.sockets, form.socket.after + 1);
+      m.sockets += 1;
+      m.slotTypes.splice(idx, 0, form.socket.type);
+      socketAdded = { index: idx, label: form.socket.label, type: form.socket.type };
+    }
+    m.evolveLevel = (m.evolveLevel || 0) + 1;
+    return socketAdded;
+  }
+
+  // The transformation cinematic: old portrait flares white, shakes, and
+  // explodes into the chosen form, which lands in a burst of its accent color.
+  function chooseEvoForm(m, form, tier) {
+    const host = $('evolve-stage');
+    const acc = evoAccent(form);
+    const oldImg = m.img
+      ? '<img class="evo-morph-img" src="' + m.img + '" alt="">'
+      : '<span class="evo-morph-emoji">' + (m.emoji || '✦') + '</span>';
+    const newImg = evoFormImg(form, m, 'evo-morph-img');
+    const p = form.passive || {};
+
+    host.className = 'evo-stage evo-phase-morph';
+    host.style.setProperty('--acc', acc);
+    host.innerHTML =
+      '<div class="evo-burst-bg morphing"></div>' +
+      '<div class="evo-rays"></div>' +
+      '<div class="evo-morph">' +
+        '<div class="evo-morph-old">' + oldImg + '</div>' +
+        '<div class="evo-morph-new">' + newImg + '</div>' +
+        '<div class="evo-flash"></div>' +
+        '<div class="evo-shock"></div>' +
+      '</div>' +
+      '<div class="evo-reveal">' +
+        '<h1 class="evo-reveal-name">' + form.name + '</h1>' +
+        '<div class="evo-reveal-passive"><span class="erp-name">✦ ' + (p.name || '') + '</span>' +
+          '<span class="erp-text">' + (p.text || '') + '</span></div>' +
+        '<button id="evo-continue" class="evo-continue">Continue</button>' +
+      '</div>';
+
+    // sound + haptic-feel timing for the explosion
+    setTimeout(() => { if (SFX && SFX.reward) SFX.reward(); }, 1500);
+
+    const finish = () => {
+      const socketAdded = applyEvoForm(m, form, tier);
+      updateRunUI();
+      if (socketAdded) {
+        // show the freshly granted socket on the way out
+        show(pendingEvoReturn);
+        setTimeout(() => showSocketModal({ mode: 'gain', count: 1, indices: [socketAdded.index] }), 120);
+      } else {
+        show(pendingEvoReturn);
+      }
+    };
+    const btn = $('evo-continue');
+    if (btn) btn.addEventListener('click', finish);
   }
 
   const BLESS_ICON = { recall: '↺', emberward: '🜂', overload: '🜳', emberstorm: '⚝' };
@@ -2704,8 +2878,22 @@
       SFX.reward();
       spendSouls(opts.price);
       opts.onBuy(c);
-      c.classList.add('sold');
-      c.querySelector('.sc-price').innerHTML = 'Sold';
+      const priceEl = c.querySelector('.sc-price');
+      if (opts.repeat) {
+        // repeatable purchase (secret-shop stackables): stays buyable, with a
+        // running tally, until it actually caps out (e.g. inventory full).
+        c._bought = (c._bought || 0) + 1;
+        c.classList.add('bought');
+        c.classList.remove('just-bought'); void c.offsetWidth; c.classList.add('just-bought');
+        if (opts.canBuy && !opts.canBuy()) {
+          c.classList.add('sold'); priceEl.innerHTML = 'Full';
+        } else {
+          priceEl.innerHTML = '✓ \u00D7' + c._bought;
+        }
+      } else {
+        c.classList.add('sold');
+        priceEl.innerHTML = 'Sold';
+      }
       // re-evaluate affordability of every other card
       $('shop-grid').querySelectorAll('.shop-card').forEach(x => {
         if (!x.classList.contains('sold')) x.classList.toggle('cant-afford', State.souls < (+x.dataset.price || 0));
@@ -2847,7 +3035,7 @@
     d.innerHTML =
       '<div class="dd-inner dd-empty">' +
         '<span class="dd-empty-rune">❖</span>' +
-        '<span class="dd-empty-text">Hover a glyph<br>to inspect it</span>' +
+        '<span class="dd-empty-text">Hover over a Glyph or Socket<br>to Inspect it</span>' +
       '</div>';
   }
 
@@ -2915,14 +3103,17 @@
     const passiveFull = m.passiveText || '';
     const ci = passiveFull.indexOf(':');
     const passiveName = ci > 0 ? passiveFull.slice(0, ci).trim() : (m.passive || '');
-    const passiveDesc = ci > 0 ? passiveFull.slice(ci + 1).trim() : passiveFull;
-    // beast-select style passive box (instead of the small combat emblem)
-    const passiveHTML = passiveName
-      ? '<div class="bc-feature bc-passive cs-passive-box">' +
-          '<span class="bcf-badge">✦</span>' +
-          '<span class="bcf-text"><b>' + passiveName + '</b>' + passiveDesc + '</span>' +
-        '</div>'
-      : '';
+    let passiveDesc = ci > 0 ? passiveFull.slice(ci + 1).trim() : passiveFull;
+    if (passiveDesc) passiveDesc = passiveDesc.charAt(0).toUpperCase() + passiveDesc.slice(1);
+    // beast-select style passive box (instead of the small combat emblem).
+    // Evolutions stack additional passives on top of the base one.
+    const passiveBox = (nm, desc) =>
+      '<div class="bc-feature bc-passive cs-passive-box">' +
+        '<span class="bcf-badge">✦</span>' +
+        '<span class="bcf-text"><b>' + nm + '</b>' + (desc || '') + '</span>' +
+      '</div>';
+    let passiveHTML = passiveName ? passiveBox(passiveName, passiveDesc) : '';
+    (m.evoPassives || []).forEach(p => { passiveHTML += passiveBox(p.name, p.text); });
     const ratio = Math.max(0, Math.min(1, m.hp / m.maxHp));
     const C = 2 * Math.PI * 66;
     host.innerHTML =
@@ -2972,14 +3163,23 @@
       const st = stacks[i];
       const it = ITEMS[st.id];
       if (!it) continue;
-      const slot = el('div', 'cs-item-slot filled rarity-' + (it.rarity || 'common') + (it.img ? ' has-img' : ''));
+      // out-of-combat consumables can be used right here; combat-only ones can't
+      const usable = !it.combatOnly;
+      const slot = el('div', 'cs-item-slot filled rarity-' + (it.rarity || 'common') + (it.img ? ' has-img' : '') + (usable ? ' cs-item-usable' : ''));
       slot.innerHTML =
         itemArtHTML(it) +
         (st.count > 1 ? '<span class="item-count">' + st.count + '</span>' : '') +
         '<span class="hud-tip"><b>' + it.name + '</b>' + (st.count > 1 ? ' <span class="it-x">×' + st.count + '</span>' : '') +
           '<br>' + it.desc +
-          (it.combatOnly ? '<br><i class="item-hint">Combat only</i>' : '') + '</span>';
+          (it.combatOnly ? '<br><i class="item-hint">Combat only</i>' : '<br><i class="item-hint">Click to use</i>') + '</span>';
       slot.addEventListener('mouseenter', () => SFX.hover());
+      if (usable) {
+        slot.addEventListener('click', () => {
+          useStack(st.id, slot);
+          // refresh HP ring, item counts, and any blessing the tomes just granted
+          buildCollection();
+        });
+      }
       row.appendChild(slot);
     }
   }
@@ -3527,18 +3727,23 @@
     if (head) head.textContent = 'Secret Shop';
     if (sub) sub.textContent = 'Everything is free, forger. Take what you need.';
 
-    // every glyph the chosen hero can wield (their own + neutral)
-    eligibleGlyphs().forEach(g => {
+    // every glyph the chosen hero can wield — their own, neutral, AND the
+    // colorless Soul-glyphs, INCLUDING still-locked ones (this is the debug
+    // "take anything" shop). Repeatable, so you can stack copies into a deck.
+    Object.values(GLYPHS)
+      .filter(g => !g.junk && !g.token && (!g.character || g.character === am.id))
+      .forEach(g => {
       grid.appendChild(shopCard({
         kind: 'Glyph', name: g.name, color: 'var(--' + g.color + ')',
         art: '<div class="sc-art">' + glyphArtHTML(g) + '</div>', chip: letterChipHTML(g),
-        desc: DATA.formatDesc(g, metaEnv(g.id)), price: 0,
+        desc: DATA.formatDesc(g, metaEnv(g.id)), price: 0, repeat: true,
         onBuy: () => { State.pool.push(g.id); }
       }));
     });
 
-    // every blessing (basic + power + soul)
-    const allBless = Object.values(BLESSINGS).concat(Object.values(POWER_BLESSINGS), Object.values(SOUL_BLESSINGS));
+    // every blessing (basic + power + soul + event)
+    const allBless = Object.values(BLESSINGS)
+      .concat(Object.values(POWER_BLESSINGS), Object.values(SOUL_BLESSINGS), Object.values(EVENT_BLESSINGS));
     const seenBless = {};
     allBless.forEach(b => {
       if (!b || seenBless[b.id]) return; seenBless[b.id] = 1;
@@ -3550,26 +3755,33 @@
       }));
     });
 
-    // every consumable item
+    // every consumable item — stackable, so keep them buyable until they cap
     Object.values(ITEMS).forEach(it => {
       grid.appendChild(shopCard({
         kind: 'Item', icon: it.icon, name: it.name, color: 'var(--gold)',
         art: '<div class="sc-icon' + (it.img ? ' has-img' : '') + '" style="color:var(--gold)">' + itemArtHTML(it) + '</div>',
-        desc: it.desc, price: 0,
+        desc: it.desc, price: 0, repeat: true,
         canBuy: () => canAddItem(it.id),
         onBuy: () => { addItem(it.id); }
       }));
     });
 
-    // a couple of always-useful services, also free
+    // a Soulstone — repeatable, so you can fast-track an evolution (5 = evolve)
+    grid.appendChild(shopCard({
+      kind: 'Soulstone', icon: '\u25C6', name: 'Soulstone', color: 'var(--blue)',
+      desc: 'A shard of raw soul. Gather <b>5</b> to evolve <b>' + am.name + '</b>.', price: 0, repeat: true,
+      onBuy: () => gainSoulstone()
+    }));
+
+    // a couple of always-useful services, also free (repeatable)
     grid.appendChild(shopCard({
       kind: 'Service', icon: '🔥', name: 'Mend Wounds', color: 'var(--red)',
-      desc: 'Heal your active beast (' + am.name + ') for 45% of max HP.', price: 0,
+      desc: 'Heal your active beast (' + am.name + ') for 45% of max HP.', price: 0, repeat: true,
       onBuy: () => healActive(0.45)
     }));
     grid.appendChild(shopCard({
       kind: 'Service', icon: '🜨', name: 'Reforge a Slot', color: 'var(--blue)',
-      desc: 'Add a random special power to a socket.', price: 0,
+      desc: 'Add a random special power to a socket.', price: 0, repeat: true,
       onBuy: () => forgeRandomSlot()
     }));
   }

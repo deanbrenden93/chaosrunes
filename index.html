@@ -188,6 +188,11 @@
         </div>
       </section>
 
+      <!-- ============ EVOLUTION SCREEN (cinematic) ============ -->
+      <section id="screen-evolve" class="screen">
+        <div id="evolve-stage" class="evo-stage"></div>
+      </section>
+
       <!-- ============ REST SCREEN ============ -->
       <section id="screen-rest" class="screen">
         <div class="bg-runes" aria-hidden="true"></div>
@@ -246,17 +251,23 @@
             <aside id="collection-hero" class="cs-hero"><!-- hero panel injected --></aside>
 
             <main class="cs-glyphs">
-              <div class="collection-sec-head"><span class="csh-line"></span><h3>Sockets <em id="collection-socket-count"></em></h3><span class="csh-line"></span></div>
-              <div id="collection-sockets" class="collection-sockets"></div>
-              <div class="collection-sec-head"><span class="csh-line"></span><h3>Glyph Pool <em id="collection-glyph-count"></em></h3><span class="csh-line"></span></div>
-              <div class="cs-pool-row">
-                <div class="cs-glyphs-scroll">
-                  <div id="collection-glyphs" class="collection-glyphs"></div>
+              <section class="cs-panel cs-panel-sockets">
+                <div class="collection-sec-head"><span class="csh-line"></span><h3>Sockets <em id="collection-socket-count"></em></h3><span class="csh-line"></span></div>
+                <div id="collection-sockets" class="collection-sockets"></div>
+              </section>
+              <section class="cs-panel cs-panel-pool">
+                <div class="collection-sec-head"><span class="csh-line"></span><h3>Glyph Pool <em id="collection-glyph-count"></em></h3><span class="csh-line"></span></div>
+                <div class="cs-pool-row">
+                  <div class="cs-glyphs-scroll">
+                    <div id="collection-glyphs" class="collection-glyphs"></div>
+                  </div>
+                  <aside id="deck-detail" class="deck-detail deck-detail-panel"></aside>
                 </div>
-                <aside id="deck-detail" class="deck-detail deck-detail-panel"></aside>
-              </div>
-              <div class="collection-sec-head"><span class="csh-line"></span><h3>Blessings <em id="collection-bless-count"></em></h3><span class="csh-line"></span></div>
-              <div id="collection-blessings" class="collection-blessings-row"></div>
+              </section>
+              <section class="cs-panel cs-panel-bless">
+                <div class="collection-sec-head"><span class="csh-line"></span><h3>Blessings <em id="collection-bless-count"></em></h3><span class="csh-line"></span></div>
+                <div id="collection-blessings" class="collection-blessings-row"></div>
+              </section>
             </main>
           </div>
         </div>

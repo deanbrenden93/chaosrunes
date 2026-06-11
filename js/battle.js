@@ -134,6 +134,8 @@
       playerBurn: 0,      // Burn DoT on you (e.g. a burn glyph played into a cursed slot)
       playerThorns: 0,    // item-granted Thorns: reflect damage to melee attackers this combat
       recallUsed: false,
+      comboCarry: 0,       // Lingering Cadence: combo number carried into next turn
+      comboNow: 0,         // running combo during the active chain (Smoldering Tails)
       resolving: false,
       socketIntro: true,   // first socket render of the battle plays the "runes appear" reveal
       devil: {},           // per-socket Devil state (craving / boon / ignore), keyed by index
@@ -467,12 +469,13 @@
     const ci = passiveFull.indexOf(':');
     const passiveName = ci > 0 ? passiveFull.slice(0, ci).trim() : (m.passive || '');
     const passiveDesc = ci > 0 ? passiveFull.slice(ci + 1).trim() : passiveFull;
-    const passiveHTML = passiveName
-      ? `<div class="pc-passive-badge" tabindex="0">
-           <span class="pcb-icon">✦</span><span class="pcb-name">${passiveName}</span>
-           <span class="hud-tip"><b>${passiveName}</b> ${passiveDesc}</span>
-         </div>`
-      : '';
+    const badge = (nm, desc) =>
+      `<div class="pc-passive-badge" tabindex="0">
+           <span class="pcb-icon">✦</span><span class="pcb-name">${nm}</span>
+           <span class="hud-tip"><b>${nm}</b> ${desc || ''}</span>
+         </div>`;
+    let passiveHTML = passiveName ? badge(passiveName, passiveDesc) : '';
+    (m.evoPassives || []).forEach(p => { passiveHTML += badge(p.name, p.text); });
     pz.innerHTML = `
       <div class="pc-disc-wrap">
         <div class="pc-disc">
@@ -745,6 +748,7 @@
     assignDevilCravings();   // each Devil picks a craved glyph + rolls a boon for this turn
     renderSockets();
     renderHand(true);
+    applyFoxlights();        // turn-start color payoff for the Foxlights form
     refreshAll();
     updateRecallBtn();
     updateActButton();
@@ -1866,6 +1870,11 @@
     B._devilRewards = [];        // boons banked this chain, paid out as their own finale
     B.lastMirrorTarget = null;   // resets each detonation; tracks what Mirrors are echoing
     let comboLen = 0, comboPrev = null, maxCombo = 0, prevComboEl = null;
+    // Lingering Cadence: a combo number carried from last turn seeds the first
+    // fresh chain (the letters reset, but the count keeps climbing).
+    let comboCarry = hasPassive('lingeringCadence') ? (B.comboCarry || 0) : 0;
+    let comboSeeded = false;
+    B.comboNow = 0;
     for (let k = 0; k < runSeq.length; k++) {
       const ev = runSeq[k];
       const slot = ev.slot;
@@ -1888,14 +1897,27 @@
       // repeat copies & loopback replays are EXTRA activations — each one extends
       // the running combo by a step rather than breaking it or counting as one
       const extraAct = !!(ev.repeat2 || ev.replay);
-      if (lt == null) { comboLen = 0; comboPrev = null; }
+      if (lt == null) { comboLen = 0; comboPrev = null; comboCarry = 0; comboSeeded = true; }
       else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; linked = true; }
-      else { comboLen = adv; comboPrev = lt; }
+      else {
+        comboLen = adv;
+        // first fresh combo of the turn inherits the carried count (Lingering Cadence)
+        if (!comboSeeded && comboCarry > 0) { comboLen += comboCarry; comboBonus = comboLen - 1; linked = comboLen > 1; }
+        comboPrev = lt;
+      }
+      comboSeeded = true;
       // Devil "Combo +N" boons stretch the running chain right as the fed glyph fires
       let comboExtend = 0;
       devilFeeds.forEach(ci => { const b = B.devil[ci].bonus; if (b && b.preCombo) comboExtend += b.preCombo; });
       if (comboExtend > 0) { comboLen = Math.max(0, comboLen) + comboExtend; comboBonus = Math.max(comboBonus, comboLen - 1); linked = comboLen > 1; }
+      // Cinderfall: each time the combo climbs to a NEW number, throw that much
+      // Burn at a random foe (a chain to 5 lobs 2 → 3 → 4 → 5).
+      if (comboLen >= 2 && comboLen > maxCombo && hasPassive('cinderfall')) {
+        const ct = targetRandom();
+        if (ct[0]) addBurn(ct[0], comboLen);
+      }
       if (comboLen > maxCombo) maxCombo = comboLen;
+      B.comboNow = comboLen;   // Smoldering Tails reads this on every hit it lands
       if (linked && comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
       prevComboEl = (lt == null) ? null : sEl;
 
@@ -2001,6 +2023,10 @@
     // big payoff for a long alphabet chain
     if (maxCombo >= 3) { comboFinale(maxCombo); await wait(260); }
     hideComboMeter();
+    B.comboNow = 0;
+    // Lingering Cadence: the standing combo number rides into next turn (a turn
+    // that played nothing leaves the carry untouched).
+    if (hasPassive('lingeringCadence') && runSeq.length > 0) B.comboCarry = comboLen;
 
     // the Devil's fed boons take the stage where the combo number just was
     await resolveDevilRewards();
@@ -2008,6 +2034,12 @@
 
     // glyphs left unplayed in hand fire their lingering "end of turn" effects
     if (alive().length > 0) await processUnplayed();
+
+    // Will-o'-Wisps: every glyph still in hand (junk included) flits out and
+    // strikes a random foe for the highest combo reached this turn.
+    if (alive().length > 0 && maxCombo > 0 && hasPassive('willOWisps')) {
+      await willOWisps(maxCombo);
+    }
 
     // a fed Devil cools off; an ignored (but craving) one grows hungrier
     finalizeDevils();
@@ -2090,6 +2122,17 @@
   }
   // Gathering Tails: each glyph's main effect +1 per glyph already played
   function gather(ctx) { return B.monster.passive === 'gatheringTails' ? ctx.chainPos : 0; }
+  // does the active beast carry this passive — its base one OR any stacked from
+  // an evolution (e.g. Inferna holds Gathering Tails + Smoldering + Conflagration)
+  function hasPassive(id) {
+    const m = B.monster;
+    if (!m) return false;
+    if (m.passive === id) return true;
+    return !!(m.evoPassives && m.evoPassives.some(p => p && p.id === id));
+  }
+  // Lingering Cadence: the combo count carried into THIS turn (seeds the first
+  // fresh chain in both the live walk and every forecast/preview projection).
+  function lingerCarry() { return hasPassive('lingeringCadence') ? (B.comboCarry || 0) : 0; }
   // Ember Ward / Emberstorm bonuses keyed off red glyphs
   function emberBonusAmt() {
     const bl = root.CG.Game.state.blessings;
@@ -2123,13 +2166,13 @@
   }
   // trailing alphabet-combo state across the glyphs already socketed, in order
   function placedComboTail() {
-    let prev = null, len = 0;
+    let prev = null, len = 0, carry = lingerCarry(), seeded = false;
     for (let i = 0; i < B.sockets.length; i++) {
       if (B.spanHead[i] != null || !B.sockets[i]) continue;
       const lt = comboLetter(B.sockets[i]);
-      if (lt == null) { len = 0; prev = null; }
-      else if (comboLinks(prev, lt)) { len += 1; prev = lt; }
-      else { len = 1; prev = lt; }
+      if (lt == null) { len = 0; prev = null; carry = 0; seeded = true; }
+      else if (comboLinks(prev, lt)) { len += 1; prev = lt; seeded = true; }
+      else { len = 1; if (!seeded && carry > 0) len += carry; prev = lt; seeded = true; }
     }
     return { prev: prev, len: len };
   }
@@ -2160,21 +2203,26 @@
       shield: B.playerShield, resilience: B.resilience, frail: B.playerFrail > 0,
       strength: effStrength(), pos: 0, prev: null, len: 0
     };
+    let carry = lingerCarry(), seeded = false;
     for (let i = 0; i < B.sockets.length; i++) {
       if (B.spanHead[i] != null || !B.sockets[i]) continue;
       if (i === targetSlot) break;
       const id = B.sockets[i];
       const lt = comboLetter(id);
       const adv = comboAdv(id);
-      const combo = (lt != null && comboLinks(sim.prev, lt)) ? (sim.len + (adv - 1)) : 0;
+      // the first fresh letter of the turn inherits the carried combo count
+      let combo;
+      if (lt != null && comboLinks(sim.prev, lt)) combo = sim.len + (adv - 1);
+      else if (lt != null && !seeded && carry > 0) combo = carry + (adv - 1);
+      else combo = 0;
       const gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
       const gt = gather + combo + (glyph(id).cloneEmpower || 0) + empowerOf(id);
       // cursed slots still grant you the shield (it just also feeds the caster), so always bank it
       sim.shield += simShieldGain(id, gt, sim);
       if (baseOf(id) === 'fortify' || baseOf(id) === 'unbreakable') sim.resilience += 1 + (gt - gather);
-      if (lt == null) { sim.len = 0; sim.prev = null; }
-      else if (comboLinks(sim.prev, lt)) { sim.len += adv; sim.prev = lt; }
-      else { sim.len = adv; sim.prev = lt; }
+      if (lt == null) { sim.len = 0; sim.prev = null; carry = 0; seeded = true; }
+      else if (comboLinks(sim.prev, lt)) { sim.len += adv; sim.prev = lt; seeded = true; }
+      else { sim.len = adv; if (!seeded && carry > 0) sim.len += carry; sim.prev = lt; seeded = true; }
       sim.pos += 1;
     }
     return sim;
@@ -2223,10 +2271,16 @@
   // env for a hand card if it were played NEXT (appended after the placed chain)
   function handEnv(id) {
     const sim = projectStateBefore(-1);
-    const linked = comboLinks(sim.prev, comboLetter(id));
+    const lt = comboLetter(id);
+    const linked = comboLinks(sim.prev, lt);
     const e = envFromSim(sim);
     e.gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
     e.comboBonus = linked ? (sim.len + (comboAdv(id) - 1)) : 0;
+    // Lingering Cadence: a card played first onto an empty board inherits the carry
+    if (!linked && lt != null && placedHeadCount() === 0) {
+      const carry = lingerCarry();
+      if (carry > 0) e.comboBonus = carry + (comboAdv(id) - 1);
+    }
     // if the last placed glyph sits in Empower slot(s), a card played next is "after" them
     const order = placedOrder();
     if (order.length) e.comboBonus += empowerCountAt(order[order.length - 1]);
@@ -2243,7 +2297,13 @@
     const linked = comboLinks(sim.prev, lt);
     const e = envFromSim(sim);
     e.gather = (B.monster.passive === 'gatheringTails') ? sim.pos : 0;
-    e.comboBonus = ((lt == null) ? 0 : (linked ? (sim.len + (comboAdv(id) - 1)) : 0)) + empowerBonusForSlot(slotIndex);
+    let cb = (lt == null) ? 0 : (linked ? (sim.len + (comboAdv(id) - 1)) : 0);
+    // Lingering Cadence: if this is the chain's first fresh letter, fold in the carry
+    if (!linked && lt != null && placedOrder().indexOf(slotIndex) === 0) {
+      const carry = lingerCarry();
+      if (carry > 0) cb = carry + (comboAdv(id) - 1);
+    }
+    e.comboBonus = cb + empowerBonusForSlot(slotIndex);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
     e.ramp = rampOf(id);
     return e;
@@ -2350,6 +2410,9 @@
       handFx: []   // end-of-turn effects from glyphs left in hand, with sources
     };
 
+    T._comboNow = 0;                                    // running combo for Smoldering Tails
+    const smolderActive = hasPassive('smolderingTails');
+
     const A = () => T.foes.filter(f => f.alive);
     const tFirst = () => A()[0] || null;
     const tAll = A;
@@ -2379,6 +2442,8 @@
           T.rndDmg += amt; T.rndSwings++; T.approx = true;
           // every foe alive right now is in this strike's pool
           pool.forEach(f => { f.pdmg += amt; });
+          // Smoldering Tails: the hit (wherever it lands) also lays combo Burn
+          if (smolderActive && (T._comboNow || 0) > 0) fcBurn('random', T._comboNow);
           return amt;
         }
       }
@@ -2395,6 +2460,8 @@
       t.dmg += amt;
       if (t.hp <= 0) t.alive = false;
       else if (t.ref.base && t.ref.base.thorns > 0 && amt > 0 && !opts.noThorns) fcSelf(t.ref.base.thorns);
+      // Smoldering Tails: every genuine hit also lays Burn equal to the current combo
+      if (smolderActive && t.alive && (T._comboNow || 0) > 0) fcBurn(t, T._comboNow);
       return amt;
     }
     // damage recoiling onto the beast (curse mirror, thorns, blood magic)
@@ -2426,6 +2493,7 @@
     function fcHeal(n) { if (n > 0) T.heal += n; }
     function fcBurn(t, n) {
       if (n <= 0) return;
+      if (hasPassive('conflagration')) n *= 2;   // Conflagration: Burn applications doubled
       if (stepCursed && !stepBurnMirrored) { stepBurnMirrored = true; T.playerBurn += n; }
       if (t === 'random') {
         const pool = A();
@@ -2668,16 +2736,25 @@
 
     // ---- the walk: combo + catalysts + slot side-effects, in chain order ----
     let prevId = null, chainPos = 0, pendingCat = [];
-    let comboLen = 0, comboPrev = null;
+    let comboLen = 0, comboPrev = null, fcMax = 0;
+    let carry = lingerCarry(), seeded = false;   // Lingering Cadence seed
     for (let k = 0; k < seq.length; k++) {
       const ev = seq[k];
       const lt = comboLetter(ev.id), adv = comboAdv(ev.id);
       let comboBonus = 0;
       // repeat/loop extra activations extend the combo (mirror of the live walk)
       const extraAct = !!(ev.repeat2 || ev.replay);
-      if (lt == null) { comboLen = 0; comboPrev = null; }
-      else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; }
-      else { comboLen = adv; comboPrev = lt; }
+      if (lt == null) { comboLen = 0; comboPrev = null; carry = 0; seeded = true; }
+      else if (comboLinks(comboPrev, lt) || (extraAct && comboLen > 0)) { comboLen += adv; comboBonus = comboLen - 1; comboPrev = lt; seeded = true; }
+      else {
+        comboLen = adv;
+        if (!seeded && carry > 0) { comboLen += carry; comboBonus = comboLen - 1; }
+        comboPrev = lt; seeded = true;
+      }
+      // Cinderfall: each climb to a new combo height throws that much Burn at a random foe
+      const newHeight = comboLen >= 2 && comboLen > fcMax;
+      if (comboLen > fcMax) fcMax = comboLen;
+      T._comboNow = comboLen;
       // catalysts sown by the previous glyph infuse this one
       stepCursed = false;
       for (const col of pendingCat) {
@@ -2688,6 +2765,7 @@
       pendingCat = [];
       stepCursed = (ev.covered || []).some(ci => slotCursed(ci));
       stepBurnMirrored = false;
+      if (newHeight && hasPassive('cinderfall')) fcBurn('random', comboLen);
       fcResolve(ev.id, {
         chainPos, prevId, redAfter: redSuffix[k + 1], totalRed, counts,
         comboBonus: comboBonus + empB[k],
@@ -2708,6 +2786,7 @@
     // tracked with their source name so the panel can say WHY
     if (A().length) {
       stepCursed = false;
+      T._comboNow = 0;   // the chain's over — leftover-hand hits carry no combo
       let skippedExtra = false;
       const agg = {};
       B.hand.forEach(id => {
@@ -2722,6 +2801,19 @@
         agg[k].n++; agg[k].amt += amt;
       });
       T.handFx = Object.values(agg);
+
+      // Will-o'-Wisps: every glyph still in hand (junk included) flits out and
+      // strikes a random foe for the highest combo reached this turn.
+      if (hasPassive('willOWisps') && fcMax > 0) {
+        let wisps = 0, skipW = false;
+        B.hand.forEach(id => {
+          if (extraId && id === extraId && !skipW) { skipW = true; return; }
+          if (!A().length) return;
+          fcVolley(['random'], fcMax, { strength: false, scare: false });
+          wisps++;
+        });
+        if (wisps > 0) T.handFx.push({ name: 'Will-o\u2019-Wisps', kind: 'damageRandom', n: wisps, amt: fcMax });
+      }
     }
     return T;
   }
@@ -3591,6 +3683,7 @@
   // apply Burn to one enemy with the standard themed float + flash
   function addBurn(en, n) {
     if (!en || !en.alive || n <= 0) return;
+    if (hasPassive('conflagration')) n *= 2;   // Conflagration: every Burn you lay is doubled
     en.burn = (en.burn || 0) + n;
     floatText(offset(center(en.dom), 0, -60), 'Burn ' + en.burn, 'status');
     burnApplyFx(en.dom);
@@ -3724,6 +3817,11 @@
       // THORNS: a genuine strike (not a burn/leech tick) lashes back, per hit —
       // so dumping multi-hit glyphs into it hurts. Skipped if the blow killed it.
       thornsRecoil(en);
+    }
+    // Smoldering Tails: every genuine hit lays Burn equal to the current combo
+    // (per hit — a multi-hit glyph at combo 3 lays 3 Burn each strike).
+    if (en.alive && !opts.noFloat && (B.comboNow || 0) > 0 && hasPassive('smolderingTails')) {
+      addBurn(en, B.comboNow);
     }
     return dealt;
   }
@@ -4285,6 +4383,61 @@
     }
   }
 
+  // Will-o'-Wisps (Tricktail line): at end of turn each glyph still in hand fires
+  // a spectral bolt at a random foe for `dmg` (the turn's highest combo).
+  async function willOWisps(dmg) {
+    const cards = B.hand.slice();
+    if (!cards.length) return;
+    floatText(offset(center(playerArt()), 0, -96), '✦ Will-o\u2019-Wisps ✦', 'status');
+    for (let i = 0; i < cards.length; i++) {
+      const t = targetRandom();
+      if (!t.length) break;
+      await hitTargets(t, dmg, playerPos(), 'var(--purple)', { strength: false, scare: false });
+      if (alive().length === 0) break;
+    }
+    refreshAll();
+  }
+
+  // Foxlights (Tricktail line): at turn start each glyph in hand flickers by its
+  // color into a small payoff — red strikes, blue shields, green heals, colorless
+  // rolls one of the three.
+  function applyFoxlights() {
+    if (!hasPassive('foxlights')) return;
+    const cards = B.hand.slice();
+    if (!cards.length) return;
+    let healAcc = 0, blueCount = 0;
+    const roll = ['red', 'blue', 'green'];
+    cards.forEach(id => {
+      let col = glyph(id).color;
+      if (col !== 'red' && col !== 'blue' && col !== 'green') col = roll[Math.floor(Math.random() * 3)];
+      if (col === 'red') {
+        const t = targetRandom();
+        if (t[0]) applyDamage(t[0], 1, { scare: false });   // 1 (+Strength), random foe
+      } else if (col === 'blue') {
+        blueCount += 1;                                       // each blue: 1 (+Resilience) shield
+      } else if (col === 'green') {
+        healAcc += Math.max(1, Math.round(B.monster.maxHp * 0.05));
+      }
+    });
+    if (blueCount > 0) {
+      let a = blueCount * (1 + (B.resilience || 0));
+      if (B.playerFrail > 0) a = Math.floor(a * 0.5);
+      if (a > 0) {
+        B.playerShield += a;
+        setShieldPip($('player-monster'), B.playerShield);
+        floatText(offset(center(playerArt()), 0, -120), '+' + a + '◆', 'shield');
+        shieldGainFx(playerArt());
+      }
+    }
+    if (healAcc > 0) {
+      B.monster.hp = Math.min(B.monster.maxHp, B.monster.hp + healAcc);
+      setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
+      floatText(offset(center(playerArt()), -10, -78), '+' + healAcc, 'heal');
+    }
+    floatText(offset(center(playerArt()), 0, -100), '✦ Foxlights ✦', 'status');
+    refreshAll();
+  }
+
   // CLONE: stamp an empowered copy of the glyph into your next hand (one-shot).
   function queueClone(id, sEl) {
     const base = glyph(id);
@@ -4340,7 +4493,8 @@
         floatText(offset(center(en.dom), 0, -70), '🔥' + n, 'dmg');
         burnTickFx(en.dom);
         applyDamage(en, n, { strength: false, noFloat: true });
-        en.burn = Math.max(0, n - 1);
+        // Conflagration: the fire never burns down — full stack rages every turn
+        en.burn = hasPassive('conflagration') ? n : Math.max(0, n - 1);
         await wait(220);
       }
       if (en.alive && en.leech > 0) {
@@ -4747,6 +4901,7 @@
     if (root.CG.Game.state.blessings.rawmuscle) B.strength += 3;
     if (root.CG.Game.state.blessings.blackfeather) B.resilience += 3;
     B.carryShield = 0; B.playerBurn = 0;
+    B.comboCarry = 0; B.comboNow = 0;
     // adopt the incoming beast's socket layout; clear any held/cloned carry-over
     B.slotTypes = Array.from({ length: B.monster.sockets }, (_, i) => (B.monster.slotTypes && B.monster.slotTypes[i]) || 'normal');
     B.extras = []; B.injected = []; B.tempGlyphs = {}; B.lastTurnPlays = [];
