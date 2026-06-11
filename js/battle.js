@@ -2321,9 +2321,13 @@
     return sim;
   }
   function envFromSim(sim) {
+    // Iron Wall: re-derive the +Strength from the shield this glyph will SEE when
+    // it resolves (sim.strength banked the start-of-chain bonus; swap in the live one)
+    const ironAdj = hasPassive('ironwall')
+      ? Math.floor((sim.shield || 0) / 10) - ironWallStrength() : 0;
     return {
       gather: 0, comboBonus: 0, cloneEmpower: 0, chainPos: sim.pos,
-      strength: sim.strength, weak: B.playerWeak > 0,
+      strength: sim.strength + ironAdj, weak: B.playerWeak > 0,
       shield: sim.shield, resilience: sim.resilience, frail: sim.frail,
       devoured: (B.monster && B.monster.devoured) || 0,
       ember: emberBonusAmt()
@@ -2499,7 +2503,15 @@
       rndDmg: 0, rndSwings: 0,
       shield: B.playerShield, shieldGain: 0,
       heal: 0, selfLoss: 0, playerBurn: 0,
-      strength: effStrength(), strGain: 0,
+      // base strength WITHOUT the Iron Wall bonus — curStr() folds that in live so
+      // it grows as the projected shield climbs during the chain
+      strength: B.strength + (B.turnStrength || 0), strGain: 0,
+      // Charge Attack pool: any hoard carried in (Eternal Charge) plus this chain
+      charge: {
+        dmg: (B.charge && B.charge.dmg) || 0, weak: (B.charge && B.charge.weak) || 0,
+        scare: (B.charge && B.charge.scare) || 0, burn: (B.charge && B.charge.burn) || 0
+      },
+      chargeFired: null, _hits: 0,
       resilience: B.resilience, resGain: 0,
       frail: B.playerFrail > 0, weak: B.playerWeak > 0,
       burnTotal: 0, scareTotal: 0, leechTotal: 0,
@@ -2525,6 +2537,17 @@
       T.foes.forEach(o => { if (o.alive && o !== t && o.ref.base && o.ref.base.ward > 0) w = Math.max(w, o.ref.base.ward); });
       return w;
     };
+    // current player Strength inside the forecast — Iron Wall (Iron Golem) adds
+    // +1 per 10 of the PROJECTED shield, so it climbs as the chain banks block
+    function curStr() {
+      return T.strength + (hasPassive('ironwall') ? Math.floor((T.shield || 0) / 10) : 0);
+    }
+    // a genuine landed hit feeds the Goblin engines exactly as live applyDamage does
+    function fcTickEngines(amt, opts) {
+      if (amt <= 0 || opts.charge) return;
+      T._hits++;                                            // Berserk Frenzy: combo per tick
+      if (hasPassive('overcharge')) T.charge.dmg++;         // Overcharge: a Damage Charge per tick
+    }
     // one strike against one foe — mirrors applyDamage's math exactly
     function fcHit(t, base, opts) {
       opts = opts || {};
@@ -2536,18 +2559,19 @@
         // a lone survivor makes "random" a sure thing — resolve it exactly
         if (pool.length === 1) t = pool[0];
         else {
-          const amt = Math.max(0, Math.round(dmg + (opts.strength === false ? 0 : T.strength)));
+          const amt = Math.max(0, Math.round(dmg + (opts.strength === false ? 0 : curStr())));
           T.rndDmg += amt; T.rndSwings++; T.approx = true;
           // every foe alive right now is in this strike's pool
           pool.forEach(f => { f.pdmg += amt; });
           // Smoldering Tails: the hit (wherever it lands) also lays combo Burn
           if (smolderActive && (T._comboNow || 0) > 0) fcBurn('random', T._comboNow);
+          fcTickEngines(amt, opts);
           return amt;
         }
       }
       if (!t || !t.alive) return 0;
       let amt = dmg;
-      if (opts.strength !== false) amt += T.strength;
+      if (opts.strength !== false) amt += curStr();
       if (opts.scare !== false) amt += (t.scare || 0);
       amt = Math.max(0, Math.round(amt));
       const ward = fcWardOf(t);
@@ -2556,6 +2580,7 @@
       t.shield -= absorbed;
       t.hp = Math.max(0, t.hp - (amt - absorbed));
       t.dmg += amt;
+      fcTickEngines(amt, opts);
       if (t.hp <= 0) t.alive = false;
       else if (t.ref.base && t.ref.base.thorns > 0 && amt > 0 && !opts.noThorns) fcSelf(t.ref.base.thorns);
       // Smoldering Tails: every genuine hit also lays Burn equal to the current combo
@@ -2715,7 +2740,7 @@
         case 'bastion': fcShield(10 + gt); break;
         case 'titans_smash': fcVolley([tFirst()], 9 + Math.floor(T.shield / 3) + gt + E); break;
         case 'unbreakable': fcRes(1 + Math.round(gtx)); break;
-        case 'reckoning': fcVolley(tAll(), 2 * T.strength + gt + E, { strength: false }); break;
+        case 'reckoning': fcVolley(tAll(), 2 * curStr() + gt + E, { strength: false }); break;
         case 'mountains_wrath': fcVolley([tFirst()], T.shield * 2 + gt + E); break;
         case 'aftershock': {
           const volleys = Math.max(1, ctx.blueCount || 0);
@@ -2872,12 +2897,20 @@
       stepCursed = (ev.covered || []).some(ci => slotCursed(ci));
       stepBurnMirrored = false;
       if (newHeight && hasPassive('cinderfall')) fcBurn('random', comboLen);
+      T._hits = 0;   // Berserk Frenzy counts only THIS glyph's hits
       fcResolve(ev.id, {
         chainPos, prevId, redAfter: redSuffix[k + 1], totalRed, counts,
         comboBonus: comboBonus + empB[k],
         isFirst: chainPos === 0, isLast: k === lastGenuineIdx,
         blueCount, handLeft
       });
+      // Berserk Frenzy (Berserk Colossus): a multi-hit's extra ticks raise the
+      // running combo for everything that follows (mirror of the live walk)
+      if (hasPassive('berserkfrenzy') && T._hits > 1) {
+        comboLen += (T._hits - 1);
+        if (comboLen > fcMax) fcMax = comboLen;
+        T._comboNow = comboLen;
+      }
       if (!ev.replay && !ev.repeat2) {
         const g = glyph(ev.id);
         if (ev.cloneCount && !g.junk) T.clones += ev.cloneCount;
@@ -2886,6 +2919,13 @@
       }
       prevId = ev.id; chainPos++;
       if (!A().length) break;
+    }
+
+    // Charge Attack (Troll line): the assembled Damage Charges erupt as one AOE
+    // across the whole enemy line — guaranteed damage, folded into each foe's total
+    if ((T.charge.dmg || 0) > 0 && A().length) {
+      T.chargeFired = { dmg: T.charge.dmg };
+      A().forEach(f => fcHit(f, T.charge.dmg, { strength: false, charge: true }));
     }
 
     // glyphs that would stay in hand fire their end-of-turn effects too —
@@ -2971,6 +3011,7 @@
     const rows = [];
     if (dmgAll > 0) rows.push(fcRow('dmg', '⚔', (sim.approx ? '~' : '') + dmgAll, 'damage'));
     if (sim.rndDmg > 0) rows.push(fcRow('rnd', '🎲', sim.rndDmg, 'random damage, ' + sim.rndSwings + ' hit' + (sim.rndSwings === 1 ? '' : 's')));
+    if (sim.chargeFired && sim.chargeFired.dmg > 0) rows.push(fcRow('charge', '⚡', sim.chargeFired.dmg, 'Charge Attack · every foe'));
     if (lethal > 0) rows.push(fcRow('lethal', '💀', lethal, lethal === 1 ? 'killing blow' : 'killing blows'));
     if (sim.shieldGain > 0) rows.push(fcRow('shield', '◆', sim.shieldGain, 'block'));
     if (sim.heal > 0) rows.push(fcRow('heal', '♥', sim.heal, 'healing'));

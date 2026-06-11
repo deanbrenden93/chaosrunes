@@ -3978,6 +3978,7 @@ html, body {
 .chain-forecast .fc-lab { font-size: 23px; color: var(--text-dim); }
 .chain-forecast .fc-row.dmg .fc-val    { color: #ff9c82; }
 .chain-forecast .fc-row.rnd .fc-val    { color: #ffc06a; }
+.chain-forecast .fc-row.charge .fc-val { color: #ffd24a; }
 .chain-forecast .fc-row.lethal .fc-val { color: #ffe08a; }
 .chain-forecast .fc-row.shield .fc-val { color: #8fd4ff; }
 .chain-forecast .fc-row.heal .fc-val   { color: #8ef58a; }
