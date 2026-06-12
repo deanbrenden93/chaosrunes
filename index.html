@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=20260612e" />
+  <link rel="stylesheet" href="css/styles.css?v=20260612j" />
 </head>
 <body>
   <!-- ============ BOOT LOADING SCREEN (covers everything until assets are warm) ============ -->
@@ -35,9 +35,44 @@
           <nav class="home-menu">
             <button id="btn-new-game" class="btn home-btn home-btn-primary">New Game</button>
             <button id="btn-continue" class="btn home-btn" disabled>Continue</button>
+            <button id="btn-lost-woods" class="btn home-btn">Lost Woods</button>
             <button id="btn-options" class="btn home-btn">Options</button>
             <button id="btn-exit" class="btn home-btn">Exit</button>
           </nav>
+        </div>
+      </section>
+
+      <!-- ============ MODE SELECT (New Game → Classic / Descension) ============ -->
+      <section id="screen-mode" class="screen">
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="mode-inner">
+          <header class="choose-banner">
+            <h2 class="choose-head">Choose Your Path</h2>
+            <p class="choose-sub">Climb the Spire as you know it — or descend into something far worse.</p>
+          </header>
+          <div class="mode-cards">
+            <button id="mode-classic" class="mode-card mode-card-classic">
+              <div class="mode-card-glow" aria-hidden="true"></div>
+              <div class="mode-card-icon">⚔️</div>
+              <h3 class="mode-card-name">Classic</h3>
+              <p class="mode-card-blurb">The Spire of Chaos: three floors, one end-boss. The pure climb.</p>
+              <span class="mode-card-go">Begin the Climb ›</span>
+            </button>
+            <button id="mode-descension" class="mode-card mode-card-descension">
+              <div class="mode-card-glow" aria-hidden="true"></div>
+              <div id="mode-desc-sigil" class="mode-card-sigil">I</div>
+              <div class="mode-card-icon">🕳️</div>
+              <h3 class="mode-card-name">Descension</h3>
+              <p id="mode-desc-depth" class="mode-card-depth">Descent I</p>
+              <p class="mode-card-blurb">Thirteen descents, each crueler than the last. Modifiers stack — and something waits at the bottom.</p>
+              <div id="mode-desc-mods" class="mode-mods"></div>
+              <span class="mode-card-go">Descend ›</span>
+            </button>
+          </div>
+          <div class="mode-actions">
+            <button id="btn-mode-back" class="btn btn-ghost">‹ Back</button>
+            <div class="mode-stones" id="mode-stones" title="Wishing Stones earned across all runs">✦ <span id="mode-stones-val">0</span> Wishing Stones</div>
+          </div>
         </div>
       </section>
 
@@ -56,9 +91,9 @@
             <button id="beast-next" class="page-arrow" aria-label="Next beast">›</button>
           </div>
           <div class="start-actions">
-            <button id="btn-start-back" class="btn btn-ghost">‹ Back</button>
+            <button id="btn-start-back" class="btn btn-ghost btn-art" aria-label="Back"><img class="btn-img btn-back-img" src="assets/Back Button.png" alt="" draggable="false"></button>
             <div id="beast-tabs" class="beast-tabs"><!-- beast tabs injected --></div>
-            <button id="btn-begin" class="btn btn-primary btn-begin" disabled><span class="bb-ico" aria-hidden="true">▾</span><span class="bb-label">Descend</span></button>
+            <button id="btn-begin" class="btn btn-primary btn-begin btn-art" disabled aria-label="Descend"><img class="btn-img btn-begin-img" src="assets/Descend Button.png" alt="" draggable="false"></button>
           </div>
         </div>
       </section>
@@ -94,7 +129,7 @@
         <div class="bg-runes" aria-hidden="true"></div>
         <header class="map-header">
           <h2 id="map-title" class="map-title">The Spire of Chaos</h2>
-          <button id="btn-collection" class="btn btn-ghost">Collection</button>
+          <button id="btn-collection" class="btn btn-ghost btn-art" aria-label="Character"><img class="btn-img btn-char-img" src="assets/Character Button.png" alt="" draggable="false"></button>
         </header>
         <div class="map-scroll">
           <div id="map-canvas" class="map-canvas">
@@ -275,7 +310,7 @@
 
       <!-- ============ GLOBAL OPTIONS GEAR (all screens but Home) ============ -->
       <button id="btn-options-gear" class="btn-options-gear hidden" title="Options" aria-label="Options">
-        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94a7.49 7.49 0 0 0 .05-.94 7.49 7.49 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7 7 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.32 8.2a.5.5 0 0 0 .12.64l2.03 1.58a7.49 7.49 0 0 0 0 1.88L2.44 13.9a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96a7 7 0 0 0 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7 7 0 0 0 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/></svg>
+        <img class="gear-btn-img" src="assets/Options Gear Button.png" alt="" draggable="false">
       </button>
 
       <!-- ============ OPTIONS OVERLAY ============ -->
@@ -414,9 +449,78 @@
         <div class="end-inner">
           <h1 id="end-title" class="game-title">Undone</h1>
           <p id="end-sub" class="start-blurb"></p>
+          <div id="end-reward" class="end-reward"></div>
           <button id="btn-restart" class="btn btn-primary">Forge Anew</button>
         </div>
       </section>
+
+      <!-- ============ LOST WOODS HUB ============ -->
+      <section id="screen-lostwoods" class="screen">
+        <div class="map-bg" aria-hidden="true"></div>
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="lw-fog" aria-hidden="true"></div>
+        <div class="lw-clearing">
+          <header class="lw-hub-head">
+            <h2 class="lw-hub-title">The Lost Woods</h2>
+            <p class="lw-hub-sub">A dead clearing where the Spire keeps its memories. Wander to a landmark.</p>
+          </header>
+          <div id="lw-pois" class="lw-pois"><!-- POI markers injected --></div>
+          <button id="btn-lostwoods-back" class="btn btn-ghost lw-leave">‹ Leave the Woods</button>
+        </div>
+      </section>
+
+      <!-- ============ GRAVEMARKER ============ -->
+      <section id="screen-gravemarker" class="screen">
+        <div class="map-bg" aria-hidden="true"></div>
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="lw-screen">
+          <header class="lw-screen-head">
+            <button class="btn btn-ghost lw-sub-back">‹ Back</button>
+            <h2 class="lw-screen-title">The Gravemarker</h2>
+            <span class="lw-head-spacer" aria-hidden="true"></span>
+          </header>
+          <div id="gravemarker-body" class="lw-body"></div>
+        </div>
+      </section>
+
+      <!-- ============ STONE TABLE ============ -->
+      <section id="screen-stonetable" class="screen">
+        <div class="map-bg" aria-hidden="true"></div>
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="lw-screen">
+          <header class="lw-screen-head">
+            <button class="btn btn-ghost lw-sub-back">‹ Back</button>
+            <h2 class="lw-screen-title">The Stone Table</h2>
+            <span class="lw-head-spacer" aria-hidden="true"></span>
+          </header>
+          <div class="lw-body">
+            <div id="stonetable-roster" class="st-roster"></div>
+            <div id="stonetable-tree" class="st-tree"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ MONSTER BOOK ============ -->
+      <section id="screen-monsterbook" class="screen">
+        <div class="map-bg" aria-hidden="true"></div>
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="lw-screen">
+          <header class="lw-screen-head">
+            <button class="btn btn-ghost lw-sub-back">‹ Back</button>
+            <h2 class="lw-screen-title">The Monster Book</h2>
+            <span id="mb-progress" class="mb-progress"></span>
+          </header>
+          <div id="monsterbook-body" class="lw-body"></div>
+        </div>
+      </section>
+
+      <!-- ============ LOST WOODS DETAIL MODAL (shared) ============ -->
+      <div id="lw-modal" class="options-modal hidden">
+        <div class="lw-modal-panel">
+          <button id="btn-lw-modal-close" class="lw-modal-x" aria-label="Close">✕</button>
+          <div id="lw-modal-body" class="lw-modal-body"></div>
+        </div>
+      </div>
 
     </div>
   </div>
@@ -424,11 +528,11 @@
   <!-- floating layers rendered into stage by JS -->
   <div id="fx-layer" class="fx-layer"></div>
 
-  <script src="js/data.js?v=20260612e"></script>
-  <script src="js/audio.js?v=20260612e"></script>
-  <script src="js/scaling.js?v=20260612e"></script>
-  <script src="js/game.js?v=20260612e"></script>
-  <script src="js/battle.js?v=20260612e"></script>
-  <script src="js/main.js?v=20260612e"></script>
+  <script src="js/data.js?v=20260612j"></script>
+  <script src="js/audio.js?v=20260612j"></script>
+  <script src="js/scaling.js?v=20260612j"></script>
+  <script src="js/game.js?v=20260612j"></script>
+  <script src="js/battle.js?v=20260612j"></script>
+  <script src="js/main.js?v=20260612j"></script>
 </body>
 </html>

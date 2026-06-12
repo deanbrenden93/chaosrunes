@@ -1096,6 +1096,22 @@
         [ { type: 'regen', value: 20 }, { type: 'debuff', stat: 'frail', value: 2 } ]
       ],
       desc: 'The Spire was only ever its shell. Every curse, every chain, every hungry thing you have fought — all of it was practice for this.'
+    },
+    // ---- Descension final-FINAL boss (PLACEHOLDER) ----
+    // TODO: real design + art. For now it's a meaner Chaos Incarnate that only
+    // appears on the 13th Descension's final floor (see FLOOR_BOSSES swap).
+    theUnmaking: {
+      id: 'theUnmaking', name: 'The Unmaking', emoji: '🕳️', img: 'assets/Chaos Idol.png', maxHp: 900, boss: true, finalFinal: true, enrage: 3,
+      intents: [
+        [ { type: 'curse', value: 3 }, { type: 'sunder', value: 3 } ],
+        [ { type: 'summon', who: 'bonelet', max: 4 }, { type: 'attack', value: 18 } ],
+        { type: 'attack', value: 16, hits: 3 },
+        [ { type: 'siphon', stat: 'strength', value: 3 }, { type: 'debuff', stat: 'weak', value: 3 } ],
+        [ { type: 'defend', value: 32 }, { type: 'buff', value: 9, turns: 2 } ],
+        { type: 'attack', value: 64, big: true },
+        [ { type: 'regen', value: 30 }, { type: 'debuff', stat: 'frail', value: 3 } ]
+      ],
+      desc: 'There is a thing beneath the Spire that the Spire was built to keep sleeping. Thirteen descents have worn the seal to nothing.'
     }
   };
 
@@ -1250,8 +1266,67 @@
     return 'Bonus';
   }
 
+  /* ----------------------------------------------------------
+     DESCENSION — the 13-level meta-gauntlet.
+     Each entry is ONE modifier that switches on at its level and STAYS on for
+     every deeper level (they stack). All numbers here are PLACEHOLDER / tunable
+     bones — balance them later. Recognized effect keys:
+       enemyHpMul       multiply every enemy's max HP
+       enemyDmgMul      multiply every enemy attack value
+       eliteBossDmgMul  extra attack multiplier for elites / floor & final bosses
+       enrageAdd        add this much Enrage to every enemy (incl. non-enraging)
+       healMul          multiply ALL player healing (combat + services)
+       playerHpMul      multiply the beast's starting max HP at run start
+       shopMul          multiply shop prices
+       eliteBias        add this many extra elite rows to the map
+       fewerRests       drop the optional mid-floor rest
+       finalBoss        swap the act-3 boss for the unique final-FINAL boss
+     `name`/`desc` are surfaced in the Mode Select modifier preview.
+     ---------------------------------------------------------- */
+  const DESCENSION_MODS = [
+    { level: 1,  name: 'Bloodthirst I',  desc: 'Foes have +15% HP.',                 enemyHpMul: 1.15 },
+    { level: 2,  name: 'Ferocity I',     desc: 'Foes deal +15% damage.',             enemyDmgMul: 1.15 },
+    { level: 3,  name: 'Withering',      desc: 'Your healing is reduced by 25%.',     healMul: 0.75 },
+    { level: 4,  name: 'Swarm',          desc: 'The Spire crawls with extra elites.', eliteBias: 1 },
+    { level: 5,  name: 'Bloodthirst II', desc: 'Foes have +15% more HP.',             enemyHpMul: 1.15 },
+    { level: 6,  name: 'Frailty',        desc: 'Your beasts start with 10% less max HP.', playerHpMul: 0.90 },
+    { level: 7,  name: 'Ferocity II',    desc: 'Foes deal +15% more damage.',         enemyDmgMul: 1.15 },
+    { level: 8,  name: 'Scarcity',       desc: 'Shop prices +25%, and breathers are scarce.', shopMul: 1.25, fewerRests: true },
+    { level: 9,  name: 'Relentless I',   desc: 'Every foe gains +1 Enrage.',          enrageAdd: 1 },
+    { level: 10, name: 'Bloodthirst III',desc: 'Foes have +20% more HP.',             enemyHpMul: 1.20 },
+    { level: 11, name: 'Relentless II',  desc: 'Every foe gains another +1 Enrage.',  enrageAdd: 1 },
+    { level: 12, name: 'Doom',           desc: 'Elites and bosses deal +25% damage.', eliteBossDmgMul: 1.25 },
+    { level: 13, name: 'The Unmaking',   desc: 'A nameless horror guards the final floor. +10% enemy HP & damage.', enemyHpMul: 1.10, enemyDmgMul: 1.10, finalBoss: true }
+  ];
+  // Merge every modifier for levels 1..N into one effect object.
+  // Multipliers compound; additive/boolean keys accumulate/OR.
+  function descensionStack(level) {
+    const eff = { enemyHpMul: 1, enemyDmgMul: 1, eliteBossDmgMul: 1, healMul: 1, playerHpMul: 1,
+                  shopMul: 1, enrageAdd: 0, eliteBias: 0, fewerRests: false, finalBoss: false };
+    if (!level || level < 1) return eff;
+    DESCENSION_MODS.forEach(m => {
+      if (m.level > level) return;
+      if (m.enemyHpMul)      eff.enemyHpMul      *= m.enemyHpMul;
+      if (m.enemyDmgMul)     eff.enemyDmgMul     *= m.enemyDmgMul;
+      if (m.eliteBossDmgMul) eff.eliteBossDmgMul *= m.eliteBossDmgMul;
+      if (m.healMul)         eff.healMul         *= m.healMul;
+      if (m.playerHpMul)     eff.playerHpMul     *= m.playerHpMul;
+      if (m.shopMul)         eff.shopMul         *= m.shopMul;
+      if (m.enrageAdd)       eff.enrageAdd       += m.enrageAdd;
+      if (m.eliteBias)       eff.eliteBias       += m.eliteBias;
+      if (m.fewerRests)      eff.fewerRests       = true;
+      if (m.finalBoss)       eff.finalBoss        = true;
+    });
+    return eff;
+  }
+  // The list of individual modifiers active at level N (for previews).
+  function descensionModsUpTo(level) {
+    return DESCENSION_MODS.filter(m => m.level <= (level || 0));
+  }
+
   root.CG = root.CG || {};
   root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc,
-    FEAST_SETS, feastPoolFor, feastTrophyAdd, feastLabel };
+    FEAST_SETS, feastPoolFor, feastTrophyAdd, feastLabel,
+    DESCENSION_MODS, descensionStack, descensionModsUpTo, MAX_DESCENSION: 13 };
 
 })(window);

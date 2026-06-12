@@ -76,12 +76,18 @@
   // ---- Run state (rebuilt each run) ----
   let State = null;
   let pendingMonsterPick = null;
+  let pendingMode = 'classic';           // chosen on the Mode Select screen
+  let pendingDescensionLevel = 0;        // Descension level to attempt (0 in Classic)
   let pendingVictory = false;    // FINAL boss cleared -> victory after the reward screen
   let pendingNextFloor = false;  // floor boss cleared -> climb to the next act after rewards
 
   // ---- The Spire is climbed in 3 floors (acts), each barred by its own boss.
   // Floors 1 and 2 roll one of three bosses; floor 3 is always the end-boss.
   const SPIRE_FLOORS = 3;
+  // Descension: a 13-level meta-gauntlet. Each level is one full 3-floor run with
+  // one more stacking modifier than the last. Level 13's final floor swaps in the
+  // unique final-FINAL boss.
+  const MAX_DESCENSION = 13;
   const FLOOR_BOSSES = {
     1: ['voidIdol', 'hollowChoir', 'mawMother'],
     2: ['gravetideColossus', 'cinderQueen', 'hollowShepherd'],
@@ -95,14 +101,28 @@
     gravetideColossus: ['gravewarden'],
     cinderQueen: ['cinderling', 'cinderling'],
     hollowShepherd: ['gravewarden'],
-    chaosIncarnate: ['maledict', 'hexweaver']
+    chaosIncarnate: ['maledict', 'hexweaver'],
+    theUnmaking: ['maledict', 'hexweaver']
   };
   function pickFloorBoss(act) {
+    // Descension's deepest level replaces the final-floor boss with the
+    // unique final-FINAL horror.
+    if (act >= SPIRE_FLOORS && descensionEffects().finalBoss && ENEMIES.theUnmaking) {
+      return 'theUnmaking';
+    }
     const pool = FLOOR_BOSSES[act] || FLOOR_BOSSES[1];
     return pool[Math.floor(Math.random() * pool.length)];
   }
   function currentBoss() {
     return (State && State.bossId && ENEMIES[State.bossId]) || ENEMIES.voidIdol;
+  }
+
+  // ---- Descension difficulty knobs (no-op outside a Descension run) ----
+  function descensionLevel() {
+    return (State && State.mode === 'descension') ? (State.descension || 0) : 0;
+  }
+  function descensionEffects() {
+    return DATA.descensionStack(descensionLevel());
   }
 
   function $(id) { return document.getElementById(id); }
@@ -125,7 +145,11 @@
     'screen-soulstone': 'node',
     'screen-blessing': 'node',
     'screen-collection': 'node',
-    'screen-evolve': 'node'
+    'screen-evolve': 'node',
+    'screen-lostwoods': 'node',
+    'screen-gravemarker': 'node',
+    'screen-stonetable': 'node',
+    'screen-monsterbook': 'node'
   };
   // fight themes by node type (null = no dedicated track yet)
   function battleMusic(node) {
@@ -229,6 +253,42 @@
     SFX.click();
     beastIdx = (beastIdx + dir + beastIds.length) % beastIds.length;
     renderBeastPage(dir);
+  }
+
+  // ---- Mode Select (New Game -> Classic / Descension) ----
+  const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII'];
+  function roman(n) { return ROMAN[n] || String(n); }
+  function nextDescensionLevel() {
+    return Math.max(1, Math.min(MAX_DESCENSION, (META.descension.cleared || 0) + 1));
+  }
+  function buildModeSelect() {
+    const lvl = nextDescensionLevel();
+    const cleared = META.descension.cleared || 0;
+    const mastered = cleared >= MAX_DESCENSION;
+    const sigil = $('mode-desc-sigil');
+    if (sigil) sigil.textContent = roman(lvl);
+    const depth = $('mode-desc-depth');
+    if (depth) {
+      depth.innerHTML = 'Descent <b>' + roman(lvl) + '</b>' +
+        (cleared > 0 ? ' &middot; ' + cleared + ' cleared' : '') +
+        (mastered ? ' &middot; <span class="mode-mastered">Mastered</span>' : '');
+    }
+    const mods = $('mode-desc-mods');
+    if (mods) {
+      const active = DATA.descensionModsUpTo(lvl);
+      mods.innerHTML = active.length
+        ? active.map(m => '<span class="mode-mod' + (m.level === lvl ? ' mode-mod-new' : '') +
+            '"><b>' + roman(m.level) + '</b> ' + m.name + '<em>' + m.desc + '</em></span>').join('')
+        : '<span class="mode-mod mode-mod-none">No modifiers yet.</span>';
+    }
+    const stones = $('mode-stones-val');
+    if (stones) stones.textContent = META.wishingStones || 0;
+  }
+  function chooseMode(mode) {
+    pendingMode = mode === 'descension' ? 'descension' : 'classic';
+    pendingDescensionLevel = pendingMode === 'descension' ? nextDescensionLevel() : 0;
+    buildStart();
+    show('screen-start');
   }
 
   function buildBeastTabs() {
@@ -381,10 +441,16 @@
     return m;
   }
 
-  function startRun(monsterId) {
+  function startRun(monsterId, opts) {
+    opts = opts || {};
     pendingVictory = false;
     pendingNextFloor = false;
+    const mode = opts.mode === 'descension' ? 'descension' : 'classic';
+    const descension = mode === 'descension'
+      ? Math.max(1, Math.min(MAX_DESCENSION, opts.descension || 1)) : 0;
     State = {
+      mode: mode,                // 'classic' | 'descension'
+      descension: descension,    // Descension level being attempted (0 in Classic)
       monsters: [ makeMonster(monsterId) ],
       activeIndex: 0,
       pool: (MONSTERS[monsterId].deck || []).slice(),
@@ -396,7 +462,7 @@
       runEmpower: {},            // per-TYPE +N power that ALL copies share (keyed by base id; e.g. Everflame)
       comboUp: {},               // per-CARD Combo-up upgrade (keyed by instance id)
       instSeq: 0,                // serial for minting unique card instance ids
-      map: genMap(),
+      map: null,                 // generated below, once mode/descension are live
       pos: { floor: -1, idx: null },   // -1 = before the first floor
       cleared: 0,
       items: ['blood_phial'],    // carried consumables (top-HUD tray); start with one
@@ -405,9 +471,19 @@
       soulhunterKills: 0,        // Soulhunter forms cleared this run (0 → next is A, etc.)
       feastKills: [],            // Ghoul Feast: foes slain this run (for Skinwalker trophies)
       feastBoons: [],            // Ghoul Feast: kill-boons waiting to manifest next encounter
-      unlocks: {}                // earned meta-unlocks (e.g. colorless glyphs)
+      unlocks: Object.assign({}, META.unlocks)   // seeded from the meta-profile (granting is Pass 2)
     };
     root.CG.State = State;
+    // Map composition can read Descension effects, so generate it AFTER State is live.
+    State.map = genMap();
+    // Descension "Frailty" and friends trim the beast's starting max HP.
+    const hpMul = descensionEffects().playerHpMul || 1;
+    if (hpMul !== 1) {
+      State.monsters.forEach(m => {
+        m.maxHp = Math.max(1, Math.round(m.maxHp * hpMul));
+        m.hp = Math.min(m.hp, m.maxHp);
+      });
+    }
     // the run opens on the blessing draft — the start of the "story"
     buildBlessingDraft();
     show('screen-blessing');
@@ -517,8 +593,9 @@
     // --- Soulhunter: the shadow elite, exactly one per floor (act) ---
     placeInRange(2, LAST - 2, 'shadow', { freshFloor: true });
 
-    // --- Elites: 3-5 distinct rows, anywhere ---
-    const eliteRows = 3 + Math.floor(Math.random() * 3);   // 3,4,5
+    // --- Elites: 3-5 distinct rows, anywhere (Descension "Swarm" adds more) ---
+    const dz = descensionEffects();
+    const eliteRows = 3 + Math.floor(Math.random() * 3) + (dz.eliteBias || 0);   // 3,4,5 (+bias)
     let elitesPlaced = 0;
     for (const f of shuffleArr(rangeFloors(1, LAST - 1))) {
       if (elitesPlaced >= eliteRows) break;
@@ -535,8 +612,8 @@
       for (let s = 0; s < nShops; s++) placeInRange(1, LAST - 1, 'shop', { noAdjacent: true, notRows: [PREBOSS] });
     }
 
-    // --- A second rest, allowed in the middle region only ---
-    if (Math.random() < 0.75) placeInRange(5, 9, 'rest', { noAdjacent: true });
+    // --- A second rest, allowed in the middle region only (Scarcity removes it) ---
+    if (!dz.fewerRests && Math.random() < 0.75) placeInRange(5, 9, 'rest', { noAdjacent: true });
 
     // --- Soulstones: two per floor so evolution stays reachable ---
     placeInRange(2, 9, 'soulstone', {});
@@ -633,7 +710,12 @@
     const nodesC = $('map-nodes');
     const edges = $('map-edges');
     const title = $('map-title');
-    if (title) title.textContent = 'The Spire of Chaos — Floor ' + (State.act || 1);
+    if (title) {
+      const depthTag = (State.mode === 'descension')
+        ? '<span class="map-descent">⮟ Descent ' + roman(State.descension || 1) + '</span> '
+        : '';
+      title.innerHTML = depthTag + 'The Spire of Chaos — Floor ' + (State.act || 1);
+    }
     nodesC.innerHTML = '';
     const L = mapLayout();
     edges.setAttribute('viewBox', `0 0 ${L.W} ${L.H}`);
@@ -807,8 +889,10 @@
       return o;
     };
     const intents = spec.intents.map(e => Array.isArray(e) ? e.map(scaleSub) : scaleSub(e));
+    const FORM_IMG = { A: 'assets/Soulhunter I.png', B: 'assets/Soulhunter II.png', C: 'assets/Soulhunter III.png' };
     const def = {
       id: 'soulhunter', name: 'Soulhunter \u2014 Form ' + form, emoji: '\u2620\uFE0F',
+      img: FORM_IMG[form] || null,
       maxHp: Math.round(spec.hp * actMul),
       boss: true, shadow: true, form: form,
       intents: intents
@@ -848,6 +932,7 @@
         shadow: isShadow,
         // acts stack on top of node depth so floor 2/3 enemies hit and soak harder
         depth: ((State.act || 1) - 1) * 10 + (node.floor || 0),
+        descension: descensionEffects(),   // null-safe: identity effects outside Descension
         onWin: () => onBattleWin(node),
         onLose: () => gameOver(false)
       });
@@ -1401,25 +1486,27 @@
     if (!chip) return;
     chip.classList.remove('tb-bless-arrive'); void chip.offsetWidth; chip.classList.add('tb-bless-arrive');
   }
-  function flyBlessingToTopbar(bless) {
-    flyingBlessId = bless.id;
-    updateRunUI();   // the new chip renders, but stays held invisible until it lands
+  // Shared "you got it!" flourish: an emblem blooms mid-screen, then streaks up
+  // into its HUD slot. Used by both blessings and items.
+  // opts: { artHTML, name, accent, getTarget:()=>el|null, reveal:()=>void }
+  function flyGetToTopbar(opts) {
     const layer = document.createElement('div');
     layer.className = 'bless-fly-layer';
+    if (opts.accent) layer.style.setProperty('--fly-accent', opts.accent);
     layer.innerHTML =
       '<div class="bless-fly">' +
-        '<div class="bless-fly-art">' + blessArtHTML(bless) + '</div>' +
-        '<div class="bless-fly-name">' + bless.name + '</div>' +
+        '<div class="bless-fly-art">' + opts.artHTML + '</div>' +
+        '<div class="bless-fly-name">' + opts.name + '</div>' +
       '</div>';
     document.body.appendChild(layer);
     if (SFX && SFX.reward) SFX.reward();
 
-    const reveal = () => { flyingBlessId = null; updateRunUI(); pulseBlessChip(bless.id); };
-    const target = document.querySelector('#tb-blessings [data-bless="' + bless.id + '"]');
+    const target = opts.getTarget();
     const rect = target ? target.getBoundingClientRect() : null;
-    // top bar not on screen (or no room) → just bloom, then drop it into place
+    // top bar not on screen (or no room) → just bloom, then drop it into place.
+    // Revealing the chip WHILE the bloom fades (over .3s) leaves no blank gap.
     if (!rect || rect.width < 2) {
-      setTimeout(() => { layer.classList.add('done'); reveal(); setTimeout(() => layer.remove(), 320); }, 1150);
+      setTimeout(() => { layer.classList.add('done'); opts.reveal(); setTimeout(() => layer.remove(), 320); }, 1150);
       return;
     }
     // after the bloom, streak the emblem into its HUD slot
@@ -1432,8 +1519,45 @@
       layer.classList.add('flying');
       art.style.transition = 'transform .58s cubic-bezier(.55,0,.25,1), filter .58s ease';
       art.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(' + scale + ')';
-      setTimeout(() => { reveal(); layer.remove(); }, 560);
+      // Reveal the real chip FIRST, then drop the flying clone a frame later so
+      // there's never a paint where neither is showing (kills the brief flicker).
+      setTimeout(() => {
+        opts.reveal();
+        requestAnimationFrame(() => requestAnimationFrame(() => layer.remove()));
+      }, 560);
     }, 940);
+  }
+
+  function flyBlessingToTopbar(bless) {
+    flyingBlessId = bless.id;
+    updateRunUI();   // the new chip renders, but stays held invisible until it lands
+    flyGetToTopbar({
+      artHTML: blessArtHTML(bless),
+      name: bless.name,
+      accent: 'var(--purple)',
+      getTarget: () => document.querySelector('#tb-blessings [data-bless="' + bless.id + '"]'),
+      reveal: () => { flyingBlessId = null; updateRunUI(); pulseBlessChip(bless.id); }
+    });
+  }
+
+  // ---- Item gain flourish (mirrors the blessing one, flying into the item tray) ----
+  let flyingItemSlot = -1;   // stacks-index of the just-added slot, held invisible until it lands
+  function pulseItemChip(idx) {
+    const tray = document.querySelector('.tb-items');
+    const chip = tray && tray.children[idx];
+    if (!chip) return;
+    chip.classList.remove('tb-item-arrive'); void chip.offsetWidth; chip.classList.add('tb-item-arrive');
+  }
+  function flyItemToTopbar(it, slotIdx) {
+    flyingItemSlot = slotIdx;
+    renderItems();   // the new slot renders, but stays held invisible until it lands
+    flyGetToTopbar({
+      artHTML: itemArtHTML(it),
+      name: it.name,
+      accent: 'var(--gold)',
+      getTarget: () => { const tray = document.querySelector('.tb-items'); return tray ? tray.children[slotIdx] : null; },
+      reveal: () => { flyingItemSlot = -1; renderItems(); pulseItemChip(slotIdx); }
+    });
   }
 
   // Calamitous Soul: stamp 'Upgrade' onto every socket that can carry a glyph.
@@ -1781,9 +1905,15 @@
   function addItem(id) {
     if (!State || !ITEMS[id]) return false;
     if (!State.items) State.items = [];
-    if (!canAddItem(id)) return false;
+    // no room to carry it: deny with the error sound and NO get-animation
+    if (!canAddItem(id)) { (SFX.error || SFX.click)(); return false; }
     State.items.push(id);
-    renderItems(); saveGame();
+    // which display slot did it land in? (the last stack carrying this id)
+    const stacks = itemStacks();
+    let slotIdx = stacks.length - 1;
+    for (let i = stacks.length - 1; i >= 0; i--) { if (stacks[i].id === id) { slotIdx = i; break; } }
+    saveGame();
+    flyItemToTopbar(ITEMS[id], slotIdx);   // also re-renders the tray
     return true;
   }
   function removeFirstItem(id) {
@@ -1867,7 +1997,8 @@
       const it = ITEMS[st.id];
       if (!it) continue;
       const usableNow = !it.combatOnly || inB;
-      const chip = el('div', 'item-slot filled rarity-' + (it.rarity || 'common') + (it.img ? ' has-img' : '') + (usableNow ? '' : ' item-locked'));
+      const pending = (idx === flyingItemSlot) ? ' tb-item-pending' : '';
+      const chip = el('div', 'item-slot filled rarity-' + (it.rarity || 'common') + (it.img ? ' has-img' : '') + (usableNow ? '' : ' item-locked') + pending);
       chip.innerHTML =
         itemArtHTML(it) +
         (st.count > 1 ? '<span class="item-count">' + st.count + '</span>' : '') +
@@ -2578,6 +2709,7 @@
   function healActive(frac) {
     const m = activeMonster();
     const before = m.hp;
+    frac = frac * (descensionEffects().healMul || 1);   // Descension: Withering etc.
     m.hp = Math.min(m.maxHp, m.hp + Math.ceil(m.maxHp * frac));
     updateTopbar();
     return m.hp - before;
@@ -2999,6 +3131,10 @@
   // ============================================================
   function shopCard(opts) {
     // opts: { kind, icon, name, desc, color, price, soldOut, onBuy, art }
+    if (opts.price > 0) {
+      const sm = descensionEffects().shopMul || 1;   // Descension: Scarcity
+      if (sm !== 1) opts.price = Math.round(opts.price * sm);
+    }
     const c = el('div', 'shop-card');
     c.style.setProperty('--g-color', opts.color || 'var(--gold)');
     const art = opts.art || ('<div class="sc-icon" style="color:' + (opts.color || 'var(--gold)') + '">' + opts.icon + '</div>');
@@ -3520,7 +3656,59 @@
   // ============================================================
   // GAME OVER
   // ============================================================
+  // ---- Wishing-stone payout (tunable). Both modes pay by progress; a win and
+  // deeper Descension levels pay more. ----
+  function awardWishingStones(win) {
+    const actsCleared = Math.max(0, (State.act || 1) - 1) + (win ? 1 : 0);
+    let n = 1 + actsCleared * 3;            // progress reward
+    if (win) n += 5;                        // a finished run pays out
+    if (State.mode === 'descension') {
+      n += (State.descension || 0) * 2;     // deeper descents are richer
+      if (win) n += (State.descension || 0) * 3;   // clearing one pays a level bonus
+    }
+    return Math.max(1, Math.round(n));
+  }
+  // A compact end-of-run build snapshot for the Gravemarker (Pass 2 renders these).
+  function snapshotRun(win, stones) {
+    const m = State.monsters[0] || null;
+    return {
+      at: Date.now(),
+      mode: State.mode || 'classic',
+      descension: State.descension || 0,
+      win: !!win,
+      act: State.act || 1,
+      cleared: State.cleared || 0,
+      stones: stones,
+      beast: m ? m.id : null,
+      beastName: m ? m.name : '',
+      evoChoices: (m && m.evoChoices) ? m.evoChoices.slice() : [],
+      deck: (State.pool || []).slice(),
+      blessings: Object.keys(State.blessings || {}),
+      items: (State.items || []).slice()
+    };
+  }
+
   function gameOver(win) {
+    // ---- META harvest — MUST run before clearSave() wipes the run ----
+    const isDescension = State.mode === 'descension';
+    const lvl = State.descension || 0;
+    const stones = awardWishingStones(win);
+    META.stats.runs = (META.stats.runs || 0) + 1;
+    META.stats.bestAct = Math.max(META.stats.bestAct || 0, State.act || 1);
+    if (win) {
+      META.stats.wins = (META.stats.wins || 0) + 1;
+      if (isDescension) {
+        META.stats.descensionWins = (META.stats.descensionWins || 0) + 1;
+        META.descension.cleared = Math.max(META.descension.cleared || 0, lvl);
+        META.stats.bestDescension = Math.max(META.stats.bestDescension || 0, lvl);
+      } else {
+        META.stats.classicWins = (META.stats.classicWins || 0) + 1;
+      }
+    }
+    META.runHistory.unshift(snapshotRun(win, stones));
+    META.runHistory = META.runHistory.slice(0, 5);
+    grantWishingStones(stones);   // persists the whole META profile (saveMeta)
+
     clearSave();   // the run is over either way — no checkpoint to resume
     if (win) { SFX.victory(); } else { SFX.defeat(); }
     $('end-title').textContent = win ? 'Chaos Unmade' : 'Undone';
@@ -3529,10 +3717,454 @@
       : 'linear-gradient(180deg,#ff7a52,#b07bff)';
     $('end-title').style.webkitBackgroundClip = 'text';
     $('end-title').style.backgroundClip = 'text';
+    const bossName = (isDescension && lvl >= MAX_DESCENSION) ? 'The Unmaking' : 'Chaos Incarnate';
     $('end-sub').textContent = win
-      ? 'Three floors climbed, Chaos Incarnate unmade. The Chaos Runes are yours.'
+      ? 'Three floors climbed, ' + bossName + ' unmade. The Chaos Runes are yours.'
       : 'Your beasts have fallen on floor ' + (State.act || 1) + ' of the Spire. Encounters cleared: ' + State.cleared + '.';
+
+    // ---- reward / depth banner ----
+    let html = '<div class="er-stones">✦ <b>+' + stones + '</b> Wishing Stones</div>';
+    if (isDescension) {
+      if (win && lvl >= MAX_DESCENSION) {
+        html += '<div class="er-depth er-mastered">You have conquered all ' + MAX_DESCENSION + ' Descents.</div>';
+      } else if (win) {
+        html += '<div class="er-depth">Descent <b>' + roman(lvl) + '</b> cleared — <span class="er-next">Descent ' + roman(lvl + 1) + '</span> now awaits.</div>';
+      } else {
+        html += '<div class="er-depth er-fail">Descent <b>' + roman(lvl) + '</b> claimed you. The depths remember.</div>';
+      }
+    }
+    $('end-reward').innerHTML = html;
     show('screen-end');
+  }
+
+  // ============================================================
+  // META PROFILE  (persists ACROSS runs, separate from the single-run save:
+  // wishing stones, meta-unlocks, Descension depth, lifetime stats, and a
+  // rolling buffer of recent end-of-run build snapshots for the Gravemarker.)
+  // Modeled on the type-guarded loadSettings/saveSettings pattern.
+  // ============================================================
+  const META_KEY = 'cg_meta_v1';
+  function freshMeta() {
+    return {
+      v: 1,
+      wishingStones: 0,
+      unlocks: {},                  // meta-granted unlock keys (granting UI lands in Pass 2)
+      descension: { cleared: 0 },   // highest Descension level fully cleared (0..MAX_DESCENSION)
+      stats: { runs: 0, wins: 0, classicWins: 0, descensionWins: 0, bestDescension: 0, bestAct: 0 },
+      runHistory: [],               // last 5 end-of-run build snapshots (Gravemarker reads these)
+      bestiary: { seen: {}, defeated: {} }   // enemy id -> true (Monster Book)
+    };
+  }
+  let META = freshMeta();
+  function loadMeta() {
+    try {
+      const raw = localStorage.getItem(META_KEY);
+      if (raw) {
+        const m = JSON.parse(raw);
+        if (m && typeof m === 'object') {
+          if (typeof m.wishingStones === 'number') META.wishingStones = m.wishingStones;
+          if (m.unlocks && typeof m.unlocks === 'object') META.unlocks = m.unlocks;
+          if (m.descension && typeof m.descension.cleared === 'number') META.descension.cleared = m.descension.cleared;
+          if (m.stats && typeof m.stats === 'object') Object.assign(META.stats, m.stats);
+          if (Array.isArray(m.runHistory)) META.runHistory = m.runHistory.slice(0, 5);
+          if (m.bestiary && typeof m.bestiary === 'object') {
+            if (m.bestiary.seen && typeof m.bestiary.seen === 'object') META.bestiary.seen = m.bestiary.seen;
+            if (m.bestiary.defeated && typeof m.bestiary.defeated === 'object') META.bestiary.defeated = m.bestiary.defeated;
+          }
+        }
+      }
+    } catch (e) { /* defaults */ }
+    root.CG.Meta = META;   // the Lost Woods screens read the profile from here
+  }
+  function saveMeta() {
+    try { localStorage.setItem(META_KEY, JSON.stringify(META)); } catch (e) { /* ignore */ }
+  }
+  function grantWishingStones(n) {
+    n = Math.max(0, Math.round(n || 0));
+    if (n > 0) { META.wishingStones += n; saveMeta(); }
+    return n;
+  }
+  // Monster Book bookkeeping: foes are "seen" the moment they enter an arena,
+  // "defeated" when slain. Both persist across runs in the meta profile.
+  function recordBestiarySeen(ids) {
+    if (!ids) return;
+    let dirty = false;
+    (Array.isArray(ids) ? ids : [ids]).forEach(id => {
+      if (id && !META.bestiary.seen[id]) { META.bestiary.seen[id] = true; dirty = true; }
+    });
+    if (dirty) saveMeta();
+  }
+  function recordBestiaryDefeated(id) {
+    if (!id) return;
+    let dirty = false;
+    if (!META.bestiary.seen[id]) { META.bestiary.seen[id] = true; dirty = true; }
+    if (!META.bestiary.defeated[id]) { META.bestiary.defeated[id] = true; dirty = true; }
+    if (dirty) saveMeta();
+  }
+
+  // ============================================================
+  // LOST WOODS  — the between-runs meta hub and its read-only screens
+  // (Gravemarker / Stone Table / Monster Book). All data shown here is
+  // already stored in the META profile or the static DATA tables.
+  // ============================================================
+  const allBlessMap = () => Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS);
+
+  // --- shared lightweight detail modal (Stone Table forms + Monster Book) ---
+  function openLwModal(html, accent) {
+    const m = $('lw-modal'); if (!m) return;
+    const body = $('lw-modal-body');
+    if (body) body.innerHTML = html;
+    m.style.setProperty('--lw-acc', accent || 'var(--gold)');
+    m.classList.remove('hidden');
+  }
+  function closeLwModal() { const m = $('lw-modal'); if (m) m.classList.add('hidden'); }
+
+  // ---- HUB ----
+  const LW_POIS = [
+    { id: 'gravemarker', screen: 'screen-gravemarker', icon: '🪦', title: 'Gravemarker', blurb: 'Remember the fallen — past runs and lifetime deeds.' },
+    { id: 'stonetable',  screen: 'screen-stonetable',  icon: '🪨', title: 'Stone Table',  blurb: 'Read the star-charts of every beast and its evolutions.' },
+    { id: 'monsterbook', screen: 'screen-monsterbook', icon: '📖', title: 'Monster Book', blurb: 'A bestiary of every foe you have met in the Spire.' },
+    { id: 'well',        screen: null,                 icon: '⛲', title: 'Enchanted Well', blurb: 'Cast wishing stones to widen fate. Sealed for now.' },
+    { id: 'tablets',     screen: null,                 icon: '📜', title: 'Stone Tablets',  blurb: 'The carved lore and glossary of all things. Sealed for now.' }
+  ];
+  function buildLostWoods() {
+    const host = $('lw-pois');
+    if (!host) return;
+    host.innerHTML = '';
+    LW_POIS.forEach(poi => {
+      const soon = !poi.screen;
+      const b = el('button', 'lw-poi lw-poi-' + poi.id + (soon ? ' lw-poi-soon' : ''));
+      b.innerHTML =
+        '<span class="lw-poi-marker"><span class="lw-poi-icon">' + poi.icon + '</span></span>' +
+        '<span class="lw-poi-name">' + poi.title + '</span>' +
+        '<span class="lw-poi-blurb">' + poi.blurb + '</span>' +
+        (soon ? '<span class="lw-poi-seal">Sealed for now</span>' : '');
+      if (!soon) {
+        b.addEventListener('click', () => {
+          SFX.click();
+          if (poi.id === 'gravemarker') buildGravemarker();
+          else if (poi.id === 'stonetable') buildStoneTable();
+          else if (poi.id === 'monsterbook') buildMonsterBook();
+          show(poi.screen);
+        });
+      } else {
+        b.addEventListener('click', () => { if (SFX.error) SFX.error(); });
+      }
+      host.appendChild(b);
+    });
+  }
+
+  // ---- GRAVEMARKER ----
+  function statTile(label, val) {
+    return '<div class="gm-stat"><div class="gm-stat-val">' + val + '</div><div class="gm-stat-label">' + label + '</div></div>';
+  }
+  function gmDeckChips(deck) {
+    const counts = {};
+    (deck || []).forEach(id => { const b = baseOf(id); counts[b] = (counts[b] || 0) + 1; });
+    const ids = Object.keys(counts);
+    if (!ids.length) return '<span class="gm-empty">—</span>';
+    return ids.map(b => {
+      const g = GLYPHS[b];
+      if (!g) return '';
+      return '<span class="gm-pill" style="--g-color:var(--' + g.color + ')">' + g.name +
+        (counts[b] > 1 ? ' <b>×' + counts[b] + '</b>' : '') + '</span>';
+    }).join('');
+  }
+  function gmBlessChips(ids) {
+    const map = allBlessMap();
+    const list = (ids || []).map(id => map[id]).filter(Boolean);
+    if (!list.length) return '<span class="gm-empty">—</span>';
+    return list.map(bl => '<span class="gm-pill gm-pill-art">' + blessArtHTML(bl, 'gm-pill-img') + ' ' + bl.name + '</span>').join('');
+  }
+  function gmItemChips(ids) {
+    const list = (ids || []).map(id => ITEMS[id]).filter(Boolean);
+    if (!list.length) return '<span class="gm-empty">—</span>';
+    return list.map(it => '<span class="gm-pill gm-pill-art">' + itemArtHTML(it, 'gm-pill-img') + ' ' + it.name + '</span>').join('');
+  }
+  function gmRunCard(snap) {
+    const beast = MONSTERS[snap.beast];
+    const finalForm = (snap.evoChoices && snap.evoChoices.length)
+      ? evoFormById(snap.beast, snap.evoChoices[snap.evoChoices.length - 1]) : null;
+    const img = (finalForm && finalForm.img) || (beast && beast.img) || '';
+    const accent = finalForm ? evoAccent(finalForm) : (beast && beast.color) || 'var(--gold)';
+    const name = snap.beastName || (beast && beast.name) || 'Unknown Beast';
+    const path = (snap.evoChoices || []).map(fid => {
+      const f = evoFormById(snap.beast, fid);
+      return f ? f.name : fid;
+    });
+    const when = new Date(snap.at || Date.now());
+    const date = when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const result = snap.win
+      ? '<span class="gm-result gm-win">Victory</span>'
+      : '<span class="gm-result gm-loss">Fell on Floor ' + (snap.act || 1) + '</span>';
+    const modeTag = snap.mode === 'descension'
+      ? '<span class="gm-mode gm-mode-desc">⮟ Descent ' + roman(snap.descension || 1) + '</span>'
+      : '<span class="gm-mode">Classic</span>';
+    const portrait = img
+      ? '<img class="gm-port-img" src="' + img + '" alt="" draggable="false">'
+      : '<span class="gm-port-emoji">' + ((beast && beast.emoji) || '✦') + '</span>';
+    return '<div class="gm-card" style="--acc:' + accent + '">' +
+      '<div class="gm-card-head">' +
+        '<div class="gm-port">' + portrait + '</div>' +
+        '<div class="gm-card-id">' +
+          '<div class="gm-card-name">' + name + '</div>' +
+          '<div class="gm-card-meta">' + modeTag + result + '<span class="gm-stones">✦ ' + (snap.stones || 0) + '</span></div>' +
+          (path.length ? '<div class="gm-path">' + path.join(' <span class="gm-arrow">›</span> ') + '</div>' : '') +
+          '<div class="gm-date">' + date + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="gm-section"><div class="gm-sec-label">Deck</div><div class="gm-chips">' + gmDeckChips(snap.deck) + '</div></div>' +
+      '<div class="gm-section"><div class="gm-sec-label">Blessings</div><div class="gm-chips">' + gmBlessChips(snap.blessings) + '</div></div>' +
+      '<div class="gm-section"><div class="gm-sec-label">Items</div><div class="gm-chips">' + gmItemChips(snap.items) + '</div></div>' +
+    '</div>';
+  }
+  function buildGravemarker() {
+    const body = $('gravemarker-body');
+    if (!body) return;
+    const s = META.stats || {};
+    const stats =
+      '<div class="gm-stats-panel">' +
+        '<h3 class="gm-panel-title">Lifetime Deeds</h3>' +
+        '<div class="gm-stats-grid">' +
+          statTile('Runs', s.runs || 0) +
+          statTile('Wins', s.wins || 0) +
+          statTile('Classic Wins', s.classicWins || 0) +
+          statTile('Descents Won', s.descensionWins || 0) +
+          statTile('Deepest Descent', (META.descension && META.descension.cleared) || 0) +
+          statTile('Best Floor', s.bestAct || 0) +
+          statTile('Wishing Stones', '✦ ' + (META.wishingStones || 0)) +
+        '</div>' +
+      '</div>';
+    const hist = (META.runHistory || []);
+    const runs = hist.length
+      ? '<div class="gm-runs">' + hist.map(gmRunCard).join('') + '</div>'
+      : '<div class="lw-empty">No runs remembered yet. The Spire awaits its first offering.</div>';
+    body.innerHTML = stats + '<h3 class="gm-panel-title gm-recent-title">Recent Runs</h3>' + runs;
+  }
+
+  // ---- STONE TABLE ----
+  function evoFormById(beastId, formId) {
+    const tree = MONSTERS[beastId] && MONSTERS[beastId].evolution;
+    if (!tree) return null;
+    let f = (tree.tier1 || []).find(x => x.id === formId);
+    if (f) return f;
+    const t2 = tree.tier2 || {};
+    for (const k in t2) { const hit = (t2[k] || []).find(x => x.id === formId); if (hit) return hit; }
+    return null;
+  }
+  function stEvoNode(beast, form, kind) {
+    const acc = evoAccent(form);
+    return '<button class="st-node st-node-' + kind + '" data-beast="' + beast.id + '" data-form="' + form.id + '" style="--acc:' + acc + '">' +
+      '<span class="st-node-port">' + evoFormImg(form, beast, 'st-node-img') + '</span>' +
+      '<span class="st-node-name">' + form.name + '</span>' +
+      (form.tagline ? '<span class="st-node-tag">' + form.tagline + '</span>' : '') +
+    '</button>';
+  }
+  function buildStoneTable() {
+    const roster = $('stonetable-roster');
+    if (roster) {
+      roster.innerHTML = '';
+      Object.values(MONSTERS).forEach((b, i) => {
+        const btn = el('button', 'st-beast' + (i === 0 ? ' active' : ''));
+        btn.dataset.beast = b.id;
+        btn.innerHTML = (b.img ? '<img class="st-beast-img" src="' + b.img + '" alt="" draggable="false">' : '<span class="st-beast-emoji">' + (b.emoji || '✦') + '</span>') +
+          '<span class="st-beast-name">' + b.name + '</span>';
+        btn.addEventListener('click', () => {
+          SFX.click();
+          roster.querySelectorAll('.st-beast').forEach(x => x.classList.remove('active'));
+          btn.classList.add('active');
+          stoneTableSelect(b.id);
+        });
+        roster.appendChild(btn);
+      });
+    }
+    const first = Object.values(MONSTERS)[0];
+    if (first) stoneTableSelect(first.id);
+  }
+  function stoneTableSelect(beastId) {
+    const tree = $('stonetable-tree');
+    const beast = MONSTERS[beastId];
+    if (!tree || !beast || !beast.evolution) { if (tree) tree.innerHTML = ''; return; }
+    const t1 = beast.evolution.tier1 || [];
+    const t2 = beast.evolution.tier2 || {};
+    const baseNode = '<button class="st-node st-node-base" data-beast="' + beast.id + '" data-form="__base__" style="--acc:' + (beast.color || 'var(--gold)') + '">' +
+      '<span class="st-node-port">' + (beast.img ? '<img class="st-node-img" src="' + beast.img + '" alt="" draggable="false">' : '<span class="st-beast-emoji">' + (beast.emoji || '✦') + '</span>') + '</span>' +
+      '<span class="st-node-name">' + beast.name + '</span>' +
+      '<span class="st-node-tag">Base Form</span>' +
+    '</button>';
+    const branches = t1.map(t1form => {
+      const kids = (t2[t1form.id] || []).map(f => stEvoNode(beast, f, 't2')).join('');
+      return '<div class="st-branch">' +
+        '<div class="st-col st-col-t1">' + stEvoNode(beast, t1form, 't1') + '</div>' +
+        '<div class="st-connector"></div>' +
+        '<div class="st-col st-col-t2">' + kids + '</div>' +
+      '</div>';
+    }).join('');
+    tree.innerHTML =
+      '<div class="st-base-col">' + baseNode + '</div>' +
+      '<div class="st-connector st-connector-main"></div>' +
+      '<div class="st-branches">' + branches + '</div>';
+    tree.querySelectorAll('.st-node').forEach(node => {
+      node.addEventListener('click', () => {
+        SFX.click();
+        const fid = node.dataset.form;
+        if (fid === '__base__') {
+          openLwModal(stDetailHTML(beast, {
+            name: beast.name, img: beast.img, tagline: 'Base Form',
+            passive: { name: 'Passive', text: beast.passiveText || beast.desc || '' }
+          }, beast.color || 'var(--gold)'), beast.color || 'var(--gold)');
+        } else {
+          const form = evoFormById(beastId, fid);
+          if (form) openLwModal(stDetailHTML(beast, form, evoAccent(form)), evoAccent(form));
+        }
+      });
+    });
+  }
+  function stDetailHTML(beast, form, accent) {
+    const p = form.passive || {};
+    const socket = form.socket
+      ? '<div class="lwm-socket">Grants a new <b>' + (form.socket.label || 'special') + '</b> socket</div>' : '';
+    return '<div class="lwm-detail" style="--acc:' + accent + '">' +
+      '<div class="lwm-port">' + evoFormImg(form, beast, 'lwm-img') + '</div>' +
+      '<div class="lwm-info">' +
+        '<div class="lwm-name">' + form.name + '</div>' +
+        (form.tagline ? '<div class="lwm-tag">' + form.tagline + '</div>' : '') +
+        (p.name ? '<div class="lwm-passive-name">' + p.name + '</div>' : '') +
+        '<div class="lwm-passive-text">' + (p.text || '') + '</div>' +
+        socket +
+      '</div>' +
+    '</div>';
+  }
+
+  // ---- MONSTER BOOK ----
+  function monsterBookRoster() {
+    const list = Object.values(ENEMIES).filter(e => e && !e.token);
+    // Soulhunter is generated at runtime, so it has no static ENEMIES entry.
+    list.push({ id: 'soulhunter', name: 'Soulhunter', emoji: '☠️', img: 'assets/Soulhunter I.png',
+      _synthetic: true, boss: true, shadow: true,
+      desc: 'A shapeless hunter from beyond the chain — it returns in a deadlier form each time you meet it.' });
+    return list;
+  }
+  function enemyTierLabel(def) {
+    if (def.boss || def.floorBoss) return 'Boss';
+    if (def.elite) return 'Elite';
+    if (def._synthetic) return 'Shadow';
+    return 'Common';
+  }
+  function intentLabel(it) {
+    switch (it.type) {
+      case 'attack': return '⚔ ' + it.value + (it.hits > 1 ? ' ×' + it.hits : '') + (it.big ? ' (big)' : '');
+      case 'defend': return '🛡 ' + it.value;
+      case 'curse': return 'Curse ' + it.value;
+      case 'sunder': return 'Seal ' + it.value;
+      case 'debuff': return (it.stat || 'debuff') + ' ' + it.value;
+      case 'buff': return 'Empower ' + it.value;
+      case 'siphon': return 'Siphon ' + (it.stat || '');
+      case 'regen': return 'Regen ' + it.value;
+      case 'rally': return 'Rally ' + it.value;
+      case 'summon': return 'Summon';
+      case 'clog': return 'Dead Weight';
+      case 'trash': return 'Rubble';
+      default: return it.type;
+    }
+  }
+  function enemyIntentChips(def) {
+    const out = [];
+    (def.intents || []).forEach(entry => {
+      if (Array.isArray(entry)) out.push(entry.map(intentLabel).join(' + '));
+      else out.push(intentLabel(entry));
+    });
+    return out;
+  }
+  function gimmickBadges(def) {
+    const b = [];
+    if (def.thorns) b.push('Thornmail');
+    if (def.ward) b.push('Ward');
+    if (def.enrage) b.push('Enrage');
+    return b;
+  }
+  function mbState(def) {
+    if (def._synthetic) {
+      // soulhunter tracked under its dynamic id
+      if (META.bestiary.defeated.soulhunter) return 'defeated';
+      if (META.bestiary.seen.soulhunter) return 'seen';
+      return 'locked';
+    }
+    if (META.bestiary.defeated[def.id]) return 'defeated';
+    if (META.bestiary.seen[def.id]) return 'seen';
+    return 'locked';
+  }
+  function buildMonsterBook() {
+    const body = $('monsterbook-body');
+    if (!body) return;
+    const roster = monsterBookRoster();
+    let defeated = 0;
+    roster.forEach(d => { if (mbState(d) === 'defeated') defeated++; });
+    const prog = $('mb-progress');
+    if (prog) prog.textContent = defeated + ' / ' + roster.length + ' slain';
+    body.innerHTML = '<div class="mb-grid">' + roster.map(mbCard).join('') + '</div>';
+    body.querySelectorAll('.mb-card').forEach(card => {
+      if (card.classList.contains('mb-locked')) return;
+      card.addEventListener('click', () => {
+        SFX.click();
+        const def = roster.find(d => d.id === card.dataset.id);
+        if (def) openLwModal(mbDetailHTML(def), '#c98a5a');
+      });
+    });
+  }
+  function mbCard(def) {
+    const st = mbState(def);
+    if (st === 'locked') {
+      return '<div class="mb-card mb-locked"><div class="mb-port"><span class="mb-silhouette">?</span></div>' +
+        '<div class="mb-name">???</div></div>';
+    }
+    const portrait = def.img
+      ? '<img class="mb-port-img" src="' + def.img + '" alt="" draggable="false">'
+      : '<span class="mb-port-emoji">' + (def.emoji || '✦') + '</span>';
+    const tier = '<span class="mb-tier mb-tier-' + enemyTierLabel(def).toLowerCase() + '">' + enemyTierLabel(def) + '</span>';
+    const sub = (st === 'seen') ? '<div class="mb-sub">??? HP</div>' : '<div class="mb-sub">' + (def.maxHp ? def.maxHp + ' HP' : '???') + '</div>';
+    return '<div class="mb-card mb-' + st + '" data-id="' + def.id + '">' +
+      tier +
+      '<div class="mb-port">' + portrait + '</div>' +
+      '<div class="mb-name">' + def.name + '</div>' +
+      sub +
+    '</div>';
+  }
+  function mbDetailHTML(def) {
+    const st = mbState(def);
+    const portrait = def.img
+      ? '<img class="lwm-img" src="' + def.img + '" alt="" draggable="false">'
+      : '<span class="lwm-emoji">' + (def.emoji || '✦') + '</span>';
+    if (st === 'seen') {
+      return '<div class="lwm-detail mb-detail" style="--acc:#9a8cff">' +
+        '<div class="lwm-port">' + portrait + '</div>' +
+        '<div class="lwm-info">' +
+          '<div class="lwm-name">' + def.name + '</div>' +
+          '<div class="lwm-tag">' + enemyTierLabel(def) + '</div>' +
+          '<div class="mb-unknown">You have crossed its path but never felled it. Slay it to record its secrets.</div>' +
+          '<div class="mb-rows"><div class="mb-row"><span class="mb-row-k">Health</span><span class="mb-row-v">???</span></div>' +
+          '<div class="mb-row"><span class="mb-row-k">Intents</span><span class="mb-row-v">???</span></div>' +
+          '<div class="mb-row"><span class="mb-row-k">Feast Boons</span><span class="mb-row-v">???</span></div></div>' +
+        '</div>' +
+      '</div>';
+    }
+    // defeated — full reveal
+    const intents = enemyIntentChips(def);
+    const gimmicks = gimmickBadges(def);
+    const boons = (def._synthetic ? DATA.feastPoolFor({ id: 'soulhunter' }) : DATA.feastPoolFor(def)).map(b => DATA.feastLabel(b));
+    return '<div class="lwm-detail mb-detail" style="--acc:#c98a5a">' +
+      '<div class="lwm-port">' + portrait + '</div>' +
+      '<div class="lwm-info">' +
+        '<div class="lwm-name">' + def.name + '</div>' +
+        '<div class="lwm-tag">' + enemyTierLabel(def) + (def.maxHp ? ' · ' + def.maxHp + ' HP' : '') + '</div>' +
+        (def.desc ? '<div class="mb-desc">' + def.desc + '</div>' : '') +
+        (gimmicks.length ? '<div class="mb-badges">' + gimmicks.map(g => '<span class="mb-badge">' + g + '</span>').join('') + '</div>' : '') +
+        (intents.length ? '<div class="mb-block"><div class="mb-block-label">Intents</div><div class="mb-chips">' + intents.map(i => '<span class="mb-chip">' + i + '</span>').join('') + '</div></div>' : '') +
+        '<div class="mb-block"><div class="mb-block-label">Hidden Feast Boons</div><div class="mb-chips">' +
+          (boons.length ? boons.map(b => '<span class="mb-chip mb-chip-boon">' + b + '</span>').join('') : '<span class="gm-empty">None</span>') +
+        '</div></div>' +
+      '</div>' +
+    '</div>';
   }
 
   // ============================================================
@@ -3797,6 +4429,7 @@
   function init() {
     buildStart();
     loadSettings();
+    loadMeta();
     wireOptions();
     wireConfirm();
     wireBlessModal();
@@ -3804,9 +4437,12 @@
 
     // ---- Home / main menu ----
     const beginNewGame = () => {
-      buildStart();
-      show('screen-start');
+      buildModeSelect();
+      show('screen-mode');
     };
+    $('mode-classic').addEventListener('click', () => { SFX.click(); chooseMode('classic'); });
+    $('mode-descension').addEventListener('click', () => { SFX.click(); chooseMode('descension'); });
+    $('btn-mode-back').addEventListener('click', () => { SFX.click(); show('screen-home'); });
     $('btn-new-game').addEventListener('click', () => {
       root.CG.Audio.resume();
       goFullscreenOnMobile();
@@ -3829,13 +4465,23 @@
       SFX.click();
       loadGame();
     });
+    $('btn-lost-woods').addEventListener('click', () => {
+      root.CG.Audio.resume(); SFX.click();
+      buildLostWoods(); show('screen-lostwoods');
+    });
+    $('btn-lostwoods-back').addEventListener('click', () => { SFX.click(); show('screen-home'); });
+    document.querySelectorAll('.lw-sub-back').forEach(b => {
+      b.addEventListener('click', () => { SFX.click(); show('screen-lostwoods'); });
+    });
+    $('btn-lw-modal-close').addEventListener('click', () => { SFX.click(); closeLwModal(); });
+    $('lw-modal').addEventListener('click', (e) => { if (e.target.id === 'lw-modal') closeLwModal(); });
     $('btn-options').addEventListener('click', () => { root.CG.Audio.resume(); SFX.click(); openOptions(); });
     $('btn-exit').addEventListener('click', () => {
       SFX.click();
       // works in packaged/standalone builds; harmless no-op in a normal browser tab
       try { window.close(); } catch (e) { /* ignore */ }
     });
-    $('btn-start-back').addEventListener('click', () => { SFX.click(); show('screen-home'); });
+    $('btn-start-back').addEventListener('click', () => { SFX.click(); buildModeSelect(); show('screen-mode'); });
 
     // ---- secret debug unlock: tap the menu logo 5x within 3s ----
     wireDebugUnlock();
@@ -3874,7 +4520,7 @@
       root.CG.Audio.resume();
       goFullscreenOnMobile();   // the click is a user gesture, so this is allowed
       SFX.click();
-      startRun(pendingMonsterPick);
+      startRun(pendingMonsterPick, { mode: pendingMode, descension: pendingDescensionLevel });
     });
 
     $('btn-skip-reward').addEventListener('click', () => { SFX.click(); finishReward(); });
@@ -4022,6 +4668,7 @@
     init, show, renderMap, gameOver, activeMonster, firstAlive, updateTopbar,
     grantRandomBlessing, consumeRevive, addItem, canAddItem,
     gainSouls, grantRandomGlyph, permEmpowerBase,
+    recordBestiarySeen, recordBestiaryDefeated,
     debugGold, debugToggleAnyNode, debugSecretShop,
     get state() { return State; }
   };

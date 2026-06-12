@@ -20,7 +20,22 @@
       'assets/Impatient Devil.png',
       'assets/Angry Devil.png',
       'assets/Frustrated Devil.png',
-      'assets/Devil Finger.png'
+      'assets/Devil Finger.png',
+      // status / socket icons (rendered from battle.js, not the DATA harvest)
+      'assets/Strength.png',
+      'assets/Sheild.png',
+      'assets/Thorns.png',
+      'assets/Cursed.png',
+      'assets/Banished.png',
+      // Soulhunter forms (built dynamically in game.js, not in DATA)
+      'assets/Soulhunter I.png',
+      'assets/Soulhunter II.png',
+      'assets/Soulhunter III.png',
+      // bespoke UI button art
+      'assets/Back Button.png',
+      'assets/Descend Button.png',
+      'assets/Character Button.png',
+      'assets/Options Gear Button.png'
     ].forEach(addImg);
     // every art reference declared in the data, harvested generically so new
     // collections (blessings, items, souls, …) and new `img`/`selectBg` fields

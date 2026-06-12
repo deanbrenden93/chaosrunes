@@ -92,11 +92,13 @@
     G.state.activeIndex = G.firstAlive();
 
     const depth = opts.depth || 0;
-    const scaledEnemies = opts.enemies.map(e => scaleEnemyDef(e, depth));
+    const dz = opts.descension || null;   // Descension stacked effects (null in Classic)
+    const scaledEnemies = opts.enemies.map(e => applyDescensionDef(scaleEnemyDef(e, depth), dz));
 
     B = {
       monster: monster,
       depthScale: depth,
+      descension: dz,
       playerShield: 0,
       strength: monster.runStrength || 0,   // seeded by Devil(red) run buffs
       turnStrength: 0,    // temporary strength that only lasts the current turn
@@ -153,6 +155,8 @@
       devilsFedThisTurn: 0,// Demon: Devil boons amplify per Devil sated this turn
       ended: false
     };
+    // Monster Book: every foe in this arena is now "seen"
+    if (G.recordBestiarySeen) G.recordBestiarySeen(B.enemies.map(e => e.base && e.base.id).filter(Boolean));
     B.slotFx = Array.from({ length: monster.sockets }, () => ({ disabled: 0, cursed: 0, caster: null }));
     B.slotTypes = Array.from({ length: monster.sockets }, (_, i) => (monster.slotTypes && monster.slotTypes[i]) || 'normal');
     B.draw = shuffle(root.CG.Game.state.pool.slice());   // the run deck, shuffled into a draw pile
@@ -216,7 +220,7 @@
       <div class="bars">
         <div class="bar hp"><div class="fill"></div><div class="label"></div></div>
       </div>
-      <div class="shield-pip"><span>◆</span><span class="sv"></span></div>
+      <div class="shield-pip"><span class="sp-ico">${SHIELD_IMG}</span><span class="sv"></span></div>
       <div class="statuses"></div>`;
   }
 
@@ -506,7 +510,7 @@
           <div class="pc-gear"></div>
           <div class="pc-rune"></div>
           <div class="pc-portrait">${face}</div>
-          <div class="shield-pip"><span class="sp-ico">◆</span><span class="sv"></span></div>
+          <div class="shield-pip"><span class="sp-ico">${SHIELD_IMG}</span><span class="sv"></span></div>
           <div class="pc-hp-num"></div>
         </div>
       </div>
@@ -629,8 +633,8 @@
   // status glossary — icon + name + tooltip text per status (keyed so the same
   // condition can read differently for player vs enemy where the math differs)
   const STATUS_META = {
-    strength:   { cls: 'str',   icon: '⚔', name: 'Strength',   desc: 'Adds {n} damage to each of your attacks.' },
-    resilience: { cls: 'res',   icon: '🛡', name: 'Resilience', desc: 'Adds {n} to every block you gain.' },
+    strength:   { cls: 'str',   icon: '⚔', img: 'assets/Strength.png', name: 'Strength',   desc: 'Adds {n} damage to each of your attacks.' },
+    resilience: { cls: 'res',   icon: '🛡', img: 'assets/Sheild.png',   name: 'Resilience', desc: 'Adds {n} to every block you gain.' },
     pweak:      { cls: 'weak',  icon: '▼', name: 'Weak',       desc: 'Your attacks deal 40% less damage. {n} turn(s) left.' },
     frail:      { cls: 'leech', icon: '💔', name: 'Frail',      desc: 'You gain 50% less block. {n} turn(s) left.' },
     pburn:      { cls: 'burn',  icon: '🔥', name: 'Burn',       desc: 'Take {n} damage at the start of your turn, then it drops by 1.' },
@@ -639,15 +643,21 @@
     leech:      { cls: 'leech', icon: '🩸', name: 'Leech',      desc: 'Saps 10% of its HP each turn to heal your beast — and powers many Ghoul glyphs. {n} turn(s) left.' },
     scare:      { cls: 'scare', icon: '☠', name: 'Scared',     desc: 'Takes +{n} damage from each of your attacks.' },
     empower:    { cls: 'str',   icon: '⊕', name: 'Empower',    desc: 'Adds {n} damage to this enemy\'s next attack only.' },
-    estrength:  { cls: 'str',   icon: '⚔', name: 'Strength',   desc: 'Adds {n} damage to its attacks.' },
-    ward:       { cls: 'res',   icon: '🛡', name: 'Wardstone',  desc: 'While it lives, its allies take {n} less damage from your hits. Break it first.' },
-    warded:     { cls: 'res',   icon: '🜉', name: 'Warded',     desc: 'A Wardstone shields this foe — {n} less damage from your hits. Destroy the Wardstone to end it.' },
-    thorns:     { cls: 'scare', icon: '🜂', name: 'Thornmail',  desc: 'Each time you strike it, it lashes {n} damage back at you — avoid wasteful multi-hits.' },
+    estrength:  { cls: 'str',   icon: '⚔', img: 'assets/Strength.png', name: 'Strength',   desc: 'Adds {n} damage to its attacks.' },
+    ward:       { cls: 'res',   icon: '🛡', img: 'assets/Sheild.png',   name: 'Wardstone',  desc: 'While it lives, its allies take {n} less damage from your hits. Break it first.' },
+    warded:     { cls: 'res',   icon: '🜉', img: 'assets/Sheild.png',   name: 'Warded',     desc: 'A Wardstone shields this foe — {n} less damage from your hits. Destroy the Wardstone to end it.' },
+    thorns:     { cls: 'scare', icon: '🜂', img: 'assets/Thorns.png',   name: 'Thornmail',  desc: 'Each time you strike it, it lashes {n} damage back at you — avoid wasteful multi-hits.' },
     enrage:     { cls: 'str',   icon: '🔺', name: 'Enrage',     desc: 'Gains +{n} Strength at the end of every turn. End the fight fast.' }
   };
+  // render a status icon as the new PNG where one exists, else the legacy glyph
+  function sbIconHTML(m) {
+    return m && m.img ? '<img class="sb-img" src="' + m.img + '" alt="" draggable="false">' : (m ? m.icon : '');
+  }
+  // the shield emblem, used everywhere block is shown (pip, forecast, badge)
+  const SHIELD_IMG = '<img class="ico-img shield-ico-img" src="assets/Sheild.png" alt="" draggable="false">';
   function shieldBadge(val) {
     return '<span class="status-badge shield" tabindex="0">' +
-             '<span class="sb-icon">◆</span>' +
+             '<span class="sb-icon"><img class="sb-img" src="assets/Sheild.png" alt="" draggable="false"></span>' +
              '<span class="sb-num">' + val + '</span>' +
              '<span class="hud-tip"><b>Block</b> Absorbs ' + val + ' incoming damage this turn before HP is touched.</span>' +
            '</span>';
@@ -656,7 +666,7 @@
     const m = STATUS_META[key];
     if (!m) return '';
     return '<span class="status-badge ' + m.cls + '" tabindex="0">' +
-             '<span class="sb-icon">' + m.icon + '</span>' +
+             '<span class="sb-icon">' + sbIconHTML(m) + '</span>' +
              '<span class="sb-num">' + val + '</span>' +
              '<span class="hud-tip"><b>' + m.name + '</b> ' + m.desc.replace('{n}', val) + '</span>' +
            '</span>';
@@ -1159,7 +1169,7 @@
           // a sealed loop stays visible but dormant — show the lock so the
           // player knows it won't replay this turn
           s.classList.add('disabled');
-          const lb = el('div', 'slot-lock fx-badge', '⛔<span class="lock-turns">' + fx.disabled + '</span>');
+          const lb = el('div', 'slot-lock fx-badge', '<img class="fx-badge-img" src="assets/Banished.png" alt="" draggable="false"><span class="lock-turns">' + fx.disabled + '</span>');
           lb.appendChild(el('div', 'slot-fx-tip',
             '<b class="st-name">Sealed Socket</b>Shut tight by the enemy — this Loop will <b>not replay</b> the chain until it reopens.' +
             '<span class="sft-turns">' + fx.disabled + ' turn(s) remaining</span>'));
@@ -1194,7 +1204,7 @@
         }
       } else if (fx.disabled > 0) {
         s.classList.add('disabled');
-        const lb = el('div', 'slot-lock fx-badge', '⛔<span class="lock-turns">' + fx.disabled + '</span>');
+        const lb = el('div', 'slot-lock fx-badge', '<img class="fx-badge-img" src="assets/Banished.png" alt="" draggable="false"><span class="lock-turns">' + fx.disabled + '</span>');
         lb.appendChild(el('div', 'slot-fx-tip',
           '<b class="st-name">Sealed Socket</b>Shut tight by the enemy — you forge with <b>one fewer slot</b> until it reopens.' +
           '<span class="sft-turns">' + fx.disabled + ' turn(s) remaining</span>'));
@@ -1205,7 +1215,7 @@
         if (i === firstFree) { s.classList.add('next'); syncPulse(s, 1600); }
       }
       if (fx.cursed > 0) {
-        const cb = el('div', 'slot-curse fx-badge', '☠<span class="lock-turns">' + fx.cursed + '</span>');
+        const cb = el('div', 'slot-curse fx-badge', '<img class="fx-badge-img" src="assets/Cursed.png" alt="" draggable="false"><span class="lock-turns">' + fx.cursed + '</span>');
         cb.appendChild(el('div', 'slot-fx-tip',
           '<b class="st-name">Cursed Socket</b>Its effect still resolves, but is <b>mirrored</b>: any block or heal you gain here <b>also feeds the caster</b>, and any damage or burn <b>also recoils onto you</b>.' +
           '<span class="sft-turns">' + fx.cursed + ' turn(s) remaining</span>'));
@@ -3189,7 +3199,7 @@
     if (sim.rndDmg > 0) rows.push(fcRow('rnd', '🎲', sim.rndDmg, 'random damage, ' + sim.rndSwings + ' hit' + (sim.rndSwings === 1 ? '' : 's')));
     if (sim.chargeFired && sim.chargeFired.dmg > 0) rows.push(fcRow('charge', '⚡', sim.chargeFired.dmg, 'Charge Attack · every foe'));
     if (lethal > 0) rows.push(fcRow('lethal', '💀', lethal, lethal === 1 ? 'killing blow' : 'killing blows'));
-    if (sim.shieldGain > 0) rows.push(fcRow('shield', '◆', sim.shieldGain, 'block'));
+    if (sim.shieldGain > 0) rows.push(fcRow('shield', SHIELD_IMG, sim.shieldGain, 'block'));
     if (sim.heal > 0) rows.push(fcRow('heal', '♥', sim.heal, 'healing'));
     if (sim.burnTotal > 0) rows.push(fcRow('burn', '🔥', sim.burnTotal, 'burn applied'));
     if (sim.scareTotal > 0) rows.push(fcRow('scare', '☠', '~' + sim.scareTotal, 'scare'));
@@ -3211,7 +3221,7 @@
     if (sim.handFx.length) {
       const bits = sim.handFx.map(h =>
         h.name + (h.n > 1 ? ' ×' + h.n : '') + ' ' +
-        (h.kind === 'block' ? '<i class="fn-shield">◆' + h.amt + '</i>' : '<i class="fn-dmg">🎲⚔' + h.amt + '</i>'));
+        (h.kind === 'block' ? '<i class="fn-shield">' + SHIELD_IMG + h.amt + '</i>' : '<i class="fn-dmg">🎲⚔' + h.amt + '</i>'));
       handNote = '<div class="fc-note hand">✋ left in hand at turn\u2019s end: ' + bits.join(' · ') + '</div>';
     }
     const sub = hoverId ? 'playing ' + glyph(hoverId).name
@@ -3253,7 +3263,7 @@
     const pp = document.getElementById('player-panel');
     if (pp) {
       const bits = [];
-      if (sim.shieldGain > 0) bits.push('<i class="fs-shield">◆ ' + sim.shieldGain + '</i>');
+      if (sim.shieldGain > 0) bits.push('<i class="fs-shield">' + SHIELD_IMG + ' ' + sim.shieldGain + '</i>');
       if (sim.heal > 0) bits.push('<i class="fs-heal">♥ ' + sim.heal + '</i>');
       if (sim.strGain > 0) bits.push('<i class="fs-str">✦ +' + sim.strGain + '</i>');
       if (sim.resGain > 0) bits.push('<i class="fs-res">🛡 +' + sim.resGain + '</i>');
@@ -4348,6 +4358,7 @@
     en.alive = false;
     killEnemyVisual(en);
     recordFeastKill(en);
+    if (en.base && root.CG.Game.recordBestiaryDefeated) root.CG.Game.recordBestiaryDefeated(en.base.id);
     if (!opts.noFeast && hasPassive('feast')) {
       const skin = hasPassive('skinwalker') && feastQualifiesSkin(en);
       feast(en, { kill: true, dmg: opts.dmg || 0, all: !!skin });
@@ -4586,8 +4597,12 @@
     }
   }
   function heal(amt, opts) {
-    if (amt <= 0) return;
     opts = opts || {};
+    // Descension "Withering" and friends scale down ALL healing.
+    if (B.descension && B.descension.healMul && B.descension.healMul !== 1) {
+      amt = Math.round(amt * B.descension.healMul);
+    }
+    if (amt <= 0) return;
     const m = B.monster;
     const room = Math.max(0, m.maxHp - m.hp);
     const applied = Math.min(room, amt);
@@ -5366,8 +5381,29 @@
     return Object.assign({}, def, { maxHp: Math.round(def.maxHp * hpMul), intents });
   }
 
+  // Descension difficulty: applies the run's stacked modifiers on TOP of depth
+  // scaling, and (unlike scaleEnemyDef) affects bosses too. No-op when dz is null.
+  function applyDescensionDef(def, dz) {
+    if (!dz) return def;
+    const hpMul = dz.enemyHpMul || 1;
+    let dmgMul = dz.enemyDmgMul || 1;
+    const isLeader = !!(def.boss || def.floorBoss || def.elite);
+    if (isLeader && dz.eliteBossDmgMul) dmgMul *= dz.eliteBossDmgMul;
+    const enrageAdd = dz.enrageAdd || 0;
+    const scaleSub = it => (it && it.type === 'attack')
+      ? Object.assign({}, it, { value: Math.max(1, Math.round(it.value * dmgMul)) })
+      : it;
+    const out = Object.assign({}, def);
+    if (hpMul !== 1) out.maxHp = Math.max(1, Math.round(def.maxHp * hpMul));
+    if (dmgMul !== 1 && Array.isArray(def.intents)) {
+      out.intents = def.intents.map(entry => Array.isArray(entry) ? entry.map(scaleSub) : scaleSub(entry));
+    }
+    if (enrageAdd) out.enrage = (def.enrage || 0) + enrageAdd;
+    return out;
+  }
+
   function spawnEnemy(def) {
-    def = scaleEnemyDef(def, B.depthScale || 0);
+    def = applyDescensionDef(scaleEnemyDef(def, B.depthScale || 0), B.descension);
     const en = {
       base: def, id: def.id + '#' + (B.enemies.length), name: def.name, emoji: def.emoji, img: def.img,
       maxHp: def.maxHp, hp: def.maxHp, shield: 0,
