@@ -2113,6 +2113,7 @@
       // a multi-socket glyph is fully cursed if ANY socket it covers is cursed
       const cursedSlot = (ev.covered || [slot]).find(ci => slotCursed(ci));
       B.tickCount = 0;   // Berserk Frenzy counts only THIS glyph's hits as it resolves
+      B._glyphTargets = [];   // foes this glyph strikes (Crawler/Demon precise Feast target)
       await resolveGlyph(ev.id, g, {
         slot, chainPos, prevId, redAfter, totalRed, counts, originEl, originEls,
         comboBonus: comboBonus + empBonus[k],   // Empower slots fold in as a flat +1 to neighbors
@@ -2178,7 +2179,7 @@
             if (hasPassive('crawlerfeast')) {
               B.devilsFedThisTurn = (B.devilsFedThisTurn || 0) + 1;
               const nFeasts = hasPassive('demon') ? 2 : 1;
-              for (let fz = 0; fz < nFeasts; fz++) { const tgt = randomFeastTarget(); if (tgt) feast(tgt, {}); }
+              for (let fz = 0; fz < nFeasts; fz++) { const tgt = devilFeastTarget(); if (tgt) feast(tgt, {}); }
             }
             B._devilRewards.push({ slot: ci, bonus: b, comboLen: comboLen, baseId: baseOf(ev.id) });
           }
@@ -2699,11 +2700,30 @@
       t.hp = Math.max(0, t.hp - (amt - absorbed));
       t.dmg += amt;
       fcTickEngines(amt, opts);
-      if (t.hp <= 0) t.alive = false;
+      if (t.hp <= 0) { if (t.alive) { t.alive = false; fcOnKill(t); } }
       else if (t.ref.base && t.ref.base.thorns > 0 && amt > 0 && !opts.noThorns) fcSelf(t.ref.base.thorns);
       // Smoldering Tails: every genuine hit also lays Burn equal to the current combo
       if (smolderActive && t.alive && (T._comboNow || 0) > 0) fcBurn(t, T._comboNow);
       return amt;
+    }
+    // a predicted kill Feasts the slain foe — deterministic where it produces
+    // damage/heal. Vampire's Feast-kill heals 20% of the foe's max HP; any heal
+    // past full spills as AoE damage to every survivor (which can chain). A kill
+    // only Feasts while the foe still holds a bonus to sap.
+    function fcOnKill(t) {
+      if (!t.ref.feastPool || !t.ref.feastPool.length) return;
+      const missing = B.monster.maxHp - B.monster.hp;
+      if (hasPassive('vampire')) {
+        const heal = Math.round((t.ref.maxHp || 0) * 0.20);
+        const room = Math.max(0, missing - T.heal);
+        const healed = Math.min(room, heal);
+        T.heal += healed;
+        const spill = heal - healed;
+        if (spill > 0) A().forEach(f => fcHit(f, spill, { strength: false, scare: false, charge: true }));
+      } else if (hasPassive('undeadfeast')) {
+        const room = Math.max(0, missing - T.heal);
+        T.heal += Math.min(room, Math.max(1, Math.round(B.monster.maxHp * 0.05)));
+      }
     }
     // damage recoiling onto the beast (curse mirror, thorns, blood magic)
     function fcSelf(n) {
@@ -3028,6 +3048,23 @@
         comboLen += (T._hits - 1);
         if (comboLen > fcMax) fcMax = comboLen;
         T._comboNow = comboLen;
+      }
+      // Wendigo: a genuine play ramps a color buff (×5 when it sates a Devil) —
+      // red/blue Strength/Resilience reshape every later hit, so fold them in now
+      if (hasPassive('wendigo') && !ev.replay && !ev.repeat2) {
+        let devilFed = false;
+        (ev.covered || [ev.slot]).forEach(ci => {
+          if (slotCountAt(ci, 'devil') > 0) {
+            const d = B.devil && B.devil[ci];
+            if (d && d.crave && !d.fed && baseOf(ev.id) === d.crave) devilFed = true;
+          }
+        });
+        const wMult = devilFed ? 5 : 1;
+        const wCol = glyph(ev.id).color;
+        if (wCol === 'red') fcStr(2 * wMult);
+        else if (wCol === 'blue') fcRes(2 * wMult);
+        else if (wCol === 'green') fcHeal(Math.max(1, Math.round(B.monster.maxHp * 0.05 * wMult)));
+        // white/colorless rolls a random of the three — unforecastable, left out
       }
       if (!ev.replay && !ev.repeat2) {
         const g = glyph(ev.id);
@@ -4092,6 +4129,9 @@
     // opts.reflect, so neither feeds back into the engines)
     if (dealt > 0 && !opts.noFloat && !opts.charge && !opts.reflect) {
       B.tickCount = (B.tickCount || 0) + 1;                      // Berserk Frenzy: combo per tick
+      // remember which foes THIS glyph struck — a lone struck foe is a "targeted
+      // attack" (Crawler/Demon Feast it precisely; many/none falls back to random)
+      if (B._glyphTargets && B._glyphTargets.indexOf(en) === -1) B._glyphTargets.push(en);
       if (hasPassive('overcharge')) {                            // Overcharge: 1 Damage Charge per tick
         B.charge.dmg = (B.charge.dmg || 0) + 1;
         flowChargeInto(center(en.dom));                          // energy flows into the orb
@@ -4141,6 +4181,13 @@
     const pool = alive().filter(e => e.feastPool && e.feastPool.length);
     if (!pool.length) return null;
     return pool[Math.floor(Math.random() * pool.length)];
+  }
+  // Crawler/Demon: a sated Devil Feasts the glyph's struck foe when it was a
+  // single-target attack; an AoE or non-attack (no/many distinct foes) is random.
+  function devilFeastTarget() {
+    const hit = B._glyphTargets || [];
+    if (hit.length === 1 && hit[0].alive && hit[0].feastPool && hit[0].feastPool.length) return hit[0];
+    return randomFeastTarget();
   }
   function feastBiteFx(en) {
     if (!en || !en.dom) return;
