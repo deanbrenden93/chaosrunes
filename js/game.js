@@ -258,6 +258,8 @@
     const flair = BEAST_FLAIR[m.id] || { numeral: '✦', challenge: 2, challengeWord: 'Tactical' };
     const page = $('beast-page');
     if (!page || !m) return;
+    // re-arm the 3D page-turn stage for this incoming spread (see settle below)
+    page.classList.remove('settled');
     page.style.setProperty('--beast', m.color);
     page.style.setProperty('--dir', dir >= 0 ? 1 : -1);
 
@@ -340,6 +342,12 @@
           </div>
         </div>
       </div>`;
+
+    // Once the page-turn finishes, flatten the 3D stage so the resting panel is no
+    // longer rasterized as a perspective texture — that GPU layer is what leaves the
+    // dossier text looking blurry. A fresh turn re-arms it (see classList.remove above).
+    const content = page.querySelector('.bp-content');
+    if (content) content.addEventListener('animationend', () => page.classList.add('settled'), { once: true });
 
     // tab states + the open page is the live choice
     const tabs = $('beast-tabs');
@@ -984,8 +992,49 @@
       const sub = $('soulstone-sub');
       if (sub) sub.innerHTML = '<b>The fragments fuse — ' + activeMonster().name + ' EVOLVES!</b>';
       SFX.reward();
+      updateRunUI();
+      return;
     }
     updateRunUI();
+    // a satisfying "stone snaps into the chain" beat for the 1st–4th fragment
+    showSoulstoneModal(State.soulstones);
+  }
+
+  // The 5-stone evolution chain, with `count` stones gathered and `newIdx` the one
+  // that just materialized.
+  function ssChainHTML(count, newIdx) {
+    let h = '';
+    for (let i = 0; i < 5; i++) {
+      if (i > 0) h += '<span class="ss-link' + (i < count ? ' lit' : '') + (i === newIdx ? ' new' : '') + '"></span>';
+      h += '<span class="ss-gem' + (i < count ? ' lit' : '') + (i === newIdx ? ' new' : '') +
+        '"><span class="ss-gem-core">\u25C6</span></span>';
+    }
+    return h;
+  }
+  function showSoulstoneModal(count) {
+    const modal = $('soulstone-modal'), row = $('soulstone-modal-row');
+    if (!modal || !row) return;
+    const newIdx = count - 1;
+    row.innerHTML = ssChainHTML(count, newIdx);
+    const t = $('soulstone-modal-title'); if (t) t.textContent = 'A Soulstone Gathered';
+    const sub = $('soulstone-modal-sub');
+    if (sub) sub.innerHTML = '<b>' + count + ' / 5</b> — gather <b>5</b> to evolve <b>' + activeMonster().name + '</b>.';
+    modal.classList.remove('hidden', 'closing');
+    SFX.reward();
+    requestAnimationFrame(() => {
+      const gem = row.querySelector('.ss-gem.new');
+      if (gem) {
+        gem.classList.add('ss-pop');
+        const ring = document.createElement('span'); ring.className = 'ss-ring'; gem.appendChild(ring);
+        setTimeout(() => ring.remove(), 820);
+      }
+    });
+  }
+  function hideSoulstoneModal() {
+    const modal = $('soulstone-modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    modal.classList.add('closing');
+    setTimeout(() => { modal.classList.remove('closing'); modal.classList.add('hidden'); }, 320);
   }
   function buildSoulstone(node) {
     pendingClaims = [];
@@ -1336,12 +1385,55 @@
       State.blessings[bless.id] = true;
       // Calamitous Soul reshapes every eligible socket the moment it's taken
       if (bless.id === 'calamitous') grantCalamitousUpgrade();
-      updateRunUI();
+      flyBlessingToTopbar(bless);   // flourish mid-screen, then fly into the HUD slot
     } else if (bless.effect === 'twinsocket') {
       gainSocket(2);
     } else { // socket
       gainSocket(1);
     }
+  }
+
+  // A gained blessing blooms in the center of the screen, then its emblem streaks
+  // up into the top-bar where it finally settles into its chip.
+  let flyingBlessId = null;
+  function pulseBlessChip(id) {
+    const chip = document.querySelector('#tb-blessings [data-bless="' + id + '"]');
+    if (!chip) return;
+    chip.classList.remove('tb-bless-arrive'); void chip.offsetWidth; chip.classList.add('tb-bless-arrive');
+  }
+  function flyBlessingToTopbar(bless) {
+    flyingBlessId = bless.id;
+    updateRunUI();   // the new chip renders, but stays held invisible until it lands
+    const layer = document.createElement('div');
+    layer.className = 'bless-fly-layer';
+    layer.innerHTML =
+      '<div class="bless-fly">' +
+        '<div class="bless-fly-art">' + blessArtHTML(bless) + '</div>' +
+        '<div class="bless-fly-name">' + bless.name + '</div>' +
+      '</div>';
+    document.body.appendChild(layer);
+    if (SFX && SFX.reward) SFX.reward();
+
+    const reveal = () => { flyingBlessId = null; updateRunUI(); pulseBlessChip(bless.id); };
+    const target = document.querySelector('#tb-blessings [data-bless="' + bless.id + '"]');
+    const rect = target ? target.getBoundingClientRect() : null;
+    // top bar not on screen (or no room) → just bloom, then drop it into place
+    if (!rect || rect.width < 2) {
+      setTimeout(() => { layer.classList.add('done'); reveal(); setTimeout(() => layer.remove(), 320); }, 1150);
+      return;
+    }
+    // after the bloom, streak the emblem into its HUD slot
+    setTimeout(() => {
+      const art = layer.querySelector('.bless-fly-art');
+      const a = art.getBoundingClientRect();
+      const dx = (rect.left + rect.width / 2) - (a.left + a.width / 2);
+      const dy = (rect.top + rect.height / 2) - (a.top + a.height / 2);
+      const scale = Math.max(0.12, rect.width / a.width);
+      layer.classList.add('flying');
+      art.style.transition = 'transform .58s cubic-bezier(.55,0,.25,1), filter .58s ease';
+      art.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(' + scale + ')';
+      setTimeout(() => { reveal(); layer.remove(); }, 560);
+    }, 940);
   }
 
   // Calamitous Soul: stamp 'Upgrade' onto every socket that can carry a glyph.
@@ -1460,8 +1552,20 @@
 
     host.querySelectorAll('.evo-card').forEach(btn => {
       btn.addEventListener('click', () => {
+        if (host.dataset.choosing === '1') return;   // guard against double-clicks
+        host.dataset.choosing = '1';
         const idx = parseInt(btn.dataset.idx, 10);
-        chooseEvoForm(m, forms[idx], tier);
+        // animate the choice out: chosen card surges forward, the other dismisses,
+        // then we hand off to the transformation cinematic
+        const choose = host.querySelector('.evo-choose');
+        if (choose) choose.classList.add('evo-choosing');
+        host.querySelectorAll('.evo-card').forEach(c =>
+          c.classList.add(c === btn ? 'chosen' : 'dismissed'));
+        if (SFX && SFX.click) SFX.click();
+        setTimeout(() => {
+          host.removeAttribute('data-choosing');
+          chooseEvoForm(m, forms[idx], tier);
+        }, 680);
       });
     });
     show('screen-evolve');
@@ -1524,8 +1628,10 @@
     const newImg = evoFormImg(form, m, 'evo-morph-img');
     const p = form.passive || {};
 
-    // the final form looms 50% larger as it lands
-    host.className = 'evo-stage evo-phase-morph' + (tier >= 2 ? ' evo-final' : '');
+    // the final form looms 50% larger as it lands; a per-form class allows
+    // targeted size tweaks for individual forms (e.g. Undead +30%)
+    host.className = 'evo-stage evo-phase-morph' + (tier >= 2 ? ' evo-final' : '') +
+      (form && form.id ? ' evo-form-' + form.id : '');
     host.style.setProperty('--acc', acc);
     host.innerHTML =
       '<div class="evo-burst-bg morphing"></div>' +
@@ -1610,7 +1716,9 @@
       blEl.innerHTML = owned.length
         ? owned.map(k => {
             const b = allBless[k];
-            return '<span class="tb-bless' + (b.img ? ' has-img' : '') + '" data-bless="' + b.id + '">' + blessArtHTML(b) +
+            // a blessing mid-flight is held invisible until its icon lands in the slot
+            const pending = (b.id === flyingBlessId) ? ' tb-bless-pending' : '';
+            return '<span class="tb-bless' + (b.img ? ' has-img' : '') + pending + '" data-bless="' + b.id + '">' + blessArtHTML(b) +
               '<span class="hud-tip"><b>' + b.name + '</b><br>' + b.desc + '</span></span>';
           }).join('')
         : '<span class="tb-empty">—</span>';
@@ -3098,15 +3206,37 @@
       // legacy/linear beasts: their one evolved name lives on m.name (current)
       return i === lvl ? m.name : (m.evolveName || m.name);
     };
+    // each reached stage shows the form actually chosen at that tier (base art at
+    // tier 0), not the current portrait — resolved from evoChoices against the tree
+    const stageImg = (i) => {
+      if (i === 0) return base.img || m.img || null;
+      if (tree && choices[i - 1]) {
+        const pool = i === 1
+          ? (tree.tier1 || [])
+          : ((tree.tier2 && tree.tier2[choices[0]]) || []);
+        const form = pool.find(f => f.id === choices[i - 1]);
+        if (form && form.img) return form.img;
+      }
+      return m.img || null;   // legacy/linear beasts
+    };
+    const fallbackImg = base.img || m.img || '';
     const stages = [0, 1, 2].map(i => {
       const reached = i <= lvl;
       const isNow = i === lvl;
       const name = reached ? stageName(i) : '???';
-      const art = reached
-        ? (m.img ? '<img class="evo-art-img" src="' + m.img + '" alt="">' : '<span class="evo-art-emoji">' + m.emoji + '</span>')
-        : '<span class="evo-art-q">?</span>';
-      return '<div class="evo-stage' + (isNow ? ' now' : reached ? ' done' : ' future') + '">' +
-        '<div class="evo-orb">' + art + (isNow ? '<span class="evo-now-tag">Current</span>' : '') + '</div>' +
+      let art;
+      if (!reached) {
+        art = '<span class="evo-art-q">?</span>';
+      } else {
+        const src = stageImg(i);
+        const fb = (fallbackImg && fallbackImg !== src)
+          ? ' onerror="this.onerror=null;this.src=\'' + fallbackImg + '\'"' : '';
+        art = src
+          ? '<img class="evo-art-img" src="' + src + '"' + fb + ' alt="">'
+          : '<span class="evo-art-emoji">' + m.emoji + '</span>';
+      }
+      return '<div class="evo-rung' + (isNow ? ' now' : reached ? ' done' : ' future') + '">' +
+        '<div class="evo-orb">' + art + '</div>' +
         '<div class="evo-stage-name">' + name + '</div></div>';
     });
     const maxed = lvl >= 2;
@@ -3729,6 +3859,8 @@
 
     $('btn-socket-continue').addEventListener('click', () => { SFX.click(); hideSocketModal(); });
     $('socket-modal').addEventListener('click', (e) => { if (e.target && e.target.id === 'socket-modal') hideSocketModal(); });
+    $('btn-soulstone-continue').addEventListener('click', () => { SFX.click(); hideSoulstoneModal(); });
+    $('soulstone-modal').addEventListener('click', (e) => { if (e.target && e.target.id === 'soulstone-modal') hideSoulstoneModal(); });
 
     $('btn-reveal-claim').addEventListener('click', () => claimRevealScene());
 

@@ -474,8 +474,11 @@
   function renderPlayer() {
     const m = B.monster;
     const pz = $('player-monster');
-    // final evolution forms loom larger on the field
-    pz.className = 'player-combat' + ((m.evolveLevel || 0) >= 2 ? ' final-form' : '');
+    // final evolution forms loom larger on the field; a per-form class lets us
+    // tune individual forms (e.g. Undead +30%)
+    const formId = (m.evoChoices && m.evoChoices.length) ? m.evoChoices[m.evoChoices.length - 1] : '';
+    pz.className = 'player-combat' + ((m.evolveLevel || 0) >= 2 ? ' final-form' : '') +
+      (formId ? ' evo-form-' + formId : '');
     pz.style.setProperty('--pc-color', m.color || 'var(--gold)');
     const face = m.img
       ? `<img class="c-sprite" src="${m.img}" alt="">`
