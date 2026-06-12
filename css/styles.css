@@ -3170,6 +3170,10 @@ html, body {
   background: radial-gradient(58% 52% at 50% 50%, rgba(8,5,14,0.72), rgba(8,5,14,0.3) 52%, transparent 74%);
 }
 .cs-player { position: relative; z-index: 1; }
+/* a final form's portrait is 50% larger here too (shared .final-form rule); the
+   sprite grows up and over the disc, so reserve headroom above it — the .cs-hero
+   panel already scrolls (overflow-y:auto) to absorb the taller card. */
+.cs-player.final-form { margin-top: 72px; }
 /* no status row out of combat — it would only add empty space under the role */
 .cs-player .statuses { display: none; }
 /* the passive box sits right under the role, not floating far below it */

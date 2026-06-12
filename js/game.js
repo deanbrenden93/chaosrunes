@@ -3168,9 +3168,10 @@
     (m.evoPassives || []).forEach(p => { passiveHTML += passiveBox(p.name, p.text); });
     const ratio = Math.max(0, Math.min(1, m.hp / m.maxHp));
     const C = 2 * Math.PI * 66;
+    const finalCls = (m.evolveLevel || 0) >= 2 ? ' final-form' : '';
     host.innerHTML =
       '<div class="cs-charcard">' +
-        '<div class="player-combat cs-player" style="--pc-color:' + pcColor + '">' +
+        '<div class="player-combat cs-player' + finalCls + '" style="--pc-color:' + pcColor + '">' +
           '<div class="pc-disc-wrap"><div class="pc-disc">' +
             '<svg class="pc-hp-ring" viewBox="0 0 160 160" aria-hidden="true">' +
               '<circle class="hp-track" cx="80" cy="80" r="66"></circle>' +
