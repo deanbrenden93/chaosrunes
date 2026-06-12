@@ -1262,7 +1262,13 @@
       const ci = empty + k;
       if (slotCountAt(ci, 'devil') > 0) {
         const d = B.devil && B.devil[ci];
-        if (d && d.crave && baseOf(id) !== d.crave) devilFrustrate(ci);
+        // only a glyph NO Devil craves draws a frustrated fit (cravings aren't
+        // socket-locked — any craved glyph satisfies the socket it lands on)
+        if (d && d.crave) {
+          const db = baseOf(id);
+          const cravedByAny = devilIdxs().some(k => { const dd = B.devil[k]; return dd && dd.crave && dd.crave === db; });
+          if (!cravedByAny) devilFrustrate(ci);
+        }
       }
     }
     // send one glyph flying into EACH socket the glyph occupies
@@ -2035,25 +2041,18 @@
       const coveredEls = (ev.covered || [slot]).map(ci => $('socket-row').children[ci]).filter(Boolean);
 
       // ----- Devil feed: a craved glyph offered to ANY Devil socket -----
-      // Cravings aren't socket-locked: playing a craved glyph onto any Devil
-      // socket satisfies whichever Devil wants it (prefer the very socket it
-      // landed on, otherwise any other still-hungry Devil that craves it).
+      // Cravings aren't socket-locked. A glyph counts as "craved" if ANY Devil
+      // this turn wants it; offering such a glyph to a Devil socket sates the
+      // Devil sitting on THAT socket and pays out THAT socket's own boon.
       const devilFeeds = [];
       if (!ev.replay && !ev.repeat2 && ev.devilSlots && ev.devilSlots.length) {
         const fb = baseOf(ev.id);
-        const claimed = {};
-        for (const ci of ev.devilSlots) {
-          let target = null;
-          const here = B.devil && B.devil[ci];
-          if (here && here.crave && !here.fed && here.crave === fb && !claimed[ci]) {
-            target = ci;
-          } else {
-            for (const k of devilIdxs()) {
-              const d = B.devil[k];
-              if (d && d.crave && !d.fed && d.crave === fb && !claimed[k]) { target = k; break; }
-            }
+        const isCraved = devilIdxs().some(k => { const d = B.devil[k]; return d && d.crave && d.crave === fb; });
+        if (isCraved) {
+          for (const ci of ev.devilSlots) {
+            const d = B.devil && B.devil[ci];
+            if (d && !d.fed) devilFeeds.push(ci);
           }
-          if (target != null) { claimed[target] = true; devilFeeds.push(target); }
         }
       }
 
@@ -3068,15 +3067,9 @@
       if (hasPassive('wendigo') && !ev.replay && !ev.repeat2) {
         let devilFed = false;
         const wfb = baseOf(ev.id);
-        (ev.covered || [ev.slot]).forEach(ci => {
-          if (slotCountAt(ci, 'devil') > 0) {
-            // a craved glyph offered to any Devil socket sates its matching Devil
-            for (const k of devilIdxs()) {
-              const d = B.devil[k];
-              if (d && d.crave && !d.fed && d.crave === wfb) { devilFed = true; break; }
-            }
-          }
-        });
+        // a glyph craved by ANY Devil, dropped on ANY Devil socket, sates it
+        const wCraved = devilIdxs().some(k => { const d = B.devil[k]; return d && d.crave && d.crave === wfb; });
+        if (wCraved) (ev.covered || [ev.slot]).forEach(ci => { if (slotCountAt(ci, 'devil') > 0) devilFed = true; });
         const wMult = devilFed ? 5 : 1;
         const wCol = glyph(ev.id).color;
         if (wCol === 'red') fcStr(2 * wMult);
@@ -4256,19 +4249,9 @@
       heal(Math.max(1, Math.round(B.monster.maxHp * 0.05)));
     }
   }
-  // Vampire: heal to full, then spill the excess as damage across every foe
-  function healOverheal(amt) {
-    const m = B.monster;
-    const room = m.maxHp - m.hp;
-    const healed = Math.min(room, amt);
-    if (healed > 0) heal(healed);
-    const spill = amt - healed;
-    if (spill > 0) {
-      floatText(offset(center(playerArt()), 0, -150), 'Overgorge ' + spill, 'status');
-      alive().forEach(e => applyDamage(e, spill, { strength: false, scare: false, reflect: true, noFeast: true }));
-      refreshAll();
-    }
-  }
+  // Vampire: heal, then spill the excess as damage across every foe. heal()
+  // itself does the Bloodgorge spill now, so this is just a named entry point.
+  function healOverheal(amt) { heal(amt); }
   // sap one (or, for Skinwalker, all) of a foe's remaining bonuses + fire payoff
   function feast(en, opts) {
     opts = opts || {};
@@ -4285,15 +4268,28 @@
     return true;
   }
   // Skinwalker: a slain elite/boss leaves a permanent trophy (persistent stats + maxHP)
+  // apply a single persistent trophy bonus to the LIVE combat (so a fresh kill
+  // is felt immediately, not only at the next combat's applySkinTrophies pass)
+  function applySkinLive(b) {
+    switch (b && b.t) {
+      case 'str': B.strength += b.n; strengthFx(playerArt()); break;
+      case 'res': B.resilience += b.n; resilienceFx(playerArt()); break;
+      case 'thorn': B.playerThorns = (B.playerThorns || 0) + b.n; break;
+      case 'guard': B.feastGuard = (B.feastGuard || 0) + b.n; B.playerShield += b.n; break;
+      case 'rampstr': B.feastRamp = (B.feastRamp || 0) + b.n; B.strength += b.n; strengthFx(playerArt()); break;
+    }
+  }
   function addSkinTrophy(en) {
     const m = B.monster, id = en.base && en.base.id;
     if (!m || !id) return;
     m.skin = m.skin || {};
-    DATA.feastTrophyAdd(m.skin, id);
+    DATA.feastTrophyAdd(m.skin, id);                       // bank it permanently
+    (DATA.FEAST_SETS[id] || []).forEach(b => applySkinLive(b));   // and feel it now
     const add = Math.max(1, Math.round(en.maxHp * 0.05));
     m.maxHp += add; m.hp += add;
     setBar($('player-monster'), m.hp, m.maxHp);
-    floatText(offset(center(playerArt()), 0, -150), 'Trophy claimed!', 'status');
+    floatText(offset(center(playerArt()), 0, -150), 'Trophy claimed! +' + add + ' max HP', 'status');
+    refreshAll();
   }
   function applySkinTrophies() {
     const sk = B.monster && B.monster.skin;
@@ -4548,18 +4544,33 @@
       }
     }
   }
-  function heal(amt) {
+  function heal(amt, opts) {
     if (amt <= 0) return;
-    B.monster.hp = Math.min(B.monster.maxHp, B.monster.hp + amt);
-    setBar($('player-monster'), B.monster.hp, B.monster.maxHp);
-    floatText(offset(center(playerArt()), 0, -160), '+' + amt + '♥', 'heal');
-    healFx(playerArt());
-    // CURSED slot: the life is ALSO mirrored to the enemy that cast the curse
-    if (RES && RES.cursed && RES.caster && RES.caster.alive) {
-      const en = RES.caster;
-      en.hp = Math.min(en.maxHp, en.hp + amt);
-      setBar(en.dom, en.hp, en.maxHp);
-      floatText(offset(center(en.dom), 0, -50), '+' + amt + '♥', 'heal');
+    opts = opts || {};
+    const m = B.monster;
+    const room = Math.max(0, m.maxHp - m.hp);
+    const applied = Math.min(room, amt);
+    if (applied > 0) {
+      m.hp += applied;
+      setBar($('player-monster'), m.hp, m.maxHp);
+      floatText(offset(center(playerArt()), 0, -160), '+' + applied + '♥', 'heal');
+      healFx(playerArt());
+      // CURSED slot: the life is ALSO mirrored to the enemy that cast the curse
+      if (RES && RES.cursed && RES.caster && RES.caster.alive) {
+        const en = RES.caster;
+        en.hp = Math.min(en.maxHp, en.hp + applied);
+        setBar(en.dom, en.hp, en.maxHp);
+        floatText(offset(center(en.dom), 0, -50), '+' + applied + '♥', 'heal');
+      }
+    }
+    // Vampire/Bloodgorge: ANY healing past full spills as AoE damage to every
+    // foe (the spill itself can't heal you or re-trigger Feast). opts.noSpill
+    // lets a caller bank a heal without converting it.
+    const spill = amt - applied;
+    if (spill > 0 && !opts.noSpill && hasPassive('vampire')) {
+      floatText(offset(center(playerArt()), 0, -150), 'Overgorge ' + spill, 'status');
+      alive().forEach(e => applyDamage(e, spill, { strength: false, scare: false, reflect: true, noFeast: true }));
+      refreshAll();
     }
   }
   function selfDamage(n) {
@@ -5412,6 +5423,8 @@
     B.carryShield = 0; B.playerBurn = 0;
     B.comboCarry = 0; B.comboNow = 0;
     B.playerThorns = 0; B.dmgTakenBank = 0;
+    B.feastGuard = 0; B.feastRamp = 0; B.feastCleanse = 0;
+    applySkinTrophies();   // a swapped-in Skinwalker keeps its permanent trophies
     B.charge = { dmg: 0, weak: 0, scare: 0, burn: 0 };   // a swapped-in beast starts with a clean Charge
     clearChargeOrb(true);
     // adopt the incoming beast's socket layout; clear any held/cloned carry-over

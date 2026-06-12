@@ -3592,8 +3592,13 @@ html, body {
   box-shadow: 0 14px 38px rgba(0,0,0,0.55);
   opacity: 0; transform: translateX(-10px); pointer-events: none;
   transition: opacity .15s ease, transform .15s ease;
+  /* tall tips (long passives / glyph text) can run past the screen bottom —
+     cap to the viewport and let the overflow scroll instead of clipping */
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-.combat-tip.show { opacity: 1; transform: none; }
+.combat-tip.show { opacity: 1; transform: none; pointer-events: auto; }
 .combat-tip b { color: var(--text); }
 .combat-tip .ct-head {
   font-family: 'Cinzel', serif; font-size: 28px; color: var(--gold);
