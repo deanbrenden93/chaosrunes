@@ -1102,6 +1102,16 @@
   function renderSockets() {
     const row = $('socket-row');
     row.innerHTML = '';
+    // scale the row down as sockets pile up so a wide row never overlaps the
+    // left character panel (3-5 keep the full 152px; 9 packs to ~94px)
+    const n = B.sockets.length;
+    let size = 152, gap = 30;
+    if (n >= 9) { size = 94; gap = 12; }
+    else if (n === 8) { size = 104; gap = 14; }
+    else if (n === 7) { size = 118; gap = 18; }
+    else if (n === 6) { size = 134; gap = 24; }
+    row.style.setProperty('--sock-size', size + 'px');
+    row.style.setProperty('--sock-gap', gap + 'px');
     const firstFree = firstFreeSocket();
     B.sockets.forEach((id, i) => {
       const list = slotList(i);

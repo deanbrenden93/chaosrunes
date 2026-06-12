@@ -3072,11 +3072,26 @@
     const lvl = m.evolveLevel || 0;
     const have = State.soulstones || 0;
     const base = (typeof MONSTERS !== 'undefined' && MONSTERS[m.id]) || {};
-    const known = [base.name || m.name, lvl >= 1 ? m.name : null, null]; // only stage 0 (and current) are revealed
+    // each reached stage shows the form actually chosen at that tier — resolved
+    // from evoChoices against the tree (NOT m.name, which is only the latest form)
+    const tree = m.evolution;
+    const choices = m.evoChoices || [];
+    const stageName = (i) => {
+      if (i === 0) return base.name || m.name;
+      if (tree && choices[i - 1]) {
+        const pool = i === 1
+          ? (tree.tier1 || [])
+          : ((tree.tier2 && tree.tier2[choices[0]]) || []);
+        const form = pool.find(f => f.id === choices[i - 1]);
+        if (form && form.name) return form.name;
+      }
+      // legacy/linear beasts: their one evolved name lives on m.name (current)
+      return i === lvl ? m.name : (m.evolveName || m.name);
+    };
     const stages = [0, 1, 2].map(i => {
       const reached = i <= lvl;
       const isNow = i === lvl;
-      const name = reached ? (known[i] || m.name) : '???';
+      const name = reached ? stageName(i) : '???';
       const art = reached
         ? (m.img ? '<img class="evo-art-img" src="' + m.img + '" alt="">' : '<span class="evo-art-emoji">' + m.emoji + '</span>')
         : '<span class="evo-art-q">?</span>';

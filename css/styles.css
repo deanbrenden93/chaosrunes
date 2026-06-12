@@ -1617,12 +1617,20 @@ html, body {
 .hex-flat { clip-path: polygon(25% 2%, 75% 2%, 100% 50%, 75% 98%, 25% 98%, 0 50%); }
 
 /* ---------- sockets (use the Base Rune art) ---------- */
-.socket-row { display: flex; gap: 30px; justify-content: center; min-height: 156px; align-items: center; }
+/* --sock-size / --sock-gap shrink as the beast gains sockets (set in renderSockets)
+   so an 8-9 socket row never slides under the left character panel. Capped to the
+   battlefield's clear center so it stays clear of both side panels. */
+.socket-row {
+  display: flex; gap: var(--sock-gap, 30px); justify-content: center; align-items: center;
+  min-height: calc(var(--sock-size, 152px) + 4px);
+  flex-wrap: nowrap; max-width: calc(100% - 360px); margin: 0 auto;
+}
 .socket {
-  width: 152px; height: 152px;
+  width: var(--sock-size, 152px); height: var(--sock-size, 152px);
+  flex: 0 0 auto;
   position: relative;
   display: flex; align-items: center; justify-content: center;
-  transition: transform .2s;
+  transition: transform .2s, width .2s, height .2s;
 }
 .socket .slot-img {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
