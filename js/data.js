@@ -775,15 +775,53 @@
       deck: ['smash', 'smash', 'brace', 'brace', 'quake', 'bulwark_slam', 'hammer', 'steady']
     },
     ghoul: {
-      id: 'ghoul', name: 'Ghoul', role: 'Leech', emoji: '🧟',
+      id: 'ghoul', name: 'Ghoul', role: 'Feaster', emoji: '🧟',
       img: 'assets/ghoul.png',
       selectBg: 'assets/Ghoul Select Backdrop.png',
       color: 'var(--purple)',
       maxHp: 50, sockets: 3, slotTypes: ['normal', 'normal', 'devil'],
-      passive: 'gravetide', passiveVal: 1,
-      passiveText: 'Gravetide: at the start of each turn, gain +1 Strength (rest of battle) for every Leeched enemy.',
-      desc: 'Sap the living to grow stronger, leeching foes and feasting on the fallen.',
-      evolveName: 'Lich Sovereign',
+      passive: 'feast', passiveVal: 1,
+      passiveText: 'Feast: slaying a foe <b>feasts</b> it \u2014 sap one of its predefined bonuses. Every foe holds one of each (more on bigger foes); a bonus is gone once taken.',
+      desc: 'A famished thing that grows by devouring its prey \u2014 every foe it fells gives up a piece of its power.',
+      // Branching evolution. Evo 1 at 5 soulstones, Evo 2 at 10. The Multi-devil
+      // (Crawler) line is the only one that grants sockets \u2014 at BOTH evo tiers.
+      evolution: {
+        tier1: [
+          {
+            id: 'undead', name: 'Undead', img: 'assets/Undead.png', hp: 20,
+            tagline: 'Everheal + Feast',
+            passive: { id: 'undeadfeast', name: 'Endless Hunger',
+              text: 'Feast can also trigger off <b>any damage tick</b> (5% chance), and every Feast heals you <b>5% max HP</b>.' }
+          },
+          {
+            id: 'crawler', name: 'Crawler', img: 'assets/Crawler.png', hp: 20,
+            tagline: 'Multi-Devil + Feast',
+            passive: { id: 'crawlerfeast', name: 'Skittering Hunger',
+              text: 'Satisfying a Devil socket triggers a <b>Feast</b> on a foe.' },
+            socket: { type: 'devil', index: 1, label: 'Devil' }
+          }
+        ],
+        tier2: {
+          undead: [
+            { id: 'skinwalker', name: 'Skinwalker', img: 'assets/Skinwalker.png', hp: 20, tagline: 'Trophy Hunter',
+              passive: { id: 'skinwalker', name: 'Wear Their Skin',
+                text: 'For every elite and boss you have slain (and will slay), keep <b>all</b> their bonuses and <b>+5% their max HP</b>, permanently. Feast tick-chance <b>+10%</b>.' } },
+            { id: 'vampire', name: 'Vampire', img: 'assets/Vampire.png', hp: 20, tagline: 'Bloodgorge',
+              passive: { id: 'vampire', name: 'Bloodgorge',
+                text: 'Feast heals you for the <b>triggering damage</b>; a Feast-kill heals <b>20%</b> of the foe\u2019s max HP. Healing past full spills as <b>damage to all foes</b>.' } }
+          ],
+          crawler: [
+            { id: 'demon', name: 'Demon', img: 'assets/Demon.png', hp: 20, tagline: 'Devil\u2019s Glutton',
+              passive: { id: 'demon', name: 'Insatiable',
+                text: 'Satisfying a Devil socket Feasts <b>twice</b>, and each Devil you sate this turn amplifies your Devil boons by <b>+33%</b>.' },
+              socket: { type: 'devil', index: 3, label: 'Devil' } },
+            { id: 'wendigo', name: 'Wendigo', img: 'assets/Wendigo.png', hp: 20, tagline: 'Primal Craving',
+              passive: { id: 'wendigo', name: 'Primal Craving',
+                text: 'Each glyph you play buffs you for the combat \u2014 red <b>+2 Str</b>, blue <b>+2 Res</b>, green <b>5% heal</b>, white a random of the three \u2014 <b>\u00D75</b> if it sates a Devil\u2019s craving.' },
+              socket: { type: 'devil', index: 3, label: 'Devil' } }
+          ]
+        }
+      },
       deck: ['leech', 'leech', 'rake', 'rake', 'gnaw', 'vigor', 'blood_harden', 'mend_flesh']
     },
     kitsune: {
@@ -1140,7 +1178,80 @@
     return out;
   }
 
+  /* ----------------------------------------------------------
+     FEAST — the Ghoul's core. Every enemy spawns holding a small set
+     of predefined bonuses (one of each), themed to its kit and sized by
+     menace (normal 2 · elite 3 · boss 4). A Feast saps ONE random
+     remaining bonus; once taken it's gone. Tokens hold nothing.
+     bonus token: { t, n?, pct? }
+       str/res/thorn  +N for the combat
+       guard          +N Block at each turn start (combat)
+       rampstr        +N Strength at each turn start (combat)
+       weaken/scare   apply N to all foes
+       heal           heal pct of max HP now
+       souls          +N souls (permanent)
+       purge          clear junk + clog-immune this combat
+       cleanse        remove the first Curse each turn this combat
+     ---------------------------------------------------------- */
+  const FEAST_SETS = {
+    /* normal (2) */
+    cinderling:   [{ t: 'str', n: 1 }, { t: 'souls', n: 5 }],
+    thornback:    [{ t: 'thorn', n: 1 }, { t: 'guard', n: 1 }],
+    hexweaver:    [{ t: 'res', n: 2 }, { t: 'cleanse' }],
+    gravewarden:  [{ t: 'guard', n: 2 }, { t: 'souls', n: 5 }],
+    maledict:     [{ t: 'str', n: 2 }, { t: 'weaken', n: 2 }],
+    sapfiend:     [{ t: 'res', n: 2 }, { t: 'thorn', n: 1 }],
+    giantRat:     [{ t: 'str', n: 2 }, { t: 'souls', n: 5 }],
+    giantChicken: [{ t: 'thorn', n: 1 }, { t: 'guard', n: 2 }],
+    collector:    [{ t: 'souls', n: 8 }, { t: 'str', n: 2 }],
+    /* elite (3) */
+    bonepiper:    [{ t: 'str', n: 3 }, { t: 'scare', n: 2 }, { t: 'souls', n: 10 }],
+    warchanter:   [{ t: 'str', n: 3 }, { t: 'rampstr', n: 1 }, { t: 'souls', n: 10 }],
+    clogfiend:    [{ t: 'purge' }, { t: 'res', n: 2 }, { t: 'souls', n: 10 }],
+    soulhunter:   [{ t: 'str', n: 3 }, { t: 'souls', n: 20 }, { t: 'scare', n: 3 }],
+    /* floor / final boss (4) */
+    gloommaw:          [{ t: 'str', n: 3 }, { t: 'heal', pct: 0.10 }, { t: 'guard', n: 1 }, { t: 'souls', n: 10 }],
+    voidIdol:          [{ t: 'str', n: 4 }, { t: 'guard', n: 2 }, { t: 'weaken', n: 3 }, { t: 'souls', n: 20 }],
+    hollowChoir:       [{ t: 'str', n: 4 }, { t: 'scare', n: 3 }, { t: 'heal', pct: 0.15 }, { t: 'souls', n: 20 }],
+    mawMother:         [{ t: 'purge' }, { t: 'res', n: 2 }, { t: 'heal', pct: 0.15 }, { t: 'souls', n: 20 }],
+    gravetideColossus: [{ t: 'guard', n: 4 }, { t: 'str', n: 4 }, { t: 'thorn', n: 2 }, { t: 'souls', n: 20 }],
+    cinderQueen:       [{ t: 'str', n: 4 }, { t: 'rampstr', n: 2 }, { t: 'weaken', n: 3 }, { t: 'souls', n: 20 }],
+    hollowShepherd:    [{ t: 'str', n: 4 }, { t: 'res', n: 2 }, { t: 'scare', n: 3 }, { t: 'souls', n: 20 }],
+    chaosIncarnate:    [{ t: 'str', n: 5 }, { t: 'guard', n: 3 }, { t: 'heal', pct: 0.20 }, { t: 'souls', n: 30 }]
+  };
+  // which bonus types Skinwalker keeps PERMANENTLY (persistent stats only —
+  // souls/heal are one-time, weaken/scare are per-combat debuffs)
+  const FEAST_PERSIST = { str: true, res: true, thorn: true, guard: true, rampstr: true };
+  function feastPoolFor(def) {
+    if (!def || def.token) return [];
+    return (FEAST_SETS[def.id] || []).map(b => Object.assign({}, b));
+  }
+  // fold an enemy's persistent bonuses into a running Skinwalker "skin" tally
+  function feastTrophyAdd(skin, enemyId) {
+    (FEAST_SETS[enemyId] || []).forEach(b => {
+      if (FEAST_PERSIST[b.t]) skin[b.t] = (skin[b.t] || 0) + (b.n || 0);
+    });
+    return skin;
+  }
+  function feastLabel(b) {
+    switch (b && b.t) {
+      case 'str': return '+' + b.n + ' Strength';
+      case 'res': return '+' + b.n + ' Resilience';
+      case 'thorn': return '+' + b.n + ' Thorns';
+      case 'guard': return '+' + b.n + ' Block/turn';
+      case 'rampstr': return '+' + b.n + ' Str/turn';
+      case 'weaken': return 'Weak ' + b.n + ' (all)';
+      case 'scare': return 'Scare ' + b.n + ' (all)';
+      case 'heal': return 'Heal ' + Math.round(b.pct * 100) + '%';
+      case 'souls': return '+' + b.n + ' Souls';
+      case 'purge': return 'Purge';
+      case 'cleanse': return 'Cleanse';
+    }
+    return 'Bonus';
+  }
+
   root.CG = root.CG || {};
-  root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc };
+  root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc,
+    FEAST_SETS, feastPoolFor, feastTrophyAdd, feastLabel };
 
 })(window);

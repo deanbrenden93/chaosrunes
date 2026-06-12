@@ -395,6 +395,7 @@
       lastEvent: null,           // avoid repeating the same event back-to-back
       soulstones: 0,             // collected at Soulstone nodes; 5 evolves the beast
       soulhunterKills: 0,        // Soulhunter forms cleared this run (0 → next is A, etc.)
+      feastKills: [],            // Ghoul Feast: foes slain this run (for Skinwalker trophies)
       unlocks: {}                // earned meta-unlocks (e.g. colorless glyphs)
     };
     root.CG.State = State;
@@ -1379,7 +1380,11 @@
     // Goblin line
     orc: '#7fd06a', troll: '#ff9a3c',
     hornedgolem: '#8fe08f', irongolem: '#bcd2e0',
-    berserkcolossus: '#ff5a4a', allknowingcolossus: '#ffce5e'
+    berserkcolossus: '#ff5a4a', allknowingcolossus: '#ffce5e',
+    // Ghoul line
+    undead: '#9fd0a8', crawler: '#b98cff',
+    skinwalker: '#c98a5a', vampire: '#e0506a',
+    demon: '#ff5a4a', wendigo: '#8fb7ff'
   };
   function evoAccent(form) { return (form && EVO_ACCENT[form.id]) || 'var(--gold)'; }
   // the two forms offered at the beast's current evolution step
@@ -1419,7 +1424,7 @@
       const acc = evoAccent(form);
       const p = form.passive || {};
       const hp = form.hp || 20;
-      const socket = (tier === 1 && form.socket && m.sockets < 6)
+      const socket = (form.socket && m.sockets < 6)
         ? '<div class="evo-card-socket"><span class="ecs-ico">' +
             (SLOT_INFO[form.socket.type] ? SLOT_INFO[form.socket.type].icon : '◆') +
           '</span> New <b>' + (form.socket.label || 'special') + '</b> socket</div>'
@@ -1471,7 +1476,7 @@
     m.name = form.name;
     m.evoFormImg = form.img || m.evoFormImg || null;   // remembered for when art lands
     let socketAdded = null;
-    if (tier === 1 && form.socket && m.sockets < 6) {
+    if (form.socket && m.sockets < 6) {
       if (!m.slotTypes) m.slotTypes = [];
       while (m.slotTypes.length < m.sockets) m.slotTypes.push('normal');
       // `index` pins the new socket to an exact position (0 = new first socket);
@@ -1482,6 +1487,18 @@
       m.sockets += 1;
       m.slotTypes.splice(idx, 0, form.socket.type);
       socketAdded = { index: idx, label: form.socket.label, type: form.socket.type };
+    }
+    // Skinwalker: retroactively claim trophies from every elite/boss already slain
+    // this run (persistent stats + 5% of each one's max HP), then keep doing so live.
+    if (form.id === 'skinwalker') {
+      m.skin = m.skin || {};
+      let hpAdd = 0;
+      (State.feastKills || []).forEach(k => {
+        if (!k || !k.skin) return;
+        DATA.feastTrophyAdd(m.skin, k.id);
+        hpAdd += Math.max(1, Math.round((k.maxHp || 0) * 0.05));
+      });
+      if (hpAdd > 0) { m.maxHp += hpAdd; m.hp = Math.min(m.maxHp, m.hp + hpAdd); }
     }
     m.evolveLevel = (m.evolveLevel || 0) + 1;
     return socketAdded;

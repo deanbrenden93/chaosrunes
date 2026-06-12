@@ -118,6 +118,7 @@
         maxHp: e.maxHp, hp: e.maxHp, shield: 0,
         weak: 0, burn: 0, leech: 0, scare: 0, scareTurns: 0, empower: 0,
         strength: 0, strengthTurns: 0,
+        feastPool: root.CG.DATA.feastPoolFor(e),   // Ghoul Feast: predefined bonuses to sap
         intentIndex: 0, intent: null, alive: true,
         dom: null
       })),
@@ -145,6 +146,11 @@
       dmgTakenBank: 0,     // War Grudge: HP damage accrued toward the next +1 Strength
       charge: { dmg: 0, weak: 0, scare: 0, burn: 0 },   // Big-Hit Charge Attack, assembled each chain
       tickCount: 0,        // genuine enemy hits during the current glyph (Berserk Frenzy)
+      feastGuard: 0,       // Feast: Block granted at each turn start (combat)
+      feastRamp: 0,        // Feast: Strength granted at each turn start (combat)
+      feastCleanse: 0,     // Feast: lift a curse each turn (combat)
+      clogImmune: false,   // Feast(Purge): shrug off the next clog
+      devilsFedThisTurn: 0,// Demon: Devil boons amplify per Devil sated this turn
       ended: false
     };
     B.slotFx = Array.from({ length: monster.sockets }, () => ({ disabled: 0, cursed: 0, caster: null }));
@@ -153,6 +159,8 @@
     B.discard = [];
     B.enemies.forEach(en => { en.intent = prepareIntent(en); });
 
+    // Skinwalker: permanent trophies from slain elites/bosses re-apply each combat
+    applySkinTrophies();
     // battle-start passive
     if (monster.passive === 'startShield') B.playerShield = monster.passiveVal;
     // War Banner blessing — begin each battle with bonus Strength
@@ -719,6 +727,12 @@
     if (B.monster.passive === 'startShield' && B.turn === 1) B.playerShield += B.monster.passiveVal;
     B.playerShield += (B.monster.runTurnShield || 0);   // Devil(blue) run buff
     if (B.carryShield > 0) { B.playerShield += B.carryShield; B.carryShield = 0; }   // Bastion carry-over
+
+    // Feast bonuses sapped from foes: Block-each-turn, Strength-each-turn, Cleanse
+    if (B.feastGuard > 0) B.playerShield += B.feastGuard;
+    if (B.feastRamp > 0) { B.strength += B.feastRamp; strengthFx(playerArt()); }
+    if (B.feastCleanse > 0) feastCleanseNow();
+    B.devilsFedThisTurn = 0;   // Demon amp counts per turn
 
     // start-of-turn blessing upkeep
     const _bl = root.CG.Game.state.blessings;
@@ -2107,6 +2121,11 @@
         if (fb > 0) showComboMeter(comboLen, fb);
       }
 
+      // Wendigo: each glyph you play feeds a lasting color buff — ×5 if it sated a Devil
+      if (hasPassive('wendigo') && !ev.replay && !ev.repeat2) {
+        wendigoColorBuff(g.color, devilFeeds.length > 0 ? 5 : 1);
+      }
+
       // a curse-slot recoil (or burn) can KO your last beast mid-chain — stop cold
       // instead of resolving the rest of the chain to an empty stage
       if (B.ended) { hideComboMeter(true); coveredEls.forEach(ce => ce.classList.remove('firing')); return; }
@@ -2145,6 +2164,12 @@
             floatText(offset(center(sEl), 0, -64), '😈 craving sated', 'status');
             // every Devil you satisfy this run feeds the Glutton's hunger
             if (B.monster) B.monster.devoured = (B.monster.devoured || 0) + 1;
+            // Crawler/Demon: a sated Devil triggers a Feast (Demon: twice) + amplifies boons
+            if (hasPassive('crawlerfeast')) {
+              B.devilsFedThisTurn = (B.devilsFedThisTurn || 0) + 1;
+              const nFeasts = hasPassive('demon') ? 2 : 1;
+              for (let fz = 0; fz < nFeasts; fz++) { const tgt = randomFeastTarget(); if (tgt) feast(tgt, {}); }
+            }
             B._devilRewards.push({ slot: ci, bonus: b, comboLen: comboLen, baseId: baseOf(ev.id) });
           }
         }
@@ -4041,8 +4066,7 @@
     SFX.hit();
     if (amt >= 9) shake();
     if (en.hp <= 0 && en.alive) {
-      en.alive = false;
-      killEnemyVisual(en);
+      killEnemy(en, { dmg: dealt, noFeast: opts.noFeast });   // base Feast fires on the kill
     } else if (en.alive && en.base && en.base.thorns > 0 && dealt > 0 && !opts.noFloat && !opts.reflect && !B.ended) {
       // THORNS: a genuine strike (not a burn/leech tick) lashes back, per hit —
       // so dumping multi-hit glyphs into it hurts. Skipped if the blow killed it.
@@ -4063,6 +4087,10 @@
         flowChargeInto(center(en.dom));                          // energy flows into the orb
       }
       if (hasPassive('goringhide')) B.playerThorns = (B.playerThorns || 0) + 1;   // Goring Hide: 1 Thorns per hit (this combat)
+      // Undead: any genuine tick has a chance to Feast the struck foe
+      if (en.alive && !opts.noFeast && hasPassive('undeadfeast') && Math.random() < feastChance()) {
+        feast(en, { dmg: dealt });
+      }
     }
     return dealt;
   }
@@ -4076,6 +4104,153 @@
     if (d.floorBoss) return 'floorboss';
     if (d.elite) return 'elite';
     return 'normal';
+  }
+
+  // ============================================================
+  // FEAST — Ghoul's core: sap predefined bonuses from foes
+  // ============================================================
+  const DATA = root.CG.DATA;
+  function feastChance() {
+    return (hasPassive('undeadfeast') ? 0.05 : 0) + (hasPassive('skinwalker') ? 0.10 : 0);
+  }
+  // an elite/boss/shadow foe — the only kills Skinwalker hoards permanently
+  function feastQualifiesSkin(en) {
+    const d = (en && en.base) || {};
+    return !d.token && (enemyTier(en) !== 'normal' || d.shadow || d.elite);
+  }
+  function recordFeastKill(en) {
+    const d = (en && en.base) || {};
+    if (d.token) return;
+    const S = root.CG.Game.state;
+    if (!S) return;
+    S.feastKills = S.feastKills || [];
+    S.feastKills.push({ id: d.id, maxHp: en.maxHp, tier: enemyTier(en), skin: feastQualifiesSkin(en) });
+    if (S.feastKills.length > 300) S.feastKills.shift();
+  }
+  function randomFeastTarget() {
+    const pool = alive().filter(e => e.feastPool && e.feastPool.length);
+    if (!pool.length) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  function feastBiteFx(en) {
+    if (!en || !en.dom) return;
+    const p = center(en.dom);
+    fxRing(p, '#c061ff', 560, 'fx-ring-soft');
+    fxMotes(p, 10, '#e0a6ff', 'fx-mote-rise', 70);
+    SFX.firePurple && SFX.firePurple(0);
+  }
+  function applyFeastBonus(b) {
+    switch (b.t) {
+      case 'str': B.strength += b.n; strengthFx(playerArt()); break;
+      case 'res': B.resilience += b.n; resilienceFx(playerArt()); break;
+      case 'thorn': B.playerThorns = (B.playerThorns || 0) + b.n; break;
+      case 'guard': B.feastGuard = (B.feastGuard || 0) + b.n; B.playerShield += b.n; break;
+      case 'rampstr': B.feastRamp = (B.feastRamp || 0) + b.n; B.strength += b.n; strengthFx(playerArt()); break;
+      case 'weaken': alive().forEach(e => { e.weak = (e.weak || 0) + b.n; weakFx(e.dom); }); break;
+      case 'scare': alive().forEach(e => { e.scare = (e.scare || 0) + b.n; e.scareTurns = Math.max(e.scareTurns || 0, 3); scareFx(e.dom); }); break;
+      case 'heal': heal(Math.max(1, Math.round(B.monster.maxHp * b.pct))); break;
+      case 'souls': root.CG.Game.gainSouls(b.n); break;
+      case 'purge': feastPurge(); break;
+      case 'cleanse': B.feastCleanse = (B.feastCleanse || 0) + 1; feastCleanseNow(); break;
+    }
+    refreshAll();
+  }
+  function feastPurge() {
+    // sweep junk (Dead Weight / Rubble) out of hand and queue, and shrug off the next clog
+    B.clogImmune = true;
+    B.stuck = [];
+    B.injected = [];
+    if (B.hand) {
+      const keep = B.hand.filter(id => !glyph(id).junk);
+      const tossed = B.hand.length - keep.length;
+      B.hand = keep;
+      if (tossed > 0) floatText(offset(center(playerArt()), 0, -120), 'Purged ' + tossed, 'status');
+    }
+    renderHand && renderHand(true);
+  }
+  function feastCleanseNow() {
+    // lift one curse from your sockets
+    const i = B.slotFx.findIndex(fx => fx && fx.cursed);
+    if (i !== -1) { B.slotFx[i].cursed = 0; B.slotFx[i].caster = null; floatText(offset(center(playerArt()), 0, -120), 'Cleansed', 'status'); renderSockets && renderSockets(); }
+  }
+  function feastPayoff(en, opts) {
+    if (hasPassive('vampire')) {
+      const h = opts.kill ? Math.round(en.maxHp * 0.20) : (opts.dmg || 0);
+      if (h > 0) healOverheal(h);
+    } else if (hasPassive('undeadfeast')) {
+      heal(Math.max(1, Math.round(B.monster.maxHp * 0.05)));
+    }
+  }
+  // Vampire: heal to full, then spill the excess as damage across every foe
+  function healOverheal(amt) {
+    const m = B.monster;
+    const room = m.maxHp - m.hp;
+    const healed = Math.min(room, amt);
+    if (healed > 0) heal(healed);
+    const spill = amt - healed;
+    if (spill > 0) {
+      floatText(offset(center(playerArt()), 0, -150), 'Overgorge ' + spill, 'status');
+      alive().forEach(e => applyDamage(e, spill, { strength: false, scare: false, reflect: true, noFeast: true }));
+      refreshAll();
+    }
+  }
+  // sap one (or, for Skinwalker, all) of a foe's remaining bonuses + fire payoff
+  function feast(en, opts) {
+    opts = opts || {};
+    if (!en || !en.feastPool || !en.feastPool.length) return false;
+    let taken;
+    if (opts.all) taken = en.feastPool.splice(0);
+    else taken = [en.feastPool.splice(Math.floor(Math.random() * en.feastPool.length), 1)[0]];
+    feastBiteFx(en);
+    taken.forEach((b, i) => {
+      applyFeastBonus(b);
+      floatText(offset(center(en.dom), 0, -86 - i * 22), '\uD83C\uDF56 ' + DATA.feastLabel(b), 'status');
+    });
+    feastPayoff(en, opts);
+    return true;
+  }
+  // Skinwalker: a slain elite/boss leaves a permanent trophy (persistent stats + maxHP)
+  function addSkinTrophy(en) {
+    const m = B.monster, id = en.base && en.base.id;
+    if (!m || !id) return;
+    m.skin = m.skin || {};
+    DATA.feastTrophyAdd(m.skin, id);
+    const add = Math.max(1, Math.round(en.maxHp * 0.05));
+    m.maxHp += add; m.hp += add;
+    setBar($('player-monster'), m.hp, m.maxHp);
+    floatText(offset(center(playerArt()), 0, -150), 'Trophy claimed!', 'status');
+  }
+  function applySkinTrophies() {
+    const sk = B.monster && B.monster.skin;
+    if (!sk) return;
+    if (sk.str) B.strength += sk.str;
+    if (sk.res) B.resilience += sk.res;
+    if (sk.thorn) B.playerThorns = (B.playerThorns || 0) + sk.thorn;
+    if (sk.guard) B.feastGuard = (B.feastGuard || 0) + sk.guard;
+    if (sk.rampstr) B.feastRamp = (B.feastRamp || 0) + sk.rampstr;
+  }
+  // central kill: visual + run-log + the base Feast (and Skinwalker hoarding)
+  function killEnemy(en, opts) {
+    opts = opts || {};
+    if (!en || !en.alive) return;
+    en.alive = false;
+    killEnemyVisual(en);
+    recordFeastKill(en);
+    if (!opts.noFeast && hasPassive('feast')) {
+      const skin = hasPassive('skinwalker') && feastQualifiesSkin(en);
+      feast(en, { kill: true, dmg: opts.dmg || 0, all: !!skin });
+      if (skin) addSkinTrophy(en);
+    }
+  }
+  function demonAmp() { return hasPassive('demon') ? (1 + 0.33 * (B.devilsFedThisTurn || 0)) : 1; }
+  // Wendigo: each glyph you play feeds a lasting color buff (×5 on a Devil sate)
+  function wendigoColorBuff(color, mult) {
+    let c = color;
+    if (c !== 'red' && c !== 'blue' && c !== 'green') c = ['red', 'blue', 'green'][Math.floor(Math.random() * 3)];
+    if (c === 'red') { const n = 2 * mult; B.strength += n; floatText(offset(center(playerArt()), 0, -130), 'Str +' + n, 'status'); strengthFx(playerArt()); }
+    else if (c === 'blue') { const n = 2 * mult; B.resilience += n; floatText(offset(center(playerArt()), 0, -130), 'Res +' + n, 'status'); resilienceFx(playerArt()); }
+    else { const n = Math.max(1, Math.round(B.monster.maxHp * 0.05 * mult)); heal(n); }
+    refreshAll();
   }
   // Spectacle scaled to the foe's importance. Kept deliberately light: the
   // blend-mode/blur flame particles are costly, so higher tiers lean on cheap
@@ -4346,22 +4521,22 @@
   const DEVIL_BONUSES = [
     /* tier 1 — common */
     { key:'str_c', tier:1, icon:'⚔', label:'+1 Strength', desc:'+1 Strength for this combat.',
-      apply: async () => { B.strength += 1; floatText(playerPos(), 'Strength +1', 'status'); strengthFx(playerArt()); refreshAll(); } },
+      apply: async () => { const n = Math.round(1 * demonAmp()); B.strength += n; floatText(playerPos(), 'Strength +' + n, 'status'); strengthFx(playerArt()); refreshAll(); } },
     { key:'res_c', tier:1, icon:'🛡', label:'+1 Resilience', desc:'+1 Resilience for this combat.',
-      apply: async () => { B.resilience += 1; floatText(playerPos(), 'Resilience +1', 'status'); resilienceFx(playerArt()); refreshAll(); } },
+      apply: async () => { const n = Math.round(1 * demonAmp()); B.resilience += n; floatText(playerPos(), 'Resilience +' + n, 'status'); resilienceFx(playerArt()); refreshAll(); } },
     { key:'souls', tier:1, icon:'💠', label:'+20 Souls', desc:'Gain 20 souls.',
-      apply: async () => { root.CG.Game.gainSouls(20); floatText(offset(playerPos(), 0, -40), '+20 Souls', 'status'); } },
+      apply: async () => { const n = Math.round(20 * demonAmp()); root.CG.Game.gainSouls(n); floatText(offset(playerPos(), 0, -40), '+' + n + ' Souls', 'status'); } },
     { key:'heal', tier:1, icon:'♥', label:'Heal 20%', desc:'Heal 20% of max HP.',
-      apply: async () => { heal(Math.max(1, Math.ceil(B.monster.maxHp * 0.20))); } },
+      apply: async () => { heal(Math.max(1, Math.ceil(B.monster.maxHp * 0.20 * demonAmp()))); } },
     { key:'combo1', tier:1, icon:'▲', label:'Combo +1', desc:'Extend your combo by 1.', preCombo: 1 },
     /* tier 2 — uncommon */
     { key:'upg_c', tier:2, icon:'⬆', label:'Upgrade (combat)', desc:'Upgrade the fed glyph for the rest of this combat.', preUpgrade:'combat' },
     { key:'burst', tier:2, icon:'🎲', label:'Soul Burst', desc:'Three hits on random foes for 5 + combo each.',
-      apply: async (c) => { for (let i = 0; i < 3; i++) { const t = targetRandom(); if (!t.length) break; await hitTargets(t, 5 + (c.comboLen || 0), c.from, 'var(--purple)', { strength:false, scare:false }); if (alive().length === 0) break; } } },
+      apply: async (c) => { const d = Math.round((5 + (c.comboLen || 0)) * demonAmp()); for (let i = 0; i < 3; i++) { const t = targetRandom(); if (!t.length) break; await hitTargets(t, d, c.from, 'var(--purple)', { strength:false, scare:false }); if (alive().length === 0) break; } } },
     { key:'scare', tier:2, icon:'☠', label:'Scare 3 (all)', desc:'Scare every foe by 3.',
-      apply: async () => { alive().forEach(e => { e.scare = (e.scare || 0) + 3; e.scareTurns = 3; scareFx(e.dom); }); SFX.firePurple(0); refreshAll(); await wait(160); } },
+      apply: async () => { const n = Math.round(3 * demonAmp()); alive().forEach(e => { e.scare = (e.scare || 0) + n; e.scareTurns = 3; scareFx(e.dom); }); SFX.firePurple(0); refreshAll(); await wait(160); } },
     { key:'weak', tier:2, icon:'▼', label:'Weak 3 (all)', desc:'Weaken every foe by 3.',
-      apply: async () => { alive().forEach(e => { e.weak = (e.weak || 0) + 3; weakFx(e.dom); }); refreshAll(); await wait(160); } },
+      apply: async () => { const n = Math.round(3 * demonAmp()); alive().forEach(e => { e.weak = (e.weak || 0) + n; weakFx(e.dom); }); refreshAll(); await wait(160); } },
     { key:'glyph', tier:2, icon:'🜲', label:'Gain a Glyph', desc:'Gain a random glyph for the run.',
       apply: async () => { const id = root.CG.Game.grantRandomGlyph(); if (id) { B.draw.push(id); shuffle(B.draw); floatText(offset(playerPos(), 0, -150), '+ ' + glyph(id).name, 'status'); fxMotes(center(playerArt()), 8, '#caa6ff', 'fx-mote-rise', 60); } } },
     { key:'item', tier:2, icon:'🎒', label:'Gain an Item', desc:'Gain a random item.', apply: async () => { grantRandomDevilItem(); } },
@@ -4381,7 +4556,7 @@
         const e = foes[Math.floor(Math.random() * foes.length)];
         floatText(offset(center(e.dom), 0, -60), 'Devoured!', 'status');
         await boltP(c.from, center(e.dom), 'var(--purple)');
-        e.hp = 0; if (e.alive) { e.alive = false; killEnemyVisual(e); }
+        e.hp = 0; if (e.alive) killEnemy(e, {});
       } }
   ];
   function rollDevilBonus(ignore) {
@@ -4921,6 +5096,7 @@
         break;
       }
       case 'clog':
+        if (B.clogImmune) { B.clogImmune = false; floatText(playerPos(), 'Shrugged off!', 'status'); await wait(180); break; }
         if (B.stuck.indexOf('deadweight') === -1) B.stuck.push('deadweight');
         floatText(playerPos(), 'Dead Weight!', 'status');
         SFX.firePurple(0);
@@ -5064,6 +5240,7 @@
       maxHp: def.maxHp, hp: def.maxHp, shield: 0,
       weak: 0, burn: 0, leech: 0, scare: 0, scareTurns: 0, empower: 0,
       strength: 0, strengthTurns: 0,
+      feastPool: root.CG.DATA.feastPoolFor(def),
       intentIndex: 0, intent: null, alive: true, dom: null
     };
     en.intent = prepareIntent(en);
