@@ -396,6 +396,7 @@
       soulstones: 0,             // collected at Soulstone nodes; 5 evolves the beast
       soulhunterKills: 0,        // Soulhunter forms cleared this run (0 → next is A, etc.)
       feastKills: [],            // Ghoul Feast: foes slain this run (for Skinwalker trophies)
+      feastBoons: [],            // Ghoul Feast: kill-boons waiting to manifest next encounter
       unlocks: {}                // earned meta-unlocks (e.g. colorless glyphs)
     };
     root.CG.State = State;

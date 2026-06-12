@@ -175,6 +175,8 @@
     }
 
     buildDOM();
+    // base Feast: boons banked from kills last encounter cash in now (DOM is up)
+    applyBankedFeastBoons();
     root.CG.Game.show('screen-battle');
     const headline = B.isBoss ? '⚔ ' + B.enemies[0].name + ' ⚔'
       : opts.shadow ? '☠ ' + B.enemies[0].name + ' ☠'
@@ -2192,7 +2194,7 @@
             if (hasPassive('crawlerfeast')) {
               B.devilsFedThisTurn = (B.devilsFedThisTurn || 0) + 1;
               const nFeasts = hasPassive('demon') ? 2 : 1;
-              for (let fz = 0; fz < nFeasts; fz++) { const tgt = devilFeastTarget(); if (tgt) feast(tgt, {}); }
+              for (let fz = 0; fz < nFeasts; fz++) { const tgt = devilFeastTarget(); if (tgt) feast(tgt, { devilAmp: true }); }
             }
             B._devilRewards.push({ slot: ci, bonus: b, comboLen: comboLen, baseId: baseOf(ev.id) });
           }
@@ -2727,7 +2729,7 @@
       if (!t.ref.feastPool || !t.ref.feastPool.length) return;
       const missing = B.monster.maxHp - B.monster.hp;
       if (hasPassive('vampire')) {
-        const heal = Math.round((t.ref.maxHp || 0) * 0.20);
+        const heal = Math.round((t.ref.maxHp || 0) * 0.25);
         const room = Math.max(0, missing - T.heal);
         const healed = Math.min(room, heal);
         T.heal += healed;
@@ -2735,7 +2737,10 @@
         if (spill > 0) A().forEach(f => fcHit(f, spill, { strength: false, scare: false, charge: true }));
       } else if (hasPassive('undeadfeast')) {
         const room = Math.max(0, missing - T.heal);
-        T.heal += Math.min(room, Math.max(1, Math.round(B.monster.maxHp * 0.05)));
+        T.heal += Math.min(room, Math.max(1, Math.round((t.ref.maxHp || 0) * 0.10)));
+      } else if (hasPassive('feast')) {
+        const room = Math.max(0, missing - T.heal);
+        T.heal += Math.min(room, Math.max(1, Math.round((t.ref.maxHp || 0) * 0.05)));
       }
     }
     // damage recoiling onto the beast (curse mirror, thorns, blood magic)
@@ -4172,7 +4177,10 @@
   // ============================================================
   const DATA = root.CG.DATA;
   function feastChance() {
-    return (hasPassive('undeadfeast') ? 0.05 : 0) + (hasPassive('skinwalker') ? 0.10 : 0);
+    if (hasPassive('vampire')) return 0.35;                 // Bloodgorge
+    let c = hasPassive('undeadfeast') ? 0.25 : 0;           // Endless Hunger
+    if (hasPassive('skinwalker')) c += 0.10;                // Wear Their Skin
+    return c;
   }
   // an elite/boss/shadow foe — the only kills Skinwalker hoards permanently
   function feastQualifiesSkin(en) {
@@ -4207,21 +4215,41 @@
     fxMotes(p, 10, '#e0a6ff', 'fx-mote-rise', 70);
     SFX.firePurple && SFX.firePurple(0);
   }
-  function applyFeastBonus(b) {
+  // apply a sapped bonus to the CURRENT combat. `amp` (Demon's Insatiable)
+  // scales every quantified boon — Devil-triggered Feasts pass demonAmp().
+  function applyFeastBonus(b, amp) {
+    amp = amp || 1;
+    const N = q => Math.max(1, Math.round((q || 0) * amp));
     switch (b.t) {
-      case 'str': B.strength += b.n; strengthFx(playerArt()); break;
-      case 'res': B.resilience += b.n; resilienceFx(playerArt()); break;
-      case 'thorn': B.playerThorns = (B.playerThorns || 0) + b.n; break;
-      case 'guard': B.feastGuard = (B.feastGuard || 0) + b.n; B.playerShield += b.n; break;
-      case 'rampstr': B.feastRamp = (B.feastRamp || 0) + b.n; B.strength += b.n; strengthFx(playerArt()); break;
-      case 'weaken': alive().forEach(e => { e.weak = (e.weak || 0) + b.n; weakFx(e.dom); }); break;
-      case 'scare': alive().forEach(e => { e.scare = (e.scare || 0) + b.n; e.scareTurns = Math.max(e.scareTurns || 0, 3); scareFx(e.dom); }); break;
-      case 'heal': heal(Math.max(1, Math.round(B.monster.maxHp * b.pct))); break;
-      case 'souls': root.CG.Game.gainSouls(b.n); break;
+      case 'str': B.strength += N(b.n); strengthFx(playerArt()); break;
+      case 'res': B.resilience += N(b.n); resilienceFx(playerArt()); break;
+      case 'thorn': B.playerThorns = (B.playerThorns || 0) + N(b.n); break;
+      case 'guard': { const g = N(b.n); B.feastGuard = (B.feastGuard || 0) + g; B.playerShield += g; break; }
+      case 'rampstr': { const r = N(b.n); B.feastRamp = (B.feastRamp || 0) + r; B.strength += r; strengthFx(playerArt()); break; }
+      case 'weaken': { const w = N(b.n); alive().forEach(e => { e.weak = (e.weak || 0) + w; weakFx(e.dom); }); break; }
+      case 'scare': { const s = N(b.n); alive().forEach(e => { e.scare = (e.scare || 0) + s; e.scareTurns = Math.max(e.scareTurns || 0, 3); scareFx(e.dom); }); break; }
+      case 'heal': heal(Math.max(1, Math.round(B.monster.maxHp * (b.pct || 0) * amp))); break;
+      case 'souls': root.CG.Game.gainSouls(N(b.n)); break;
       case 'purge': feastPurge(); break;
       case 'cleanse': B.feastCleanse = (B.feastCleanse || 0) + 1; feastCleanseNow(); break;
     }
     refreshAll();
+  }
+  // Base Feast: a slain foe's boon manifests in the NEXT encounter. Banked on
+  // the run state and spent at the start of the next combat.
+  function bankFeastBoon(b) {
+    const S = root.CG.Game.state;
+    if (!S) return;
+    S.feastBoons = S.feastBoons || [];
+    S.feastBoons.push(Object.assign({}, b));
+  }
+  function applyBankedFeastBoons() {
+    const S = root.CG.Game.state;
+    const q = (S && S.feastBoons) || [];
+    if (!q.length) return;
+    S.feastBoons = [];
+    q.forEach(b => applyFeastBonus(b, 1));
+    floatText(offset(center(playerArt()), 0, -150), '\uD83C\uDF56 Feast boons claimed', 'status');
   }
   function feastPurge() {
     // sweep junk (Dead Weight / Rubble) out of hand and queue, and shrug off the next clog
@@ -4241,18 +4269,23 @@
     const i = B.slotFx.findIndex(fx => fx && fx.cursed);
     if (i !== -1) { B.slotFx[i].cursed = 0; B.slotFx[i].caster = null; floatText(offset(center(playerArt()), 0, -120), 'Cleansed', 'status'); renderSockets && renderSockets(); }
   }
-  function feastPayoff(en, opts) {
+  // the life a Feast restores. Base: 5% of the feasted foe. Undead: 10% of the
+  // damaged foe. Vampire: the triggering damage (kills: 25% of the foe's max HP),
+  // with any overheal spilling as damage (heal() handles the Bloodgorge spill).
+  function feastHeal(en, opts) {
+    opts = opts || {};
     if (hasPassive('vampire')) {
-      const h = opts.kill ? Math.round(en.maxHp * 0.20) : (opts.dmg || 0);
-      if (h > 0) healOverheal(h);
+      const h = opts.kill ? Math.round((en.maxHp || 0) * 0.25) : (opts.dmg || 0);
+      if (h > 0) heal(h);
     } else if (hasPassive('undeadfeast')) {
-      heal(Math.max(1, Math.round(B.monster.maxHp * 0.05)));
+      heal(Math.max(1, Math.round((en.maxHp || 0) * 0.10)));
+    } else if (opts.kill) {
+      heal(Math.max(1, Math.round((en.maxHp || 0) * 0.05)));
     }
   }
-  // Vampire: heal, then spill the excess as damage across every foe. heal()
-  // itself does the Bloodgorge spill now, so this is just a named entry point.
-  function healOverheal(amt) { heal(amt); }
-  // sap one (or, for Skinwalker, all) of a foe's remaining bonuses + fire payoff
+  // sap one (or, for Skinwalker, all) of a foe's remaining bonuses. A KILL banks
+  // the boon for the next encounter; a mid-combat Feast (Undead tick, Devil sate)
+  // pays out now. `devilAmp` scales Devil-triggered boons by Demon's Insatiable.
   function feast(en, opts) {
     opts = opts || {};
     if (!en || !en.feastPool || !en.feastPool.length) return false;
@@ -4260,11 +4293,14 @@
     if (opts.all) taken = en.feastPool.splice(0);
     else taken = [en.feastPool.splice(Math.floor(Math.random() * en.feastPool.length), 1)[0]];
     feastBiteFx(en);
+    const amp = opts.devilAmp ? demonAmp() : 1;
     taken.forEach((b, i) => {
-      applyFeastBonus(b);
-      floatText(offset(center(en.dom), 0, -86 - i * 22), '\uD83C\uDF56 ' + DATA.feastLabel(b), 'status');
+      if (opts.kill) bankFeastBoon(b);              // base: manifests next encounter
+      else applyFeastBonus(b, amp);                 // tick / Devil sate: here and now
+      const tag = opts.kill ? ' (next fight)' : '';
+      floatText(offset(center(en.dom), 0, -86 - i * 22), '\uD83C\uDF56 ' + DATA.feastLabel(b) + tag, 'status');
     });
-    feastPayoff(en, opts);
+    feastHeal(en, opts);
     return true;
   }
   // Skinwalker: a slain elite/boss leaves a permanent trophy (persistent stats + maxHP)

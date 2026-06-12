@@ -781,7 +781,7 @@
       color: 'var(--purple)',
       maxHp: 50, sockets: 3, slotTypes: ['normal', 'normal', 'devil'],
       passive: 'feast', passiveVal: 1,
-      passiveText: 'Feast: slaying a foe <b>feasts</b> it \u2014 sap one of its predefined bonuses. Every foe holds one of each (more on bigger foes); a bonus is gone once taken.',
+      passiveText: 'Slaying a foe <b>feasts</b> it, granting a boon in the <b>next encounter</b> and healing you for <b>5%</b> the enemy\u2019s max HP.',
       desc: 'A famished thing that grows by devouring its prey \u2014 every foe it fells gives up a piece of its power.',
       // Branching evolution. Evo 1 at 5 soulstones, Evo 2 at 10. The Multi-devil
       // (Crawler) line is the only one that grants sockets \u2014 at BOTH evo tiers.
@@ -791,7 +791,7 @@
             id: 'undead', name: 'Undead', img: 'assets/Undead.png', hp: 20,
             tagline: 'Everheal + Feast',
             passive: { id: 'undeadfeast', name: 'Endless Hunger',
-              text: 'Feast can also trigger off <b>any damage tick</b> (5% chance), and every Feast heals you <b>5% max HP</b>.' }
+              text: 'Feast now has a <b>25%</b> chance to trigger from any attack tick, granting boons in the <b>current combat</b> and healing that is now <b>10%</b> the damaged target\u2019s max HP.' }
           },
           {
             id: 'crawler', name: 'Crawler', img: 'assets/Crawler.png', hp: 20,
@@ -808,7 +808,7 @@
                 text: 'For every elite and boss you have slain (and will slay), keep <b>all</b> their bonuses and <b>+5% their max HP</b>, permanently. Feast tick-chance <b>+10%</b>.' } },
             { id: 'vampire', name: 'Vampire', img: 'assets/Vampire.png', hp: 20, tagline: 'Bloodgorge',
               passive: { id: 'vampire', name: 'Bloodgorge',
-                text: 'Feast heals you for the <b>triggering damage</b>; a Feast-kill heals <b>20%</b> of the foe\u2019s max HP. Healing past full spills as <b>damage to all foes</b>.' } }
+                text: 'Feast procced by damage is now a <b>35%</b> chance and also heals by <b>that amount of damage</b>. Feast kills now heal for <b>25%</b> the enemy\u2019s max HP. Healing past full spills as <b>damage to all foes</b>.' } }
           ],
           crawler: [
             { id: 'demon', name: 'Demon', img: 'assets/Demon.png', hp: 20, tagline: 'Devil\u2019s Glutton',
