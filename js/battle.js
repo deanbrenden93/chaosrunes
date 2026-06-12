@@ -4441,7 +4441,10 @@
       ringAt(0, -0.45, GOLD, 600, 0);
       ringAt(-0.6, 0.1, RED, 560, 90);
       ringAt(0.55, 0.4, GOLD, 560, 180);
-      later(() => flameBurst({ x: a.x, y: a.y }, { scale: 1.15, count: 10, sparks: 4, smoke: 1, spread: Math.max(40, a.w * 0.4) }), 50);
+      // blur/blend flame embers are the costly bit, so keep the count lean and
+      // split it into two small staggered puffs — same fiery read, no frame spike
+      later(() => flameBurst({ x: a.x, y: a.y }, { scale: 1.15, count: 5, sparks: 2, smoke: 1, spread: Math.max(40, a.w * 0.4) }), 50);
+      later(() => flameBurst({ x: a.x, y: a.y }, { scale: 1.0, count: 4, sparks: 2, smoke: 0, glow: false, spread: Math.max(40, a.w * 0.4) }), 210);
       shake(2);
     } else if (tier === 'floorboss') {
       SFX.death(); later(() => SFX.death(), 170);
@@ -4450,7 +4453,10 @@
       ringAt(-0.7, -0.1, RED, 640, 90);
       ringAt(0.7, 0.15, GOLD, 640, 180);
       ringAt(-0.2, 0.6, RED, 620, 270);
-      later(() => flameBurst({ x: a.x, y: a.y }, { scale: 1.4, count: 14, sparks: 6, smoke: 1, spread: Math.max(48, a.w * 0.45) }), 60);
+      // trimmed + staggered across three frames so the big sprite's pyre never
+      // dumps 20 blurred screen-blend layers into one frame
+      later(() => flameBurst({ x: a.x, y: a.y }, { scale: 1.4, count: 6, sparks: 3, smoke: 1, spread: Math.max(48, a.w * 0.45) }), 60);
+      later(() => flameBurst({ x: a.x, y: a.y }, { scale: 1.15, count: 5, sparks: 2, smoke: 0, glow: false, spread: Math.max(48, a.w * 0.45) }), 230);
       deathFlash(0.42, 520, 'rgba(255,220,170,1)');
       shake(2); later(() => shake(2), 300);
     } else if (tier === 'finalboss') {

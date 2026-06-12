@@ -3946,10 +3946,57 @@
     else if (poi.id === 'monsterbook') buildMonsterBook();
     show(poi.screen);
   }
+  // hyperreal fireflies: a scatter of soft glowing motes that wander on looping
+  // organic paths and breathe in/out (blink) at their own pace, giving the dead
+  // clearing a living shimmer. Pure compositor transforms + opacity = cheap; the
+  // count is trimmed on touch devices so phone GPUs stay smooth.
+  function spawnFireflies() {
+    const layer = $('lw-fireflies');
+    if (!layer) return;
+    layer.innerHTML = '';
+    const canHover = !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+    const count = canHover ? 20 : 9;
+    const W = 1920, H = 1080;
+    for (let i = 0; i < count; i++) {
+      const f = document.createElement('span');
+      f.className = 'lw-firefly';
+      const depth = 0.45 + Math.random() * 0.55;          // back motes are smaller/dimmer
+      const size = (2.2 + Math.random() * 3.4) * depth + 1.4;
+      f.style.width = f.style.height = size.toFixed(1) + 'px';
+      f.style.left = (Math.random() * W).toFixed(0) + 'px';
+      f.style.top = (180 + Math.random() * (H - 380)).toFixed(0) + 'px';
+      f.style.setProperty('--glow', (size * (2.4 + Math.random())).toFixed(1) + 'px');
+      f.style.opacity = '0';
+      layer.appendChild(f);
+      if (typeof f.animate !== 'function') continue;
+      // a closed, looping wander built from a few random waypoints
+      const steps = 4, frames = [];
+      for (let s = 0; s <= steps; s++) {
+        const x = (Math.random() * 2 - 1) * 150;
+        const y = (Math.random() * 2 - 1) * 110;
+        frames.push({ transform: 'translate(' + x.toFixed(0) + 'px,' + y.toFixed(0) + 'px)' });
+      }
+      frames.push({ transform: 'translate(0px,0px)' });
+      f.animate(frames, {
+        duration: 11000 + Math.random() * 12000,
+        iterations: Infinity, easing: 'ease-in-out',
+        delay: -Math.random() * 12000
+      });
+      // independent twinkle so the swarm never pulses in unison
+      const peak = (0.55 + Math.random() * 0.4) * depth;
+      f.animate(
+        [{ opacity: 0 }, { opacity: peak, offset: 0.25 }, { opacity: peak * 0.28, offset: 0.55 },
+         { opacity: peak, offset: 0.8 }, { opacity: 0 }],
+        { duration: 2400 + Math.random() * 3600, iterations: Infinity,
+          delay: -Math.random() * 5000, easing: 'ease-in-out' }
+      );
+    }
+  }
   function buildLostWoods() {
     const host = $('lw-pois');
     if (!host) return;
     host.innerHTML = '';
+    spawnFireflies();
     resetLwDialogue();
     // tapping empty ground clears any touch selection back to the default blurb
     host.onclick = e => { if (e.target === host) resetLwDialogue(); };

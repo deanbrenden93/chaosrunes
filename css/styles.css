@@ -5302,40 +5302,102 @@ html, body {
 .lw-fog {
   position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden;
   background:
-    radial-gradient(ellipse 64% 42% at 50% 80%, rgba(150,180,172,0.09), transparent 72%),
-    radial-gradient(ellipse 70% 50% at 50% 28%, rgba(120,150,180,0.05), transparent 74%);
+    radial-gradient(ellipse 64% 42% at 50% 80%, rgba(150,180,172,0.15), transparent 72%),
+    radial-gradient(ellipse 70% 50% at 50% 28%, rgba(120,150,180,0.09), transparent 74%);
   animation: drift 34s ease-in-out infinite alternate;
 }
 /* two soft mist sheets crossing the clearing at different rates -> parallax */
 .lw-fog::before, .lw-fog::after {
-  content: ''; position: absolute; inset: -22% -32%; will-change: transform;
+  content: ''; position: absolute; inset: -24% -34%; will-change: transform;
 }
 .lw-fog::before {
   background:
-    radial-gradient(ellipse 36% 26% at 24% 62%, rgba(186,204,196,0.11), transparent 70%),
-    radial-gradient(ellipse 44% 30% at 76% 50%, rgba(160,186,202,0.08), transparent 72%);
-  animation: lwMistA 42s ease-in-out infinite alternate;
+    radial-gradient(ellipse 36% 26% at 24% 62%, rgba(190,210,200,0.20), transparent 70%),
+    radial-gradient(ellipse 44% 30% at 76% 50%, rgba(164,192,208,0.15), transparent 72%);
+  animation: lwMistA 38s ease-in-out infinite alternate;
 }
 .lw-fog::after {
   background:
-    radial-gradient(ellipse 48% 30% at 62% 78%, rgba(172,198,188,0.09), transparent 72%),
-    radial-gradient(ellipse 32% 22% at 32% 36%, rgba(150,180,196,0.06), transparent 70%);
-  animation: lwMistB 58s ease-in-out infinite alternate;
+    radial-gradient(ellipse 48% 30% at 62% 78%, rgba(176,204,194,0.17), transparent 72%),
+    radial-gradient(ellipse 32% 22% at 32% 36%, rgba(154,186,202,0.12), transparent 70%);
+  animation: lwMistB 52s ease-in-out infinite alternate;
 }
-@keyframes lwMistA { from { transform: translate3d(-5%, 0, 0); } to { transform: translate3d(5%, 1.5%, 0); } }
-@keyframes lwMistB { from { transform: translate3d(4%, 0.5%, 0); } to { transform: translate3d(-4%, -1%, 0); } }
-/* a faint low-lying ground mist that breathes across the foreground for depth */
+@keyframes lwMistA { from { transform: translate3d(-9%, -1%, 0); } to { transform: translate3d(9%, 2.5%, 0); } }
+@keyframes lwMistB { from { transform: translate3d(7%, 1.5%, 0); } to { transform: translate3d(-7%, -2%, 0); } }
+/* a low-lying ground mist that breathes across the foreground for depth, plus a
+   brighter band that visibly ROLLS sideways so motion always reads */
 .lw-mist {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 46%; z-index: 5;
+  position: absolute; left: 0; right: 0; bottom: 0; height: 52%; z-index: 5;
   pointer-events: none; overflow: hidden;
 }
 .lw-mist::before {
-  content: ''; position: absolute; inset: -12% -28%; will-change: transform;
+  content: ''; position: absolute; inset: -12% -30%; will-change: transform;
   background:
-    radial-gradient(ellipse 40% 52% at 26% 84%, rgba(196,210,204,0.10), transparent 70%),
-    radial-gradient(ellipse 46% 56% at 72% 94%, rgba(178,198,206,0.08), transparent 72%);
+    radial-gradient(ellipse 40% 52% at 26% 84%, rgba(200,214,208,0.20), transparent 70%),
+    radial-gradient(ellipse 46% 56% at 72% 94%, rgba(182,202,210,0.16), transparent 72%);
   filter: blur(7px);
-  animation: lwMistB 50s ease-in-out infinite alternate;
+  animation: lwMistB 46s ease-in-out infinite alternate;
+}
+.lw-mist::after {
+  content: ''; position: absolute; left: -40%; right: -40%; bottom: -6%; height: 70%;
+  will-change: transform;
+  background:
+    radial-gradient(ellipse 22% 60% at 18% 88%, rgba(206,220,214,0.16), transparent 72%),
+    radial-gradient(ellipse 26% 64% at 50% 96%, rgba(190,210,218,0.13), transparent 74%),
+    radial-gradient(ellipse 22% 58% at 82% 90%, rgba(206,220,214,0.15), transparent 72%);
+  filter: blur(9px);
+  animation: lwRoll 40s linear infinite;
+}
+@keyframes lwRoll { from { transform: translate3d(-14%, 0, 0); } to { transform: translate3d(14%, 0, 0); } }
+
+/* ---- fireflies: warm glowing motes wandering the clearing (JS-spawned) ---- */
+.lw-fireflies { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
+.lw-firefly {
+  position: absolute; border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%, #fbffd6 0%, #eaff9c 42%, rgba(180,235,110,0.55) 70%, transparent 100%);
+  box-shadow:
+    0 0 var(--glow, 10px) rgba(214,255,150,0.85),
+    0 0 calc(var(--glow, 10px) * 2.1) rgba(150,220,90,0.45);
+  will-change: transform, opacity;
+}
+
+/* -------------------------------------------------------------------
+   MOBILE / TOUCH SAFETY (coarse pointer).
+   The Lost Woods family leans on a lot of layer-promoting GPU effects:
+   blur filters, backdrop-filter, will-change transforms and big
+   multi-stop gradient skies. On many phone GPUs these blow past the
+   per-surface texture / compositing budget and the backgrounds + art
+   collapse to black, blocky or torn tiles (the same class of bug the
+   beast-page 3D flip hit). Strip the costly effects on touch devices —
+   the screens stay fully readable and, crucially, stable.
+   ------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  /* drifting fog + ground mist are pure decoration and the worst
+     offenders (blur + will-change + animation) — drop them entirely */
+  .lw-fog, .lw-mist { display: none !important; }
+
+  /* the brightness/saturate/hue-rotate filter on the sub-screen
+     backdrops forces a full-screen offscreen buffer that glitches on
+     mobile; the main map screen (which has no such filter) renders
+     fine. Bake the dim into a plain overlay instead of a filter. */
+  #screen-gravemarker .map-bg,
+  #screen-monsterbook .map-bg {
+    filter: none;
+    background-color: #050410;
+  }
+  #screen-gravemarker .map-bg::after,
+  #screen-monsterbook .map-bg::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: rgba(5,3,14,0.5);
+  }
+
+  /* star-chart sky: kill the transform-animated star layer (a large
+     repeating-gradient promoted layer) — keep the static sky beneath */
+  #screen-stonetable .bg-runes::after { animation: none; }
+
+  /* the always-on dialogue's backdrop-filter is the last blur in the
+     hub; its plate is already near-opaque so it looks identical without */
+  .lw-dia-inner { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 }
 
 /* ---- HUB: a top-down dead-forest clearing dotted with POI points ---- */
@@ -5359,27 +5421,78 @@ html, body {
   transform: translateX(-50%);
 }
 .lw-dia-inner {
-  text-align: center; padding: 22px 40px;
-  background: linear-gradient(180deg, rgba(20,28,20,0.94), rgba(8,12,8,0.96));
-  border: 1px solid rgba(150,200,140,0.42); border-radius: 18px;
-  box-shadow: 0 18px 50px rgba(0,0,0,0.72), inset 0 0 34px rgba(120,180,110,0.08);
+  position: relative; overflow: hidden;
+  text-align: center; padding: 20px 52px 22px;
+  background:
+    linear-gradient(180deg, rgba(26,34,24,0.95), rgba(10,14,9,0.975)),
+    radial-gradient(130% 150% at 50% 0%, rgba(120,180,110,0.12), transparent 60%);
+  border: 1px solid rgba(150,200,140,0.4); border-radius: 16px;
+  box-shadow:
+    0 24px 62px rgba(0,0,0,0.76),
+    inset 0 0 0 1px rgba(214,196,140,0.16),
+    inset 0 0 42px rgba(120,180,110,0.08);
   backdrop-filter: blur(2px);
   transition: border-color .22s ease, box-shadow .22s ease;
 }
-.lw-dialogue.focused .lw-dia-inner {
-  border-color: rgba(190,240,170,0.7);
-  box-shadow: 0 18px 50px rgba(0,0,0,0.72), 0 0 26px rgba(140,210,130,0.3), inset 0 0 34px rgba(120,180,110,0.12);
+/* a glowing gold crown along the top edge */
+.lw-dia-inner::before {
+  content: ''; position: absolute; top: 0; left: 8%; right: 8%; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(216,198,142,0.75), transparent);
+  filter: drop-shadow(0 0 6px rgba(216,198,142,0.55));
 }
+/* gilded L-bracket corners that brighten when a landmark is focused */
+.lw-dia-corner {
+  position: absolute; width: 26px; height: 26px; pointer-events: none;
+  border: 0 solid rgba(216,198,142,0.78);
+  box-shadow: 0 0 7px rgba(216,198,142,0.28);
+  transition: border-color .22s ease, box-shadow .22s ease;
+}
+.lw-dia-corner.tl { top: 11px; left: 13px; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 8px; }
+.lw-dia-corner.tr { top: 11px; right: 13px; border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 8px; }
+.lw-dia-corner.bl { bottom: 11px; left: 13px; border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 8px; }
+.lw-dia-corner.br { bottom: 11px; right: 13px; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 8px; }
+.lw-dialogue.focused .lw-dia-inner {
+  border-color: rgba(202,240,170,0.7);
+  box-shadow:
+    0 24px 62px rgba(0,0,0,0.76),
+    0 0 30px rgba(150,210,120,0.32),
+    inset 0 0 0 1px rgba(232,212,152,0.3),
+    inset 0 0 46px rgba(130,190,110,0.14);
+}
+.lw-dialogue.focused .lw-dia-corner { border-color: rgba(246,230,172,0.96); box-shadow: 0 0 9px rgba(232,206,132,0.6); }
 .lw-dia-title {
-  font-family: 'Cinzel'; font-size: 32px; font-weight: 800; letter-spacing: .04em;
-  color: #eef7e6; margin: 0 0 8px;
-  text-shadow: 0 0 16px rgba(120,180,110,0.45), 0 2px 8px rgba(0,0,0,0.85);
+  position: relative;
+  font-family: 'Cinzel'; font-size: 34px; font-weight: 900; letter-spacing: .07em;
+  text-transform: uppercase; margin: 2px 0 0;
+  background: linear-gradient(180deg, #fbf4d8 0%, #ecdca5 48%, #ccb777 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7)) drop-shadow(0 0 14px rgba(150,200,110,0.3));
+}
+/* ornamental divider: a gilded rule with a diamond pip at its heart */
+.lw-dia-rule {
+  display: block; position: relative; width: min(440px, 72%); height: 14px; margin: 9px auto 9px;
+}
+.lw-dia-rule::before {
+  content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, rgba(216,198,142,0.6) 24%, rgba(216,198,142,0.8) 50%, rgba(216,198,142,0.6) 76%, transparent);
+  transition: background .22s ease;
+}
+.lw-dia-rule::after {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 8px; height: 8px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: linear-gradient(135deg, #f6ecbf, #c6b27c);
+  box-shadow: 0 0 11px rgba(232,206,132,0.85);
 }
 .lw-dia-body {
-  font-family: 'Spectral'; font-size: 22px; line-height: 1.4; color: #c3d4ba; margin: 0;
+  position: relative;
+  font-family: 'Spectral'; font-size: 21px; line-height: 1.45; color: #cdd9c2; margin: 0;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.7);
 }
-.lw-dialogue.focused .lw-dia-title { color: #f3fbe9; }
-.lw-dia-seal { color: #c4b07a; font-style: italic; font-weight: 600; }
+.lw-dialogue.focused .lw-dia-rule::before {
+  background: linear-gradient(90deg, transparent, rgba(246,230,172,0.85) 50%, transparent);
+}
+.lw-dia-seal { color: #e0c98a; font-style: italic; font-weight: 600; }
 /* a touch-selected landmark stays lifted/glowing until you tap it again or elsewhere */
 .lw-poi-hasart.is-active .lw-poi-art {
   transform: translateY(-4px) scale(1.04);
