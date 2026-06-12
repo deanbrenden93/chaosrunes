@@ -5404,7 +5404,15 @@ html, body {
 /* Ground: the painted top-down clearing backdrop. */
 .lw-ground {
   position: absolute; inset: 0; z-index: 0;
-  background: #050604 url('../assets/Progress Background.jpg') center / cover no-repeat;
+  background: #050604;
+}
+/* the backdrop is a real <img> (not a CSS background): mobile browsers decode &
+   downsample <img> reliably, whereas a large CSS background on this scaled stage
+   was painting partially or not at all on some phones */
+.lw-ground-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: center;
+  pointer-events: none; user-select: none;
 }
 /* the painted backdrop already supplies the dark tree rim + faint rune texture,
    so the procedural canopy/rune overlays are retired on this hub */
