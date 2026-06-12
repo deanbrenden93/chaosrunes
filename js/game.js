@@ -356,7 +356,7 @@
     const begin = $('btn-begin');
     begin.disabled = false;
     begin.classList.add('armed');
-    begin.innerHTML = 'Descend with <b>' + m.name + '</b>';
+    begin.innerHTML = '<span class="bb-ico" aria-hidden="true">▾</span><span class="bb-label">Descend</span>';
   }
 
   // ============================================================
@@ -1631,6 +1631,7 @@
     // the final form looms 50% larger as it lands; a per-form class allows
     // targeted size tweaks for individual forms (e.g. Undead +30%)
     host.className = 'evo-stage evo-phase-morph' + (tier >= 2 ? ' evo-final' : '') +
+      (tier === 1 ? ' evo-tier1' : '') +
       (form && form.id ? ' evo-form-' + form.id : '');
     host.style.setProperty('--acc', acc);
     host.innerHTML =
@@ -3298,10 +3299,13 @@
     (m.evoPassives || []).forEach(p => { passiveHTML += passiveBox(p.name, p.text); });
     const ratio = Math.max(0, Math.min(1, m.hp / m.maxHp));
     const C = 2 * Math.PI * 66;
-    const finalCls = (m.evolveLevel || 0) >= 2 ? ' final-form' : '';
+    const lvl = m.evolveLevel || 0;
+    const lastForm = (m.evoChoices && m.evoChoices.length) ? m.evoChoices[m.evoChoices.length - 1] : '';
+    const formCls = (lvl >= 2 ? ' final-form' : lvl === 1 ? ' evo-tier1' : '') +
+      (lastForm ? ' evo-form-' + lastForm : '');
     host.innerHTML =
       '<div class="cs-charcard">' +
-        '<div class="player-combat cs-player' + finalCls + '" style="--pc-color:' + pcColor + '">' +
+        '<div class="player-combat cs-player' + formCls + '" style="--pc-color:' + pcColor + '">' +
           '<div class="pc-disc-wrap"><div class="pc-disc">' +
             '<svg class="pc-hp-ring" viewBox="0 0 160 160" aria-hidden="true">' +
               '<circle class="hp-track" cx="80" cy="80" r="66"></circle>' +
@@ -3546,6 +3550,22 @@
   function clearSave() {
     try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
   }
+  // Re-point a saved monster's portrait at its latest reached evolution form's art.
+  // A run that evolved BEFORE a form's PNG existed stored the base portrait; once the
+  // art lands, this picks it up on load (probed, so a still-missing file is ignored).
+  function reconcileMonsterArt(m) {
+    if (!m || !Array.isArray(m.evoChoices) || !m.evoChoices.length) return;
+    const tree = MONSTERS[m.id] && MONSTERS[m.id].evolution;
+    if (!tree) return;
+    const choices = m.evoChoices, last = choices.length - 1;
+    const pool = last === 0 ? (tree.tier1 || []) : ((tree.tier2 && tree.tier2[choices[0]]) || []);
+    const form = pool.find(f => f && f.id === choices[last]);
+    if (!form || !form.img || m.img === form.img) return;
+    const probe = new Image();
+    probe.onload = () => { m.img = form.img; m.evoFormImg = form.img; updateRunUI(); };
+    probe.src = form.img;
+  }
+
   function loadGame() {
     let raw = null;
     try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { raw = null; }
@@ -3554,6 +3574,7 @@
       const data = JSON.parse(raw);
       if (!data || !data.state || !data.state.monsters) return false;
       State = data.state;
+      (State.monsters || []).forEach(reconcileMonsterArt);
       if (!Array.isArray(State.items)) State.items = [];   // back-compat for pre-items saves
       if (!State.act) State.act = 1;                       // back-compat for pre-multi-floor saves
       if (!State.bossId) State.bossId = pickFloorBoss(State.act);
@@ -3826,6 +3847,27 @@
       if (e.key === 'ArrowLeft') { e.preventDefault(); flipBeast(-1); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); flipBeast(1); }
     });
+
+    // touch: swipe across the open hero card to turn pages on mobile. We track a
+    // single touch and only fire when the gesture is clearly horizontal, so it
+    // never hijacks a vertical scroll.
+    const pager = document.querySelector('.beast-pager');
+    if (pager) {
+      let sx = 0, sy = 0, swiping = false;
+      pager.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) { swiping = false; return; }
+        sx = e.touches[0].clientX; sy = e.touches[0].clientY; swiping = true;
+      }, { passive: true });
+      pager.addEventListener('touchend', (e) => {
+        if (!swiping) return;
+        swiping = false;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - sx, dy = t.clientY - sy;
+        if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+          flipBeast(dx < 0 ? 1 : -1);
+        }
+      }, { passive: true });
+    }
 
     $('btn-begin').addEventListener('click', () => {
       if (!pendingMonsterPick) return;

@@ -478,6 +478,7 @@
     // tune individual forms (e.g. Undead +30%)
     const formId = (m.evoChoices && m.evoChoices.length) ? m.evoChoices[m.evoChoices.length - 1] : '';
     pz.className = 'player-combat' + ((m.evolveLevel || 0) >= 2 ? ' final-form' : '') +
+      ((m.evolveLevel || 0) === 1 ? ' evo-tier1' : '') +
       (formId ? ' evo-form-' + formId : '');
     pz.style.setProperty('--pc-color', m.color || 'var(--gold)');
     const face = m.img
