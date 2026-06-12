@@ -5372,9 +5372,9 @@ html, body {
    the screens stay fully readable and, crucially, stable.
    ------------------------------------------------------------------- */
 @media (pointer: coarse) {
-  /* drifting fog + ground mist are pure decoration and the worst
-     offenders (blur + will-change + animation) — drop them entirely */
-  .lw-fog, .lw-mist { display: none !important; }
+  /* keep the atmospheric mist on phones, but drop the blur filters (the costly
+     bit) — the soft radial gradients read fine on their own */
+  .lw-mist::before, .lw-mist::after { filter: none; }
 
   /* the brightness/saturate/hue-rotate filter on the sub-screen
      backdrops forces a full-screen offscreen buffer that glitches on
@@ -5556,6 +5556,31 @@ html, body {
 }
 .lw-poi-soon.lw-poi-hasart .lw-poi-art { filter: grayscale(.45) brightness(.78) drop-shadow(0 14px 18px rgba(0,0,0,0.7)); }
 .lw-poi-soon.lw-poi-hasart:hover .lw-poi-art { transform: none; }
+/* a soft magical aura that breathes beneath each landmark so the structures feel
+   enchanted & alive — colour is per-POI, blur-free so it's smooth on mobile, and
+   each one is delayed so the clearing pulses out of sync rather than in lockstep */
+.lw-poi-hasart::before {
+  content: ''; position: absolute; left: 50%; bottom: 12%; z-index: 0; pointer-events: none;
+  width: calc(var(--poi-w, 240px) * 0.82); height: calc(var(--poi-w, 240px) * 0.5);
+  transform: translateX(-50%);
+  background: radial-gradient(50% 50% at 50% 50%, var(--poi-glow, rgba(140,185,255,0.5)), transparent 70%);
+  opacity: .35; animation: lwAura 5s ease-in-out infinite;
+}
+@keyframes lwAura {
+  0%, 100% { opacity: .26; transform: translateX(-50%) scale(.92); }
+  50%      { opacity: .54; transform: translateX(-50%) scale(1.08); }
+}
+.lw-poi-stonetable  { --poi-glow: rgba(120,175,255,0.62); }
+.lw-poi-monsterbook { --poi-glow: rgba(150,205,255,0.5); }
+.lw-poi-well        { --poi-glow: rgba(182,116,255,0.62); }
+.lw-poi-gravemarker { --poi-glow: rgba(150,182,216,0.46); }
+.lw-poi-tablets     { --poi-glow: rgba(132,206,182,0.5); }
+.lw-poi-monsterbook.lw-poi-hasart::before { animation-delay: -1.3s; }
+.lw-poi-well.lw-poi-hasart::before        { animation-delay: -2.6s; }
+.lw-poi-gravemarker.lw-poi-hasart::before { animation-delay: -3.4s; }
+.lw-poi-tablets.lw-poi-hasart::before     { animation-delay: -4.1s; }
+/* sealed landmarks glow only faintly */
+.lw-poi-soon.lw-poi-hasart::before { opacity: .14; animation-duration: 7.5s; }
 .lw-poi-name {
   font-family: 'Cinzel'; font-size: 25px; font-weight: 700; color: #eef7e6;
   text-shadow: 0 2px 10px rgba(0,0,0,0.85), 0 0 16px rgba(110,170,110,0.4);
