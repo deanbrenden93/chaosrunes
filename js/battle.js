@@ -474,7 +474,8 @@
   function renderPlayer() {
     const m = B.monster;
     const pz = $('player-monster');
-    pz.className = 'player-combat';
+    // final evolution forms loom larger on the field
+    pz.className = 'player-combat' + ((m.evolveLevel || 0) >= 2 ? ' final-form' : '');
     pz.style.setProperty('--pc-color', m.color || 'var(--gold)');
     const face = m.img
       ? `<img class="c-sprite" src="${m.img}" alt="">`

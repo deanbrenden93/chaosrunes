@@ -1524,7 +1524,8 @@
     const newImg = evoFormImg(form, m, 'evo-morph-img');
     const p = form.passive || {};
 
-    host.className = 'evo-stage evo-phase-morph';
+    // the final form looms 50% larger as it lands
+    host.className = 'evo-stage evo-phase-morph' + (tier >= 2 ? ' evo-final' : '');
     host.style.setProperty('--acc', acc);
     host.innerHTML =
       '<div class="evo-burst-bg morphing"></div>' +

@@ -1216,6 +1216,10 @@ html, body {
   filter: drop-shadow(0 8px 10px rgba(0,0,0,0.55)) drop-shadow(0 0 14px currentColor);
   animation: pc-portrait-float 3.2s ease-in-out infinite;
 }
+/* final evolution forms stand 50% taller on the field — bottom-anchored, so the
+   extra size grows up and over the disc rather than off the bottom */
+.player-combat.final-form .pc-portrait img.c-sprite { width: 205px; height: 205px; }
+.player-combat.final-form .pc-portrait span.c-sprite { font-size: 135px; }
 @keyframes pc-portrait-float {
   0%, 100% { transform: translateY(-1px); }
   50%      { transform: translateY(-9px); }
@@ -4348,6 +4352,8 @@ html, body {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
 }
 .evo-morph-img { width: 86%; height: 86%; object-fit: contain; }
+/* final forms land 50% larger as they emerge from the transformation */
+.evo-phase-morph.evo-final .evo-morph-new .evo-morph-img { width: 129%; height: 129%; }
 .evo-morph-emoji { font-size: 200px; line-height: 1; }
 .evo-morph-old {
   animation: evoOldShake 1.6s cubic-bezier(.36,.07,.5,1) forwards;
