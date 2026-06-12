@@ -692,27 +692,27 @@
   // standard draft/elite/shop pools so they stay tied to the moments that earn them.
   const EVENT_BLESSINGS = {
     fearbraid: {
-      id: 'fearbraid', name: 'Fear Braid', icon: '🧿', scope: 'run',
+      id: 'fearbraid', name: 'Fear Braids', icon: '🧿', img: 'assets/Fear Braids.png', scope: 'run',
       desc: 'The <b>second enemy</b> in every battle starts <b>Scared 3</b>.'
     },
     shimmer: {
-      id: 'shimmer', name: 'Shimmering Orb', icon: '🔮', scope: 'run',
+      id: 'shimmer', name: 'Shimmering Orb', icon: '🔮', img: 'assets/Shimmering Orb.png', scope: 'run',
       desc: 'When your chain resolves, every glyph is empowered by the number of <b>different glyph colors</b> in the chain.'
     },
     blackfeather: {
-      id: 'blackfeather', name: 'Black Feather', icon: '🪶', scope: 'run',
+      id: 'blackfeather', name: 'Black Feather', icon: '🪶', img: 'assets/Black Feather.png', scope: 'run',
       desc: 'Begin every battle with <b>+3 Resilience</b>.'
     },
     rawmuscle: {
-      id: 'rawmuscle', name: 'Raw Muscle Fiber', icon: '💪', scope: 'run',
+      id: 'rawmuscle', name: 'Muscle Fiber', icon: '💪', img: 'assets/Muscle Fiber.png', scope: 'run',
       desc: 'Begin every battle with <b>+3 Strength</b>.'
     },
     ratcharm: {
-      id: 'ratcharm', name: 'Rat Charm', icon: '🐀', scope: 'run',
+      id: 'ratcharm', name: 'Rat Charm', icon: '🐀', img: 'assets/Rat Charm.png', scope: 'run',
       desc: 'If you take <b>no glyph</b> from a rewards screen, gain <b>double souls</b> from it.'
     },
     chickencharm: {
-      id: 'chickencharm', name: 'Chicken Charm', icon: '🐔', scope: 'run',
+      id: 'chickencharm', name: 'Chicken Charm', icon: '🐔', img: 'assets/Chicken Charm.png', scope: 'run',
       desc: 'Normal battle rewards also offer a <b>reforge</b> option.'
     }
   };
@@ -1131,19 +1131,19 @@
                        desc: 'Strip the shields off <b>all</b> enemies and apply <b>Weak 3</b>.', effect: { kind: 'acid', weak: 3 } },
     throwing_knife:  { id: 'throwing_knife', name: 'Dagger', icon: '🔪', img: 'assets/Dagger.png', rarity: 'common', price: 34, combatOnly: true,
                        desc: 'Deal <b>10</b> damage to all enemies.', effect: { kind: 'damageAll', value: 10 } },
-    explosive_knife: { id: 'explosive_knife', name: 'Explosive Knife', icon: '💣', rarity: 'uncommon', price: 58, combatOnly: true,
+    explosive_knife: { id: 'explosive_knife', name: 'Exploding Dagger', icon: '💣', img: 'assets/Exploding Dagger.png', rarity: 'uncommon', price: 58, combatOnly: true,
                        desc: 'Deal <b>30</b> damage to all enemies.', effect: { kind: 'damageAll', value: 30 } },
-    soul_jar:        { id: 'soul_jar', name: 'Soul Jar', icon: '⚱️', rarity: 'rare', price: 96, combatOnly: false, passive: true,
+    soul_jar:        { id: 'soul_jar', name: 'Soul Jar', icon: '⚱️', img: 'assets/Soul Jar.png', rarity: 'rare', price: 96, combatOnly: false, passive: true,
                        desc: 'Use to <b>fully heal</b> your active beast. While carried, it shatters to <b>revive</b> a fallen beast at <b>30%</b> HP — then it\'s spent.', effect: { kind: 'soulHeal' } },
-    emergency_phial: { id: 'emergency_phial', name: 'Emergency Phial', icon: '🧫', rarity: 'uncommon', price: 44, combatOnly: true,
+    emergency_phial: { id: 'emergency_phial', name: 'Emergency Phial', icon: '🧫', img: 'assets/Emergency Phial.png', rarity: 'uncommon', price: 44, combatOnly: true,
                        desc: 'Pull a <b>chosen glyph</b> from your deck straight into your hand this turn.', effect: { kind: 'tutor' } },
-    ember_tome:      { id: 'ember_tome', name: 'Ember Tome', icon: '📜', rarity: 'uncommon', price: 60, combatOnly: false,
+    ember_tome:      { id: 'ember_tome', name: 'Archaic Tome', icon: '📜', img: 'assets/Archaic Tome.png', rarity: 'uncommon', price: 60, combatOnly: false,
                        desc: 'Gain a random <b>common</b> blessing.', effect: { kind: 'blessing', rarity: 'common' } },
-    astral_tome:     { id: 'astral_tome', name: 'Astral Tome', icon: '📖', rarity: 'rare', price: 110, combatOnly: false,
+    astral_tome:     { id: 'astral_tome', name: 'Astral Tome', icon: '📖', img: 'assets/Astral Tome.png', rarity: 'rare', price: 110, combatOnly: false,
                        desc: 'Gain a random <b>rare</b> blessing.', effect: { kind: 'blessing', rarity: 'rare' } },
-    bramble_draught: { id: 'bramble_draught', name: 'Bramble Draught', icon: '🌵', rarity: 'common', price: 34, combatOnly: true,
+    bramble_draught: { id: 'bramble_draught', name: 'Bramble Gauntlets', icon: '🌵', img: 'assets/Bramble Gauntlets.png', rarity: 'common', price: 34, combatOnly: true,
                        desc: 'Gain <b>5 Thorns</b> this combat — attackers take 5 damage back.', effect: { kind: 'thorns', value: 5 } },
-    war_tincture:    { id: 'war_tincture', name: 'War Tincture', icon: '⚔️', rarity: 'uncommon', price: 48, combatOnly: true,
+    war_tincture:    { id: 'war_tincture', name: 'War Tincture', icon: '⚔️', img: 'assets/War Tincture.png', rarity: 'uncommon', price: 48, combatOnly: true,
                        desc: 'Gain <b>3 Strength</b> and <b>3 Resilience</b> this combat.', effect: { kind: 'buff', str: 3, res: 3 } }
   };
 

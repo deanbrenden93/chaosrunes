@@ -73,6 +73,9 @@
     return '<div class="letter-chip ' + cls + '">' + sym + '</div>';
   }
 
+  // universal hard cap on how many sockets any beast can ever hold
+  const MAX_SOCKETS = 9;
+
   // ---- Run state (rebuilt each run) ----
   let State = null;
   let pendingMonsterPick = null;
@@ -1167,7 +1170,7 @@
 
     const claims = $('soulstone-claims');
     claims.innerHTML = '';
-    claims.appendChild(claimCard('\u25C6', 'Soulstone',
+    claims.appendChild(claimCard('<img class="cc-icon-img" src="assets/Soulstone Stone.png" alt="" draggable="false">', 'Soulstone',
       'A shard of raw soul. Gather <b>5</b> to evolve <b>' + activeMonster().name + '</b>.',
       'var(--blue)', () => gainSoulstone()));
 
@@ -2751,7 +2754,10 @@
   }
   function gainSocket(n) {
     const m = activeMonster();
-    const add = n || 1;
+    // hard universal cap: a beast can never exceed 9 sockets, no matter the
+    // source (rewards, events, shops, blessings…)
+    const add = Math.min(n || 1, Math.max(0, MAX_SOCKETS - m.sockets));
+    if (add <= 0) { updateTopbar(); return; }
     const startIdx = m.sockets;
     m.sockets += add;
     while (m.slotTypes.length < m.sockets) m.slotTypes.push('normal');
@@ -3038,7 +3044,7 @@
     buildReward('normal');
     const claims = $('reward-claims');
     if (spec.soulstone) {
-      claims.appendChild(claimCard('\u25C6', 'Soulstone',
+      claims.appendChild(claimCard('<img class="cc-icon-img" src="assets/Soulstone Stone.png" alt="" draggable="false">', 'Soulstone',
         'A shard of raw soul. Gather <b>5</b> to evolve <b>' + activeMonster().name + '</b>.',
         'var(--blue)', () => gainSoulstone()));
     }
@@ -3414,22 +3420,23 @@
     const maxed = lvl >= 2;
     // Soulstones read as a glowing gem + big number, with a full-width row of
     // large soul sockets that fill as they're gathered.
-    const gems = [0, 1, 2, 3, 4].map(i =>
-      '<span class="soul-pip' + (i < Math.min(5, have) ? ' lit' : '') + '">' +
-        '<span class="soul-pip-core"></span></span>').join('');
+    const soulPip = lit => '<span class="soul-pip' + (lit ? ' lit' : '') + '">' +
+      '<img class="soul-pip-img" src="assets/' + (lit ? 'Soulstone Stone' : 'Soulstone Slot') + '.png" alt="" draggable="false"></span>';
+    const soulGem = '<div class="soul-gem"><img class="soul-gem-img" src="assets/Soulstone Stone.png" alt="" draggable="false"></div>';
+    const gems = [0, 1, 2, 3, 4].map(i => soulPip(i < Math.min(5, have))).join('');
     const meter = maxed
       ? '<div class="evo-soul maxed">' +
           '<div class="soul-top">' +
-            '<div class="soul-gem"><span class="soul-gem-core"></span><span class="soul-gem-spark">✦</span></div>' +
+            soulGem +
             '<div class="soul-read"><span class="soul-num">MAX</span><span class="soul-lab">Fully evolved</span></div>' +
           '</div>' +
           '<div class="soul-pips">' +
-            [0, 1, 2, 3, 4].map(() => '<span class="soul-pip lit"><span class="soul-pip-core"></span></span>').join('') +
+            [0, 1, 2, 3, 4].map(() => soulPip(true)).join('') +
           '</div>' +
         '</div>'
       : '<div class="evo-soul">' +
           '<div class="soul-top">' +
-            '<div class="soul-gem"><span class="soul-gem-core"></span><span class="soul-gem-spark">✦</span></div>' +
+            soulGem +
             '<div class="soul-read">' +
               '<span class="soul-num"><b>' + have + '</b><i>/ 5</i></span>' +
               '<span class="soul-lab">Soulstones — gather <b>5</b> to evolve</span>' +
@@ -3902,37 +3909,82 @@
   // ---- HUB ----
   // POIs are scattered across the clearing by percent coordinates (the stage is
   // a fixed 1920×1080 canvas, so these read the same on every device).
+  // ordered back-to-front (by y) so nearer landmarks layer over farther ones.
+  // x/y are % of the 1920×1080 stage; w is the structure width in stage px.
   const LW_POIS = [
-    { id: 'stonetable',  screen: 'screen-stonetable',  icon: '✶', title: 'Star Chart',     blurb: 'Trace the constellations of every beast and its evolutions.', x: 50, y: 40 },
-    { id: 'gravemarker', screen: 'screen-gravemarker', icon: '🪦', title: 'Gravemarker',   blurb: 'Remember the fallen — past runs and lifetime deeds.',     x: 24, y: 64 },
-    { id: 'monsterbook', screen: 'screen-monsterbook', icon: '📖', title: 'Monster Book',  blurb: 'A bestiary of every foe you have met in the Spire.',     x: 76, y: 62 },
-    { id: 'well',        screen: null,                 icon: '⛲', title: 'Enchanted Well', blurb: 'Cast wishing stones to widen fate.',                     x: 33, y: 32 },
-    { id: 'tablets',     screen: null,                 icon: '📜', title: 'Stone Tablets',  blurb: 'The carved lore and glossary of all things.',            x: 67, y: 34 }
+    { id: 'monsterbook', screen: 'screen-monsterbook', icon: '📖', art: 'assets/Monster Library.png', title: 'Monster Library', blurb: 'A bestiary of every foe you have met in the Spire — their intents, their hidden feast boons, and the lore behind them.', x: 58, y: 24, w: 300 },
+    { id: 'stonetable',  screen: 'screen-stonetable',  icon: '✶', art: 'assets/Star Charts.png',     title: 'Star Charts',     blurb: 'Trace the constellations of every beast and the branching paths of its evolutions.', x: 37, y: 35, w: 320 },
+    { id: 'tablets',     screen: null,                 icon: '📜', art: 'assets/Stone Tablets.png',    title: 'Stone Tablets',   blurb: 'The carved lore and glossary of all things — every keyword, passive, and secret.', x: 75, y: 41, w: 290 },
+    { id: 'well',        screen: null,                 icon: '⛲', art: 'assets/Enchanted Well.png',   title: 'Enchanted Well',  blurb: 'Cast wishing stones into the dark to widen fate and unlock what the Spire may offer.', x: 52, y: 55, w: 240 },
+    { id: 'gravemarker', screen: 'screen-gravemarker', icon: '🪦', art: 'assets/Gravemarkers.png',    title: 'Gravemarkers',    blurb: 'Remember the fallen — the builds of past runs and your lifetime deeds in the Spire.', x: 28, y: 61, w: 270 }
   ];
+  // the dialogue box is always on: it reads as the hub's intro until a landmark
+  // is hovered (desktop) or tapped (touch), then describes that landmark.
+  const LW_DEFAULT = {
+    title: 'The Lost Woods',
+    blurb: 'A dead clearing where the Spire keeps its memories. Choose a landmark to inspect it.',
+    screen: 'hub'
+  };
+  let lwArmed = null;   // id of a touch-selected POI awaiting a confirming second tap
+  function lwDiaContent(poi, focused) {
+    const t = $('lw-dia-title'), bd = $('lw-dia-body'), box = $('lw-dialogue');
+    if (t) t.textContent = poi.title;
+    if (bd) bd.innerHTML = poi.blurb + (poi.screen ? '' : ' <span class="lw-dia-seal">Sealed for now.</span>');
+    if (box) box.classList.toggle('focused', !!focused);
+  }
+  function clearLwActive() {
+    const h = $('lw-pois');
+    if (h) h.querySelectorAll('.lw-poi.is-active').forEach(e => e.classList.remove('is-active'));
+  }
+  function setLwDialogue(poi) { lwDiaContent(poi, true); }
+  function resetLwDialogue() { lwArmed = null; clearLwActive(); lwDiaContent(LW_DEFAULT, false); }
+  function enterPoi(poi) {
+    if (!poi.screen) { if (SFX.error) SFX.error(); return; }
+    SFX.click();
+    if (poi.id === 'gravemarker') buildGravemarker();
+    else if (poi.id === 'stonetable') buildStoneTable();
+    else if (poi.id === 'monsterbook') buildMonsterBook();
+    show(poi.screen);
+  }
   function buildLostWoods() {
     const host = $('lw-pois');
     if (!host) return;
     host.innerHTML = '';
+    resetLwDialogue();
+    // tapping empty ground clears any touch selection back to the default blurb
+    host.onclick = e => { if (e.target === host) resetLwDialogue(); };
     LW_POIS.forEach(poi => {
       const soon = !poi.screen;
-      const b = el('button', 'lw-poi lw-poi-' + poi.id + (soon ? ' lw-poi-soon' : ''));
+      const b = el('button', 'lw-poi lw-poi-' + poi.id + (poi.art ? ' lw-poi-hasart' : '') + (soon ? ' lw-poi-soon' : ''));
       b.style.left = poi.x + '%';
       b.style.top = poi.y + '%';
-      b.innerHTML =
-        '<span class="lw-poi-pin"><span class="lw-poi-glow"></span><span class="lw-poi-icon">' + poi.icon + '</span></span>' +
-        '<span class="lw-poi-name">' + poi.title + '</span>' +
-        (soon ? '<span class="lw-poi-seal">Sealed for now</span>' : '<span class="lw-poi-blurb">' + poi.blurb + '</span>');
-      if (!soon) {
-        b.addEventListener('click', () => {
-          SFX.click();
-          if (poi.id === 'gravemarker') buildGravemarker();
-          else if (poi.id === 'stonetable') buildStoneTable();
-          else if (poi.id === 'monsterbook') buildMonsterBook();
-          show(poi.screen);
-        });
-      } else {
-        b.addEventListener('click', () => { if (SFX.error) SFX.error(); });
-      }
+      if (poi.w) b.style.setProperty('--poi-w', poi.w + 'px');
+      b.setAttribute('aria-label', poi.title);
+      // art POIs render the structure itself directly on the forest floor — no
+      // carved-stone pin and no ground glow (the painted art carries its own base).
+      // Names/details now live in the always-on bottom dialogue box.
+      b.innerHTML = poi.art
+        ? '<img class="lw-poi-art" src="' + poi.art + '" alt="" draggable="false">'
+        : '<span class="lw-poi-pin"><span class="lw-poi-glow"></span><span class="lw-poi-icon">' + poi.icon + '</span></span>';
+      // desktop: hover previews in the dialogue, leaving reverts to default
+      b.addEventListener('mouseenter', () => { if (!lwArmed) { if (SFX.hover) SFX.hover(); setLwDialogue(poi); } });
+      b.addEventListener('focus', () => { if (!lwArmed) setLwDialogue(poi); });
+      b.addEventListener('mouseleave', () => { if (!lwArmed) resetLwDialogue(); });
+      b.addEventListener('blur', () => { if (!lwArmed) resetLwDialogue(); });
+      b.addEventListener('click', () => {
+        // on touch (no real hover) the first tap only previews the landmark in
+        // the dialogue; a second tap on the same one confirms entry
+        const touchMode = !(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+        if (touchMode && lwArmed !== poi.id) {
+          lwArmed = poi.id;
+          clearLwActive();
+          b.classList.add('is-active');
+          if (SFX.hover) SFX.hover();
+          setLwDialogue(poi);
+          return;
+        }
+        enterPoi(poi);
+      });
       host.appendChild(b);
     });
   }
@@ -4846,6 +4898,7 @@
     // a Soulstone — repeatable, so you can fast-track an evolution (5 = evolve)
     grid.appendChild(shopCard({
       kind: 'Soulstone', icon: '\u25C6', name: 'Soulstone', color: 'var(--blue)',
+      art: '<div class="sc-icon has-img" style="color:var(--blue)"><img class="ss-shop-img" src="assets/Soulstone Stone.png" alt="" draggable="false"></div>',
       desc: 'A shard of raw soul. Gather <b>5</b> to evolve <b>' + am.name + '</b>.', price: 0, repeat: true,
       onBuy: () => gainSoulstone()
     }));

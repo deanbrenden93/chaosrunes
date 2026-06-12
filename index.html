@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=20260612y" />
+  <link rel="stylesheet" href="css/styles.css?v=20260613g" />
 </head>
 <body>
   <!-- ============ BOOT LOADING SCREEN (covers everything until assets are warm) ============ -->
@@ -187,10 +187,11 @@
 
         <!-- pile contents viewer -->
         <div id="pile-viewer" class="pile-viewer hidden">
+          <div class="pv-veil"></div>
           <div class="pile-viewer-panel">
             <h3 class="pile-viewer-title" id="pile-viewer-title">Discard</h3>
             <div class="pile-viewer-grid" id="pile-viewer-grid"></div>
-            <button id="pile-viewer-close" class="btn btn-primary">Close</button>
+            <button id="pile-viewer-close" class="btn btn-ghost pv-close-btn">Close</button>
           </div>
           <div id="pv-float-tip" class="pv-float-tip"></div>
         </div>
@@ -383,6 +384,7 @@
             <button class="btn debug-btn" data-debug="heal">❤ 99 Health</button>
             <button class="btn debug-btn" data-debug="strength">💪 99 Strength</button>
             <button class="btn debug-btn" data-debug="allGlyphs">🜲 All Glyphs in Hand</button>
+            <button class="btn debug-btn" data-debug="addSlot">◈ +1 Socket</button>
             <button class="btn debug-btn" data-debug="maxSlots">◇ Max Slots (9)</button>
             <button class="btn debug-btn" data-debug="gold">🪙 9999 Gold</button>
             <button class="btn debug-btn" data-debug="anyNode">🧭 Any Node: OFF</button>
@@ -464,11 +466,14 @@
         <div class="lw-fog" aria-hidden="true"></div>
         <div class="lw-canopy" aria-hidden="true"></div>
         <button id="btn-lostwoods-back" class="btn btn-back lw-corner-back" aria-label="Back">Back</button>
-        <header class="lw-hub-head">
-          <h2 class="lw-hub-title">The Lost Woods</h2>
-          <p class="lw-hub-sub">A dead clearing where the Spire keeps its memories. Wander to a landmark.</p>
-        </header>
         <div id="lw-pois" class="lw-map"><!-- POI points injected --></div>
+        <div class="lw-mist" aria-hidden="true"></div>
+        <div id="lw-dialogue" class="lw-dialogue" aria-live="polite">
+          <div class="lw-dia-inner">
+            <h3 class="lw-dia-title" id="lw-dia-title">The Lost Woods</h3>
+            <p class="lw-dia-body" id="lw-dia-body">A dead clearing where the Spire keeps its memories.</p>
+          </div>
+        </div>
       </section>
 
       <!-- ============ GRAVEMARKER ============ -->
@@ -478,7 +483,7 @@
         <div class="lw-screen">
           <header class="lw-screen-head">
             <button class="btn btn-back lw-sub-back" aria-label="Back">Back</button>
-            <h2 class="lw-screen-title">The Gravemarker</h2>
+            <h2 class="lw-screen-title">The Gravemarkers</h2>
             <span class="lw-head-spacer" aria-hidden="true"></span>
           </header>
           <div id="gravemarker-body" class="lw-body"></div>
@@ -492,7 +497,7 @@
         <div class="lw-screen">
           <header class="lw-screen-head">
             <button class="btn btn-back lw-sub-back" aria-label="Back">Back</button>
-            <h2 class="lw-screen-title">The Star Chart</h2>
+            <h2 class="lw-screen-title">The Star Charts</h2>
             <span class="lw-head-spacer" aria-hidden="true"></span>
           </header>
           <div class="lw-body">
@@ -509,7 +514,7 @@
         <div class="lw-screen">
           <header class="lw-screen-head">
             <button class="btn btn-back lw-sub-back" aria-label="Back">Back</button>
-            <h2 class="lw-screen-title">The Monster Book</h2>
+            <h2 class="lw-screen-title">The Monster Library</h2>
             <span id="mb-progress" class="mb-progress"></span>
           </header>
           <div id="monsterbook-body" class="lw-body"></div>
@@ -531,11 +536,11 @@
   <!-- floating layers rendered into stage by JS -->
   <div id="fx-layer" class="fx-layer"></div>
 
-  <script src="js/data.js?v=20260612y"></script>
-  <script src="js/audio.js?v=20260612y"></script>
-  <script src="js/scaling.js?v=20260612y"></script>
-  <script src="js/game.js?v=20260612y"></script>
-  <script src="js/battle.js?v=20260612y"></script>
-  <script src="js/main.js?v=20260612y"></script>
+  <script src="js/data.js?v=20260613g"></script>
+  <script src="js/audio.js?v=20260613g"></script>
+  <script src="js/scaling.js?v=20260613g"></script>
+  <script src="js/game.js?v=20260613g"></script>
+  <script src="js/battle.js?v=20260613g"></script>
+  <script src="js/main.js?v=20260613g"></script>
 </body>
 </html>

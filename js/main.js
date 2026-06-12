@@ -52,7 +52,19 @@
       'assets/Deck Icon.png',
       'assets/Discard Icon.png',
       'assets/Soulstone Slot.png',
-      'assets/Soulstone Stone.png'
+      'assets/Soulstone Stone.png',
+      // combo letter emblems (rendered via CSS background on glyph chips)
+      'assets/A Combo Emblem.png',
+      'assets/B Combo Emblem.png',
+      'assets/C Combo Emblem.png',
+      'assets/Wild Combo Emblem.png',
+      // Lost Woods hub backdrop + POI structures (outside the DATA harvest)
+      'assets/Progress Background.png',
+      'assets/Star Charts.png',
+      'assets/Gravemarkers.png',
+      'assets/Monster Library.png',
+      'assets/Enchanted Well.png',
+      'assets/Stone Tablets.png'
     ].forEach(addImg);
     // every art reference declared in the data, harvested generically so new
     // collections (blessings, items, souls, …) and new `img`/`selectBg` fields

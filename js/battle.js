@@ -395,7 +395,7 @@
       ramp: rampOf(id), ember: emberBonusAmt()
     };
   }
-  function pileTileHTML(grp) {
+  function pileTileHTML(grp, i) {
     const g = grp.def;
     const art = g.img
       ? '<img class="g-img" src="' + g.img + '" alt="" draggable="false">'
@@ -405,7 +405,8 @@
       (grp.combo ? '<span class="pv-up pv-up-combo">▲▲</span>' : '');
     const tip = '<b>' + g.name + '</b>' + upgradeTipSuffix(grp.repId)
       + '<br>' + fmtDesc(grp.repId, pileEnv(grp.repId));
-    return '<div class="pv-tile" style="--g-color:var(--' + g.color + ')" data-tip="' + escAttr(tip) + '">'
+    const delay = Math.min((i || 0) * 24, 360);
+    return '<div class="pv-tile" style="--g-color:var(--' + g.color + ');animation-delay:' + delay + 'ms" data-tip="' + escAttr(tip) + '">'
       + badges
       + '<div class="pv-art">' + art + '</div>'
       + '<div class="pv-name">' + g.name + '</div>'
@@ -459,18 +460,35 @@
       t.addEventListener('mouseleave', hidePileTip);
     });
   }
+  let pvCloseTimer = null;
   function openPileViewer(which) {
     B.pileOpen = which;
+    const vw = $('pile-viewer');
+    if (pvCloseTimer) { clearTimeout(pvCloseTimer); pvCloseTimer = null; }
     renderPileViewer();
-    $('pile-viewer').classList.remove('hidden');
+    vw.classList.remove('hidden', 'closing');
+    // restart the entrance animation if it was already shown
+    void vw.offsetWidth; vw.classList.add('opening');
+    setTimeout(() => vw.classList.remove('opening'), 360);
     SFX.click();
   }
-  function closePileViewer() { B.pileOpen = null; hidePileTip(); $('pile-viewer').classList.add('hidden'); }
+  function closePileViewer() {
+    const vw = $('pile-viewer');
+    B.pileOpen = null; hidePileTip();
+    if (!vw || vw.classList.contains('hidden')) return;
+    SFX.click();
+    vw.classList.remove('opening');
+    vw.classList.add('closing');
+    if (pvCloseTimer) clearTimeout(pvCloseTimer);
+    pvCloseTimer = setTimeout(() => { vw.classList.add('hidden'); vw.classList.remove('closing'); pvCloseTimer = null; }, 230);
+  }
   function wirePiles() {
     const deck = $('pile-deck'), disc = $('pile-discard'), close = $('pile-viewer-close'), vw = $('pile-viewer'), grid = $('pile-viewer-grid');
+    const veil = vw && vw.querySelector('.pv-veil');
     if (deck) deck.onclick = () => openPileViewer('deck');
     if (disc) disc.onclick = () => openPileViewer('discard');
     if (close) close.onclick = closePileViewer;
+    if (veil) veil.onclick = closePileViewer;
     if (vw) vw.onclick = e => { if (e.target === vw) closePileViewer(); };
     if (grid) grid.addEventListener('scroll', hidePileTip);
   }
@@ -1128,10 +1146,12 @@
     // beast packs tight and never slides under the side panels.
     const n = B.sockets.length;
     const honey = n > 5;
-    const size = honey ? 106 : 152;     // 152 * 0.7 ≈ 106
+    const scale = honey ? 0.7 : 1;
+    const size = Math.round(152 * scale);   // box shrinks…
     const gap = honey ? 0 : 30;
     row.style.setProperty('--sock-size', size + 'px');
     row.style.setProperty('--sock-gap', gap + 'px');
+    row.style.setProperty('--sock-scale', scale);   // …and every inner element with it
     row.classList.toggle('honeycomb', honey);
     const firstFree = firstFreeSocket();
     B.sockets.forEach((id, i) => {
@@ -1384,15 +1404,17 @@
   // call site (hitTargets / boltAll / boltP / combo sparks) upgrades at once.
   // Pass `kind` to force a style (used by player attacks, which are keyed to the
   // monster); otherwise the visual is inferred from the color (self-buffs etc.).
-  function bolt(from, to, color, onHit, kind) {
+  function bolt(from, to, color, onHit, kind, scale) {
+    scale = scale || 1;
     const dx = to.x - from.x, dy = to.y - from.y;
     const ang = Math.atan2(dy, dx) * 180 / Math.PI;
     kind = kind || boltKind(color);
     // a quick charge flash where the strike launches
-    fxRing(from, color, 320, 'fx-ring-soft');
+    fxRing(from, color, 320, 'fx-ring-soft', scale);
     const proj = el('div', 'atk-proj ' + kind);
     proj.style.setProperty('--atk-color', color);
     proj.style.setProperty('--ang', ang + 'deg');
+    if (scale !== 1) proj.style.setProperty('--fx-scale', scale);
     proj.style.left = from.x + 'px'; proj.style.top = from.y + 'px';
     stage.appendChild(proj);
     // force a synchronous layout so the START position is committed before we
@@ -1403,24 +1425,27 @@
     proj.style.left = to.x + 'px'; proj.style.top = to.y + 'px';
     setTimeout(() => {
       proj.remove();
-      boltImpact(to, color, kind);
+      boltImpact(to, color, kind, scale);
       if (onHit) onHit();
     }, 255);
   }
 
   // the themed splash where a strike lands
-  function boltImpact(to, color, kind) {
-    fxRing(to, color, 520);
+  function boltImpact(to, color, kind, scale) {
+    scale = scale || 1;
+    fxRing(to, color, 520, '', scale);
     const core = fxSpawn(to, 'atk-impact ' + kind, '', 360);
     core.style.setProperty('--atk-color', color);
-    if (kind === 'k-fire') fxMotes(to, 9, '#ff8a3a', 'fx-mote-spark', 84);
-    else if (kind === 'k-blade') fxMotes(to, 7, '#eaf4ff', 'fx-mote-spark', 70);
-    else if (kind === 'k-gnaw') fxMotes(to, 7, '#cdeeb0', 'fx-mote-spark', 64);
-    else if (kind === 'k-frost') fxMotes(to, 8, '#c7ecff', 'fx-mote-shard', 78);
-    else if (kind === 'k-venom') fxMotes(to, 8, '#9be86a', 'fx-mote-spark', 74);
-    else if (kind === 'k-shadow') fxMotes(to, 9, '#c98bff', 'fx-mote-spark', 80);
-    else if (kind === 'k-holy') fxMotes(to, 8, '#ffe9a8', 'fx-mote-spark', 84);
-    else fxMotes(to, 7, color, 'fx-mote-spark', 72);
+    if (scale !== 1) core.style.setProperty('--fx-scale', scale);
+    const ms = scale;
+    if (kind === 'k-fire') fxMotes(to, 9, '#ff8a3a', 'fx-mote-spark', 84 * ms);
+    else if (kind === 'k-blade') fxMotes(to, 7, '#eaf4ff', 'fx-mote-spark', 70 * ms);
+    else if (kind === 'k-gnaw') fxMotes(to, 7, '#cdeeb0', 'fx-mote-spark', 64 * ms);
+    else if (kind === 'k-frost') fxMotes(to, 8, '#c7ecff', 'fx-mote-shard', 78 * ms);
+    else if (kind === 'k-venom') fxMotes(to, 8, '#9be86a', 'fx-mote-spark', 74 * ms);
+    else if (kind === 'k-shadow') fxMotes(to, 9, '#c98bff', 'fx-mote-spark', 80 * ms);
+    else if (kind === 'k-holy') fxMotes(to, 8, '#ffe9a8', 'fx-mote-spark', 84 * ms);
+    else fxMotes(to, 7, color, 'fx-mote-spark', 72 * ms);
   }
   function floatText(pos, text, kind) {
     const f = el('div', 'float-text ' + kind, text);
@@ -1477,9 +1502,10 @@
     setTimeout(() => f.remove(), life || 900);
     return f;
   }
-  function fxRing(pos, color, life, cls) {
+  function fxRing(pos, color, life, cls, scale) {
     const r = fxSpawn(pos, 'fx-ring ' + (cls || ''), '', life || 720);
     if (color) r.style.setProperty('--fx-color', color);
+    if (scale && scale !== 1) r.style.setProperty('--fx-scale', scale);
     return r;
   }
   // `area` (optional {w,h}) scatters each mote's ORIGIN across a box around `pos`
@@ -1719,15 +1745,20 @@
     if (!sEl) return;
     const here = center(sEl);
     SFX.combo(comboLen - 1);
+    // honeycomb sockets are scaled down — shrink the combo FX to match so the
+    // bolt + popup stay proportional to the smaller, tighter rune row
+    const row = $('socket-row');
+    const fxScale = (row && row.classList.contains('honeycomb')) ? 0.7 : 1;
     // a spark leaps from the previous linked rune into this one
-    if (prevSEl) bolt(center(prevSEl), here, 'var(--gold)');
+    if (prevSEl) bolt(center(prevSEl), here, 'var(--gold)', null, null, fxScale);
     // the rune itself flares and snaps with the combo
     sEl.classList.remove('combo-hit'); void sEl.offsetWidth; sEl.classList.add('combo-hit');
     // escalating popup
     const lvl = Math.min(comboLen, 6);
     const pop = el('div', 'combo-pop lvl-' + lvl);
+    if (fxScale !== 1) pop.style.setProperty('--cp-mult', fxScale);
     pop.innerHTML = '<span class="cp-x">×' + comboLen + '</span><span class="cp-b">+' + bonus + ' power</span>';
-    pop.style.left = here.x + 'px'; pop.style.top = (here.y - 96) + 'px';
+    pop.style.left = here.x + 'px'; pop.style.top = (here.y - 96 * fxScale) + 'px';
     stage.appendChild(pop);
     setTimeout(() => pop.remove(), 900);
     if (comboLen >= 3) shake();
@@ -5573,6 +5604,17 @@
       while (B.slotTypes.length < 9) B.slotTypes.push('normal');
       const next = B.sockets.slice();
       while (next.length < 9) next.push(null);
+      B.sockets = next;
+      renderSockets();
+    },
+    addSlot() {
+      if (!inBattle()) return;
+      const n = Math.min(B.sockets.length + 1, 9);
+      B.monster.sockets = n;
+      while (B.slotFx.length < n) B.slotFx.push({ disabled: 0, cursed: 0, caster: null });
+      while (B.slotTypes.length < n) B.slotTypes.push('normal');
+      const next = B.sockets.slice();
+      while (next.length < n) next.push(null);
       B.sockets = next;
       renderSockets();
     },
