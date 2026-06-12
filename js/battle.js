@@ -2034,12 +2034,26 @@
       const sEl = $('socket-row').children[slot];
       const coveredEls = (ev.covered || [slot]).map(ci => $('socket-row').children[ci]).filter(Boolean);
 
-      // ----- Devil feed: a genuine play of the craved glyph onto its socket -----
+      // ----- Devil feed: a craved glyph offered to ANY Devil socket -----
+      // Cravings aren't socket-locked: playing a craved glyph onto any Devil
+      // socket satisfies whichever Devil wants it (prefer the very socket it
+      // landed on, otherwise any other still-hungry Devil that craves it).
       const devilFeeds = [];
       if (!ev.replay && !ev.repeat2 && ev.devilSlots && ev.devilSlots.length) {
+        const fb = baseOf(ev.id);
+        const claimed = {};
         for (const ci of ev.devilSlots) {
-          const d = B.devil && B.devil[ci];
-          if (d && d.crave && !d.fed && baseOf(ev.id) === d.crave) devilFeeds.push(ci);
+          let target = null;
+          const here = B.devil && B.devil[ci];
+          if (here && here.crave && !here.fed && here.crave === fb && !claimed[ci]) {
+            target = ci;
+          } else {
+            for (const k of devilIdxs()) {
+              const d = B.devil[k];
+              if (d && d.crave && !d.fed && d.crave === fb && !claimed[k]) { target = k; break; }
+            }
+          }
+          if (target != null) { claimed[target] = true; devilFeeds.push(target); }
         }
       }
 
@@ -3053,10 +3067,14 @@
       // red/blue Strength/Resilience reshape every later hit, so fold them in now
       if (hasPassive('wendigo') && !ev.replay && !ev.repeat2) {
         let devilFed = false;
+        const wfb = baseOf(ev.id);
         (ev.covered || [ev.slot]).forEach(ci => {
           if (slotCountAt(ci, 'devil') > 0) {
-            const d = B.devil && B.devil[ci];
-            if (d && d.crave && !d.fed && baseOf(ev.id) === d.crave) devilFed = true;
+            // a craved glyph offered to any Devil socket sates its matching Devil
+            for (const k of devilIdxs()) {
+              const d = B.devil[k];
+              if (d && d.crave && !d.fed && d.crave === wfb) { devilFed = true; break; }
+            }
           }
         });
         const wMult = devilFed ? 5 : 1;
@@ -4779,7 +4797,13 @@
   function devilFaceKey(i) {
     const d = B.devil && B.devil[i];
     const here = B.sockets[i];
-    const happy = !!(d && (d.fed || (here && d.crave && baseOf(here) === d.crave)));
+    // happy if already fed, or a craved glyph rests here — cravings aren't
+    // socket-locked, so any Devil's craving sitting on this socket counts
+    let happy = !!(d && d.fed);
+    if (!happy && here) {
+      const hb = baseOf(here);
+      happy = devilIdxs().some(k => { const dd = B.devil[k]; return dd && dd.crave && !dd.fed && dd.crave === hb; });
+    }
     return happy ? 'happy' : devilMoodKey(d ? d.ignore : 0);
   }
   // a non-craved glyph dropped on the socket: the badge face flips to Frustrated
