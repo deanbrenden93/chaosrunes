@@ -59,7 +59,7 @@
       'assets/C Combo Emblem.png',
       'assets/Wild Combo Emblem.png',
       // Lost Woods hub backdrop + POI structures (outside the DATA harvest)
-      'assets/Progress Background.png',
+      'assets/Progress Background.jpg',
       'assets/Star Charts.png',
       'assets/Gravemarkers.png',
       'assets/Monster Library.png',
