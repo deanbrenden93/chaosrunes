@@ -37,6 +37,18 @@
         });
       });
     } catch (e) {}
+    // evolution form portraits live two levels deeper than the generic harvest
+    // reaches, so gather them explicitly (a not-yet-added PNG simply errors out
+    // during preload and is skipped — it never stalls the boot)
+    try {
+      const M = D.MONSTERS || {};
+      Object.keys(M).forEach(id => {
+        const ev = M[id] && M[id].evolution;
+        if (!ev) return;
+        (ev.tier1 || []).forEach(f => addImg(f && f.img));
+        Object.keys(ev.tier2 || {}).forEach(key => (ev.tier2[key] || []).forEach(f => addImg(f && f.img)));
+      });
+    } catch (e) {}
 
     let audio = [];
     try { if (root.CG.Audio && root.CG.Audio.assetUrls) audio = root.CG.Audio.assetUrls(); } catch (e) {}

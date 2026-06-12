@@ -1476,6 +1476,14 @@
     m.evoChoices.push(form.id);
     m.name = form.name;
     m.evoFormImg = form.img || m.evoFormImg || null;   // remembered for when art lands
+    // Swap the run-HUD portrait (topbar / combat / collection) to the form's real
+    // art the moment it's available. A form whose PNG isn't in yet simply keeps
+    // the base portrait — the probe never fires, so there's never a broken image.
+    if (form.img) {
+      const probe = new Image();
+      probe.onload = () => { m.img = form.img; updateRunUI(); };
+      probe.src = form.img;
+    }
     let socketAdded = null;
     if (form.socket && m.sockets < 6) {
       if (!m.slotTypes) m.slotTypes = [];
