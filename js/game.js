@@ -171,9 +171,19 @@
     }
     $(screenId).classList.add('is-active');
     setHud(screenId);
-    // the small options gear rides along on every screen except the main menu
+    // the small options gear rides along on every screen except the main menu.
+    // It sits in line with the Character button on the map (and is fine as-is on
+    // beast/mode select); everywhere else it jumps to the top-right corner,
+    // mirroring the usual top-left back button.
     const gear = $('btn-options-gear');
-    if (gear) gear.classList.toggle('hidden', screenId === 'screen-home');
+    if (gear) {
+      gear.classList.toggle('hidden', screenId === 'screen-home');
+      const gearInline = (screenId === 'screen-map' || screenId === 'screen-start' || screenId === 'screen-mode');
+      gear.classList.toggle('gear-corner', !gearInline);
+      // on the combat screen, keep the corner's horizontal spot but drop it down
+      // to the map's height (just below the top toolbar)
+      gear.classList.toggle('gear-combat', screenId === 'screen-battle');
+    }
     // checkpoint the run whenever we settle on the map (between nodes)
     if (screenId === 'screen-map' && State) saveGame();
     if (root.CG.Audio && root.CG.Audio.Music) root.CG.Audio.Music.to(SCREEN_MUSIC[screenId] || null);
@@ -416,7 +426,6 @@
     const begin = $('btn-begin');
     begin.disabled = false;
     begin.classList.add('armed');
-    begin.innerHTML = '<span class="bb-ico" aria-hidden="true">▾</span><span class="bb-label">Descend</span>';
   }
 
   // ============================================================
@@ -683,6 +692,18 @@
   // ============================================================
   const NODE_ICON = { battle: '⚔️', elite: '☠️', reward: '🎁', rest: '🔥', boss: '👑', event: '❔', shop: '🛒', soulstone: '💠', shadow: '💀' };
   const NODE_NAME = { battle: 'Battle', elite: 'Elite', reward: 'Cache', rest: 'Rest', boss: 'Boss', event: 'Event', shop: 'Bazaar', soulstone: 'Soulstone', shadow: 'Soulhunter' };
+  // hand-illustrated medallion tokens (name baked in) for the node types that have art
+  const NODE_ART = {
+    battle:    'assets/Battle Node.png',
+    elite:     'assets/Elite Node.png',
+    event:     'assets/Event Node.png',
+    reward:    'assets/Cache Node.png',
+    soulstone: 'assets/Soulstone Node.png',
+    boss:      'assets/Floor Boss Node.png',
+    shadow:    'assets/Soulhunter Node.png',
+    shop:      'assets/Bazaar Node.png',
+    rest:      'assets/Rest Node.png'
+  };
   // boss nodes are named after the boss actually waiting on this floor
   function nodeLabel(node) {
     if (node.type === 'boss') {
@@ -757,7 +778,15 @@
               '<span class="bflame" style="--i:' + k + '"></span>').join('') +
           '</span>'
         : '';
-      n.innerHTML = flames + `<span>${NODE_ICON[node.type]}</span><span class="node-label">${nodeLabel(node)}</span>`;
+      const art = NODE_ART[node.type];
+      if (art) n.classList.add('has-art');
+      // width is also set as an HTML attribute so the medallion is always
+      // constrained to token-size even if the stylesheet is momentarily stale.
+      const artW = node.type === 'boss' ? 152 : 118;
+      const icon = art
+        ? `<img class="node-art-img" src="${art}" width="${artW}" alt="" draggable="false">`
+        : `<span>${NODE_ICON[node.type]}</span>`;
+      n.innerHTML = flames + icon + `<span class="node-label">${nodeLabel(node)}</span>`;
       if (node.id === curId) n.classList.add('current');
       else if (node.visited) n.classList.add('visited');
       // debug "any node" lets every node (except the one we're standing on) be entered
@@ -1054,7 +1083,11 @@
   function soulstoneMeterHTML() {
     const have = State.soulstones || 0;
     let pips = '';
-    for (let i = 0; i < 5; i++) pips += '<span class="ss-pip' + (i < have ? ' lit' : '') + '">\u25C6</span>';
+    for (let i = 0; i < 5; i++) {
+      const lit = i < have;
+      pips += '<span class="ss-pip' + (lit ? ' lit' : '') + '">' +
+        '<img class="ss-pip-img" src="assets/' + (lit ? 'Soulstone Stone' : 'Soulstone Slot') + '.png" alt="" draggable="false"></span>';
+    }
     return '<div class="ss-pips">' + pips + '</div>' +
       '<div class="ss-meter-label">' + have + ' / 5 — five Soulstones evolve your beast</div>';
   }
@@ -1091,8 +1124,9 @@
     let h = '';
     for (let i = 0; i < 5; i++) {
       if (i > 0) h += '<span class="ss-link' + (i < count ? ' lit' : '') + (i === newIdx ? ' new' : '') + '"></span>';
-      h += '<span class="ss-gem' + (i < count ? ' lit' : '') + (i === newIdx ? ' new' : '') +
-        '"><span class="ss-gem-core">\u25C6</span></span>';
+      const lit = i < count;
+      h += '<span class="ss-gem' + (lit ? ' lit' : '') + (i === newIdx ? ' new' : '') +
+        '"><img class="ss-gem-core" src="assets/' + (lit ? 'Soulstone Stone' : 'Soulstone Slot') + '.png" alt="" draggable="false"></span>';
     }
     return h;
   }
@@ -1702,6 +1736,7 @@
     m.hp = Math.min(m.maxHp, m.hp + hp);
     if (form.passive) m.evoPassives.push({ id: form.passive.id, name: form.passive.name, text: form.passive.text });
     m.evoChoices.push(form.id);
+    recordEvolved(form.id);   // unveil this form on the Star Chart forever
     m.name = form.name;
     m.evoFormImg = form.img || m.evoFormImg || null;   // remembered for when art lands
     // Swap the run-HUD portrait (topbar / combat / collection) to the form's real
@@ -3752,7 +3787,8 @@
       descension: { cleared: 0 },   // highest Descension level fully cleared (0..MAX_DESCENSION)
       stats: { runs: 0, wins: 0, classicWins: 0, descensionWins: 0, bestDescension: 0, bestAct: 0 },
       runHistory: [],               // last 5 end-of-run build snapshots (Gravemarker reads these)
-      bestiary: { seen: {}, defeated: {} }   // enemy id -> true (Monster Book)
+      bestiary: { seen: {}, defeated: {} },  // enemy id -> true (Monster Book)
+      evolved: {}                   // evolution form id -> true (Star Chart reveals)
     };
   }
   let META = freshMeta();
@@ -3771,6 +3807,7 @@
             if (m.bestiary.seen && typeof m.bestiary.seen === 'object') META.bestiary.seen = m.bestiary.seen;
             if (m.bestiary.defeated && typeof m.bestiary.defeated === 'object') META.bestiary.defeated = m.bestiary.defeated;
           }
+          if (m.evolved && typeof m.evolved === 'object') META.evolved = m.evolved;
         }
       }
     } catch (e) { /* defaults */ }
@@ -3801,6 +3838,13 @@
     if (!META.bestiary.defeated[id]) { META.bestiary.defeated[id] = true; dirty = true; }
     if (dirty) saveMeta();
   }
+  // Star Chart bookkeeping: a form is "discovered" once the player has evolved
+  // into it at least once. Until then it shows as an enticing mystery silhouette.
+  function recordEvolved(formId) {
+    if (!formId || !META.evolved) return;
+    if (!META.evolved[formId]) { META.evolved[formId] = true; saveMeta(); }
+  }
+  function metaEvolved(formId) { return !!(META.evolved && META.evolved[formId]); }
 
   // ============================================================
   // LOST WOODS  — the between-runs meta hub and its read-only screens
@@ -3810,22 +3854,60 @@
   const allBlessMap = () => Object.assign({}, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS);
 
   // --- shared lightweight detail modal (Stone Table forms + Monster Book) ---
-  function openLwModal(html, accent) {
+  function openLwModal(html, accent, kind) {
     const m = $('lw-modal'); if (!m) return;
+    const panel = m.querySelector('.lw-modal-panel');
     const body = $('lw-modal-body');
     if (body) body.innerHTML = html;
     m.style.setProperty('--lw-acc', accent || 'var(--gold)');
+    if (panel) {
+      panel.classList.remove('kind-stone', 'kind-book');
+      if (kind) panel.classList.add('kind-' + kind);
+      // replay the bloom-in each open
+      panel.classList.remove('lwm-pop'); void panel.offsetWidth; panel.classList.add('lwm-pop');
+    }
+    // Inspector panel (same look as the combat tip) anchored to the RIGHT of the
+    // card. It is NOT docked — it animates in while a chip is hovered and slides
+    // back out when the cursor leaves, so the card stays centered on its own.
+    const side = $('lw-side-tip');
+    if (side) { side.classList.remove('show'); side.innerHTML = ''; }
+    if (side && body) body.querySelectorAll('[data-tip]').forEach(eln => {
+      eln.addEventListener('mouseenter', () => setLwSide(eln));
+      eln.addEventListener('mouseleave', hideLwSide);
+    });
     m.classList.remove('hidden');
   }
-  function closeLwModal() { const m = $('lw-modal'); if (m) m.classList.add('hidden'); }
+  // populate + animate the inspector in for the hovered chip
+  function setLwSide(eln) {
+    const side = $('lw-side-tip'); if (!side) return;
+    const cat = eln.getAttribute('data-cat') || 'Detail';
+    const tip = eln.getAttribute('data-tip') || '';
+    side.innerHTML = '<div class="lst-head">' + cat + '</div><div class="lst-body">' + tip + '</div>';
+    side.classList.add('show');
+  }
+  function hideLwSide() { const side = $('lw-side-tip'); if (side) side.classList.remove('show'); }
+  // resolve a CSS color token (incl. var(--x)) to a concrete color for SVG fills
+  function resolveColor(c) {
+    if (!c) return '#f5c969';
+    c = String(c).trim();
+    const m = c.match(/^var\(\s*(--[\w-]+)\s*\)$/);
+    if (m) {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim();
+      return v || '#f5c969';
+    }
+    return c;
+  }
+  function closeLwModal() { hideLwSide(); const m = $('lw-modal'); if (m) m.classList.add('hidden'); }
 
   // ---- HUB ----
+  // POIs are scattered across the clearing by percent coordinates (the stage is
+  // a fixed 1920×1080 canvas, so these read the same on every device).
   const LW_POIS = [
-    { id: 'gravemarker', screen: 'screen-gravemarker', icon: '🪦', title: 'Gravemarker', blurb: 'Remember the fallen — past runs and lifetime deeds.' },
-    { id: 'stonetable',  screen: 'screen-stonetable',  icon: '🪨', title: 'Stone Table',  blurb: 'Read the star-charts of every beast and its evolutions.' },
-    { id: 'monsterbook', screen: 'screen-monsterbook', icon: '📖', title: 'Monster Book', blurb: 'A bestiary of every foe you have met in the Spire.' },
-    { id: 'well',        screen: null,                 icon: '⛲', title: 'Enchanted Well', blurb: 'Cast wishing stones to widen fate. Sealed for now.' },
-    { id: 'tablets',     screen: null,                 icon: '📜', title: 'Stone Tablets',  blurb: 'The carved lore and glossary of all things. Sealed for now.' }
+    { id: 'stonetable',  screen: 'screen-stonetable',  icon: '✶', title: 'Star Chart',     blurb: 'Trace the constellations of every beast and its evolutions.', x: 50, y: 40 },
+    { id: 'gravemarker', screen: 'screen-gravemarker', icon: '🪦', title: 'Gravemarker',   blurb: 'Remember the fallen — past runs and lifetime deeds.',     x: 24, y: 64 },
+    { id: 'monsterbook', screen: 'screen-monsterbook', icon: '📖', title: 'Monster Book',  blurb: 'A bestiary of every foe you have met in the Spire.',     x: 76, y: 62 },
+    { id: 'well',        screen: null,                 icon: '⛲', title: 'Enchanted Well', blurb: 'Cast wishing stones to widen fate.',                     x: 33, y: 32 },
+    { id: 'tablets',     screen: null,                 icon: '📜', title: 'Stone Tablets',  blurb: 'The carved lore and glossary of all things.',            x: 67, y: 34 }
   ];
   function buildLostWoods() {
     const host = $('lw-pois');
@@ -3834,11 +3916,12 @@
     LW_POIS.forEach(poi => {
       const soon = !poi.screen;
       const b = el('button', 'lw-poi lw-poi-' + poi.id + (soon ? ' lw-poi-soon' : ''));
+      b.style.left = poi.x + '%';
+      b.style.top = poi.y + '%';
       b.innerHTML =
-        '<span class="lw-poi-marker"><span class="lw-poi-icon">' + poi.icon + '</span></span>' +
+        '<span class="lw-poi-pin"><span class="lw-poi-glow"></span><span class="lw-poi-icon">' + poi.icon + '</span></span>' +
         '<span class="lw-poi-name">' + poi.title + '</span>' +
-        '<span class="lw-poi-blurb">' + poi.blurb + '</span>' +
-        (soon ? '<span class="lw-poi-seal">Sealed for now</span>' : '');
+        (soon ? '<span class="lw-poi-seal">Sealed for now</span>' : '<span class="lw-poi-blurb">' + poi.blurb + '</span>');
       if (!soon) {
         b.addEventListener('click', () => {
           SFX.click();
@@ -3952,13 +4035,43 @@
     for (const k in t2) { const hit = (t2[k] || []).find(x => x.id === formId); if (hit) return hit; }
     return null;
   }
-  function stEvoNode(beast, form, kind) {
-    const acc = evoAccent(form);
-    return '<button class="st-node st-node-' + kind + '" data-beast="' + beast.id + '" data-form="' + form.id + '" style="--acc:' + acc + '">' +
-      '<span class="st-node-port">' + evoFormImg(form, beast, 'st-node-img') + '</span>' +
-      '<span class="st-node-name">' + form.name + '</span>' +
-      (form.tagline ? '<span class="st-node-tag">' + form.tagline + '</span>' : '') +
+  // A bare evolution node (no card box): portrait + name + subtitle, dropped
+  // onto the branch canvas at an absolute (x,y) in the 1560×760 viewBox.
+  function stNode(beast, form, kind, x, y) {
+    const acc = kind === 'base' ? (beast.color || 'var(--gold)') : evoAccent(form);
+    const fid = kind === 'base' ? '__base__' : form.id;
+    // base form is always known; evo forms stay a mystery until evolved into once
+    const locked = kind !== 'base' && !metaEvolved(fid);
+    const name = kind === 'base' ? beast.name : (locked ? '? ? ?' : form.name);
+    const tag = kind === 'base' ? 'Base Form' : (locked ? 'Undiscovered' : (form.tagline || ''));
+    const img = kind === 'base'
+      ? (beast.img ? '<img class="st-node-img" src="' + beast.img + '" alt="" draggable="false">' : '<span class="st-beast-emoji">' + (beast.emoji || '✦') + '</span>')
+      : evoFormImg(form, beast, 'st-node-img');
+    // a second copy of the portrait sits behind the real one wearing a static
+    // accent drop-shadow — so the hover glow hugs the monster's exact silhouette.
+    const glow = kind === 'base'
+      ? (beast.img ? '<img class="st-node-glow" src="' + beast.img + '" alt="" aria-hidden="true" draggable="false">' : '')
+      : evoFormImg(form, beast, 'st-node-glow');
+    return '<button class="st-node st-node-' + kind + (locked ? ' st-node-locked' : '') + '" data-beast="' + beast.id + '" data-form="' + fid + '" ' +
+      'style="--acc:' + acc + ';left:' + x + 'px;top:' + y + 'px">' +
+      '<span class="st-node-port">' + glow + img + '</span>' +
+      '<span class="st-node-name">' + name + '</span>' +
+      (tag ? '<span class="st-node-tag">' + tag + '</span>' : '') +
     '</button>';
+  }
+  // a glowing organic limb between two points (horizontal S-curve), painted
+  // with a gradient that flows from the parent's color into the child's.
+  function stBranch(x1, y1, x2, y2, w, delay, gradId) {
+    const mx = (x1 + x2) / 2;
+    const d = 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2;
+    return '<path class="st-branch-line" d="' + d + '" stroke="url(#' + gradId + ')" stroke-width="' + w +
+      '" filter="url(#stGlow)" style="animation-delay:' + delay + 's"></path>';
+  }
+  function stGradDef(id, from, to) {
+    return '<linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="0">' +
+      '<stop offset="0" stop-color="' + from + '"/>' +
+      '<stop offset="1" stop-color="' + to + '"/>' +
+    '</linearGradient>';
   }
   function buildStoneTable() {
     const roster = $('stonetable-roster');
@@ -3967,6 +4080,7 @@
       Object.values(MONSTERS).forEach((b, i) => {
         const btn = el('button', 'st-beast' + (i === 0 ? ' active' : ''));
         btn.dataset.beast = b.id;
+        btn.style.setProperty('--acc', b.color || 'var(--gold)');
         btn.innerHTML = (b.img ? '<img class="st-beast-img" src="' + b.img + '" alt="" draggable="false">' : '<span class="st-beast-emoji">' + (b.emoji || '✦') + '</span>') +
           '<span class="st-beast-name">' + b.name + '</span>';
         btn.addEventListener('click', () => {
@@ -3987,54 +4101,98 @@
     if (!tree || !beast || !beast.evolution) { if (tree) tree.innerHTML = ''; return; }
     const t1 = beast.evolution.tier1 || [];
     const t2 = beast.evolution.tier2 || {};
-    const baseNode = '<button class="st-node st-node-base" data-beast="' + beast.id + '" data-form="__base__" style="--acc:' + (beast.color || 'var(--gold)') + '">' +
-      '<span class="st-node-port">' + (beast.img ? '<img class="st-node-img" src="' + beast.img + '" alt="" draggable="false">' : '<span class="st-beast-emoji">' + (beast.emoji || '✦') + '</span>') + '</span>' +
-      '<span class="st-node-name">' + beast.name + '</span>' +
-      '<span class="st-node-tag">Base Form</span>' +
-    '</button>';
-    const branches = t1.map(t1form => {
-      const kids = (t2[t1form.id] || []).map(f => stEvoNode(beast, f, 't2')).join('');
-      return '<div class="st-branch">' +
-        '<div class="st-col st-col-t1">' + stEvoNode(beast, t1form, 't1') + '</div>' +
-        '<div class="st-connector"></div>' +
-        '<div class="st-col st-col-t2">' + kids + '</div>' +
-      '</div>';
-    }).join('');
-    tree.innerHTML =
-      '<div class="st-base-col">' + baseNode + '</div>' +
-      '<div class="st-connector st-connector-main"></div>' +
-      '<div class="st-branches">' + branches + '</div>';
+    // fixed layout in the 1700×820 branch canvas. The four tier-2 forms are
+    // zig-zagged left/right (X.t2 alternates) so their stacked subtitles never
+    // collide the way a single vertical column did.
+    const X = { base: 130, t1: 770 };
+    const baseY = 410;
+    const Yt1 = [235, 585];
+    // per (branch, child): an explicit {x,y} so we can stagger them
+    const T2 = [
+      [{ x: 1560, y: 120 }, { x: 1410, y: 330 }],
+      [{ x: 1560, y: 490 }, { x: 1410, y: 700 }]
+    ];
+
+    const baseColor = resolveColor(beast.color || 'var(--gold)');
+    let paths = '', defs = '', gi = 0;
+    let nodes = stNode(beast, null, 'base', X.base, baseY);
+    t1.forEach((t1form, bi) => {
+      const y1 = Yt1[bi] != null ? Yt1[bi] : baseY;
+      const c1 = resolveColor(evoAccent(t1form));
+      const g1 = 'stG' + (gi++);
+      defs += stGradDef(g1, baseColor, c1);
+      paths += stBranch(X.base, baseY, X.t1, y1, 10, bi * 0.12, g1);
+      nodes += stNode(beast, t1form, 't1', X.t1, y1);
+      (t2[t1form.id] || []).forEach((f, ci) => {
+        const pos = (T2[bi] && T2[bi][ci]) || { x: 1480, y: y1 };
+        const c2 = resolveColor(evoAccent(f));
+        const g2 = 'stG' + (gi++);
+        defs += stGradDef(g2, c1, c2);
+        paths += stBranch(X.t1, y1, pos.x, pos.y, 6, 0.32 + ci * 0.12, g2);
+        nodes += stNode(beast, f, 't2', pos.x, pos.y);
+      });
+    });
+    const svg = '<svg class="st-branches-svg" viewBox="0 0 1700 820" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' +
+      '<defs>' + defs +
+        '<filter id="stGlow" x="-40%" y="-40%" width="180%" height="180%">' +
+          '<feGaussianBlur stdDeviation="3.5" result="b"/>' +
+          '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+        '</filter>' +
+      '</defs>' + paths + '</svg>';
+    tree.innerHTML = '<div class="st-stage">' + svg + nodes + '</div>';
     tree.querySelectorAll('.st-node').forEach(node => {
       node.addEventListener('click', () => {
         SFX.click();
         const fid = node.dataset.form;
         if (fid === '__base__') {
+          const acc = beast.color || 'var(--gold)';
           openLwModal(stDetailHTML(beast, {
             name: beast.name, img: beast.img, tagline: 'Base Form',
-            passive: { name: 'Passive', text: beast.passiveText || beast.desc || '' }
-          }, beast.color || 'var(--gold)'), beast.color || 'var(--gold)');
+            passive: { name: beast.role || 'Passive', text: beast.passiveText || beast.desc || '' }
+          }, acc), acc, 'stone');
         } else {
           const form = evoFormById(beastId, fid);
-          if (form) openLwModal(stDetailHTML(beast, form, evoAccent(form)), evoAccent(form));
+          if (!form) return;
+          if (!metaEvolved(fid)) openLwModal(stLockedHTML(beast, form, evoAccent(form)), evoAccent(form), 'stone');
+          else openLwModal(stDetailHTML(beast, form, evoAccent(form)), evoAccent(form), 'stone');
         }
       });
     });
   }
+  // Built to be the twin of the in-run evolution-selection card — same frame,
+  // same glow, same big portrait — minus the bits that only matter mid-run
+  // (the "Choose" button and the +Max HP pip).
   function stDetailHTML(beast, form, accent) {
     const p = form.passive || {};
     const socket = form.socket
-      ? '<div class="lwm-socket">Grants a new <b>' + (form.socket.label || 'special') + '</b> socket</div>' : '';
-    return '<div class="lwm-detail" style="--acc:' + accent + '">' +
-      '<div class="lwm-port">' + evoFormImg(form, beast, 'lwm-img') + '</div>' +
-      '<div class="lwm-info">' +
-        '<div class="lwm-name">' + form.name + '</div>' +
-        (form.tagline ? '<div class="lwm-tag">' + form.tagline + '</div>' : '') +
-        (p.name ? '<div class="lwm-passive-name">' + p.name + '</div>' : '') +
-        '<div class="lwm-passive-text">' + (p.text || '') + '</div>' +
-        socket +
+      ? '<div class="evo-card-stats"><span class="evo-card-socket"><span class="ecs-ico">◈</span> ' + (form.socket.label || 'Special') + ' socket</span></div>' : '';
+    return '<div class="lw-card evo-card" style="--acc:' + accent + '">' +
+      '<div class="evo-card-tag">' + (form.tagline || 'Base Form') + '</div>' +
+      '<div class="evo-card-port">' + evoFormImg(form, beast) +
+        '<span class="evo-card-glow"></span></div>' +
+      '<div class="evo-card-name">' + form.name + '</div>' +
+      socket +
+      '<div class="evo-card-passive">' +
+        (p.name ? '<span class="ecp-name">✦ ' + p.name + '</span>' : '') +
+        '<span class="ecp-text">' + (p.text || '') + '</span>' +
       '</div>' +
     '</div>';
   }
+  // an undiscovered form: a darkened silhouette of its shape and an enticing
+  // prompt — never spoils the name, tagline, or passive.
+  function stLockedHTML(beast, form, accent) {
+    return '<div class="lw-card evo-card lw-card-locked" style="--acc:' + accent + '">' +
+      '<div class="evo-card-tag">Undiscovered</div>' +
+      '<div class="evo-card-port lwc-port-silhouette">' + evoFormImg(form, beast) +
+        '<span class="evo-card-glow"></span><span class="lwc-rune" aria-hidden="true">?</span></div>' +
+      '<div class="evo-card-name">? ? ?</div>' +
+      '<div class="evo-card-passive">' +
+        '<span class="ecp-text lwc-mystery">This evolution is still hidden among the stars. Guide <b>' + beast.name +
+        '</b> down this path at least once and it will be inscribed upon the chart forever.</span>' +
+      '</div>' +
+    '</div>';
+  }
+  const MB_TIER_ACCENT = { common: '#c9b8a8', elite: '#ffce5e', boss: '#ff7a6a', shadow: '#b98cff' };
 
   // ---- MONSTER BOOK ----
   function monsterBookRoster() {
@@ -4068,21 +4226,64 @@
       default: return it.type;
     }
   }
+  // a plain-language explanation of an intent, shown on hover in the bestiary
+  function intentTip(it) {
+    const n = it.value;
+    switch (it.type) {
+      case 'attack': return it.hits > 1
+        ? 'Strikes for ' + n + ' damage ' + it.hits + ' times (' + (n * it.hits) + ' total).'
+        : (it.big ? 'Winds up a single heavy blow for ' + n + ' damage.' : 'Attacks for ' + n + ' damage.');
+      case 'defend': return 'Raises ' + n + ' Block to absorb your hits.';
+      case 'curse': return 'Curses a glyph socket for ' + n + ' — playing it backfires on you.';
+      case 'sunder': return 'Seals ' + n + ' of your glyph sockets for the turn.';
+      case 'debuff': return 'Afflicts you with ' + (it.stat || 'a debuff') + ' ' + n + '.';
+      case 'buff': return 'Empowers itself with +' + n + ' Strength.';
+      case 'siphon': return 'Siphons your ' + (it.stat || 'stats') + ', stealing it for itself.';
+      case 'regen': return 'Regenerates ' + n + ' HP.';
+      case 'rally': return 'Rallies its allies, granting +' + n + ' Strength.';
+      case 'summon': return 'Summons reinforcements into the fight.';
+      case 'clog': return 'Jams your deck with a Dead Weight card.';
+      case 'trash': return 'Clutters your deck with useless Rubble.';
+      default: return '';
+    }
+  }
+  function feastTip(b) {
+    const next = 'In the next encounter, ';
+    switch (b && b.t) {
+      case 'str': return next + 'begin with +' + b.n + ' Strength.';
+      case 'res': return next + 'begin with +' + b.n + ' Resilience.';
+      case 'thorn': return next + 'begin with +' + b.n + ' Thorns.';
+      case 'guard': return next + 'gain ' + b.n + ' Block at the start of every turn.';
+      case 'rampstr': return next + 'gain +' + b.n + ' Strength every turn.';
+      case 'weaken': return next + 'all foes start Weakened ' + b.n + '.';
+      case 'scare': return next + 'all foes start Scared ' + b.n + '.';
+      case 'heal': return 'Heals ' + Math.round((b.pct || 0) * 100) + '% of your max HP when feasted.';
+      case 'souls': return 'Grants ' + b.n + ' Souls when feasted.';
+      case 'purge': return next + 'purge a debuff from yourself.';
+      case 'cleanse': return next + 'cleanse all debuffs from yourself.';
+      default: return 'A hidden boon, granted when you feast this foe.';
+    }
+  }
+  // each chip carries its full label AND a hover explanation
   function enemyIntentChips(def) {
     const out = [];
     (def.intents || []).forEach(entry => {
-      if (Array.isArray(entry)) out.push(entry.map(intentLabel).join(' + '));
-      else out.push(intentLabel(entry));
+      if (Array.isArray(entry)) {
+        out.push({ label: entry.map(intentLabel).join(' + '), tip: entry.map(intentTip).filter(Boolean).join('  •  ') });
+      } else {
+        out.push({ label: intentLabel(entry), tip: intentTip(entry) });
+      }
     });
     return out;
   }
   function gimmickBadges(def) {
     const b = [];
-    if (def.thorns) b.push('Thornmail');
-    if (def.ward) b.push('Ward');
-    if (def.enrage) b.push('Enrage');
+    if (def.thorns) b.push({ label: 'Thornmail', tip: 'Returns damage to you whenever you strike it.' });
+    if (def.ward)   b.push({ label: 'Ward',      tip: 'Shrugs off hits until its ward is broken.' });
+    if (def.enrage) b.push({ label: 'Enrage',    tip: 'Gains Strength at the end of every turn — end it fast.' });
     return b;
   }
+  function escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
   function mbState(def) {
     if (def._synthetic) {
       // soulhunter tracked under its dynamic id
@@ -4108,7 +4309,7 @@
       card.addEventListener('click', () => {
         SFX.click();
         const def = roster.find(d => d.id === card.dataset.id);
-        if (def) openLwModal(mbDetailHTML(def), '#c98a5a');
+        if (def) openLwModal(mbDetailHTML(def), '#c98a5a', 'book');
       });
     });
   }
@@ -4130,40 +4331,43 @@
       sub +
     '</div>';
   }
+  // Same lavish evolution-card frame, repurposed as a bestiary entry: big
+  // portrait, tier+HP banner, lore, then intel blocks for intents & feast boons.
   function mbDetailHTML(def) {
     const st = mbState(def);
+    const tier = enemyTierLabel(def);
+    const acc = (st === 'seen') ? '#9a8cff' : (MB_TIER_ACCENT[tier.toLowerCase()] || '#c98a5a');
+    const hp = (st === 'seen') ? '??? HP' : (def.maxHp ? def.maxHp + ' HP' : 'Unknown');
     const portrait = def.img
-      ? '<img class="lwm-img" src="' + def.img + '" alt="" draggable="false">'
-      : '<span class="lwm-emoji">' + (def.emoji || '✦') + '</span>';
+      ? '<img class="evo-card-img" src="' + def.img + '" alt="" draggable="false">'
+      : '<span class="evo-card-emoji">' + (def.emoji || '✦') + '</span>';
+    const head =
+      '<div class="evo-card-tag">' + tier + ' · ' + hp + '</div>' +
+      '<div class="evo-card-port' + (st === 'seen' ? ' lwc-port-seen' : '') + '">' + portrait +
+        '<span class="evo-card-glow"></span></div>' +
+      '<div class="evo-card-name">' + def.name + '</div>';
     if (st === 'seen') {
-      return '<div class="lwm-detail mb-detail" style="--acc:#9a8cff">' +
-        '<div class="lwm-port">' + portrait + '</div>' +
-        '<div class="lwm-info">' +
-          '<div class="lwm-name">' + def.name + '</div>' +
-          '<div class="lwm-tag">' + enemyTierLabel(def) + '</div>' +
-          '<div class="mb-unknown">You have crossed its path but never felled it. Slay it to record its secrets.</div>' +
-          '<div class="mb-rows"><div class="mb-row"><span class="mb-row-k">Health</span><span class="mb-row-v">???</span></div>' +
-          '<div class="mb-row"><span class="mb-row-k">Intents</span><span class="mb-row-v">???</span></div>' +
-          '<div class="mb-row"><span class="mb-row-k">Feast Boons</span><span class="mb-row-v">???</span></div></div>' +
-        '</div>' +
+      return '<div class="lw-card evo-card lw-card-book" style="--acc:' + acc + '">' + head +
+        '<div class="lwc-quote">You crossed its path but never felled it. Slay it to record its secrets in blood.</div>' +
+        '<div class="evo-card-passive"><span class="ecp-name">Intents</span><span class="lwc-redact">??? ?? ????</span></div>' +
+        '<div class="evo-card-passive"><span class="ecp-name">Hidden Feast Boons</span><span class="lwc-redact">???? ???</span></div>' +
       '</div>';
     }
     // defeated — full reveal
     const intents = enemyIntentChips(def);
     const gimmicks = gimmickBadges(def);
-    const boons = (def._synthetic ? DATA.feastPoolFor({ id: 'soulhunter' }) : DATA.feastPoolFor(def)).map(b => DATA.feastLabel(b));
-    return '<div class="lwm-detail mb-detail" style="--acc:#c98a5a">' +
-      '<div class="lwm-port">' + portrait + '</div>' +
-      '<div class="lwm-info">' +
-        '<div class="lwm-name">' + def.name + '</div>' +
-        '<div class="lwm-tag">' + enemyTierLabel(def) + (def.maxHp ? ' · ' + def.maxHp + ' HP' : '') + '</div>' +
-        (def.desc ? '<div class="mb-desc">' + def.desc + '</div>' : '') +
-        (gimmicks.length ? '<div class="mb-badges">' + gimmicks.map(g => '<span class="mb-badge">' + g + '</span>').join('') + '</div>' : '') +
-        (intents.length ? '<div class="mb-block"><div class="mb-block-label">Intents</div><div class="mb-chips">' + intents.map(i => '<span class="mb-chip">' + i + '</span>').join('') + '</div></div>' : '') +
-        '<div class="mb-block"><div class="mb-block-label">Hidden Feast Boons</div><div class="mb-chips">' +
-          (boons.length ? boons.map(b => '<span class="mb-chip mb-chip-boon">' + b + '</span>').join('') : '<span class="gm-empty">None</span>') +
-        '</div></div>' +
-      '</div>' +
+    const boons = (def._synthetic ? DATA.feastPoolFor({ id: 'soulhunter' }) : DATA.feastPoolFor(def));
+    const tipHTML = (label, body) => escAttr('<b>' + label + '</b><br>' + body);
+    const intentChip = i => '<span class="lwc-chip" data-cat="Intent" data-tip="' + tipHTML(i.label, i.tip) + '">' + i.label + '</span>';
+    const gimChip    = g => '<span class="evo-card-socket" data-cat="Trait" data-tip="' + tipHTML(g.label, g.tip) + '">' + g.label + '</span>';
+    const boonChip   = b => '<span class="lwc-chip lwc-chip-boon" data-cat="Feast Boon" data-tip="' + tipHTML(DATA.feastLabel(b), feastTip(b)) + '">' + DATA.feastLabel(b) + '</span>';
+    return '<div class="lw-card evo-card lw-card-book" style="--acc:' + acc + '">' + head +
+      (def.desc ? '<div class="lwc-quote">' + def.desc + '</div>' : '') +
+      (gimmicks.length ? '<div class="evo-card-stats">' + gimmicks.map(gimChip).join('') + '</div>' : '') +
+      (intents.length ? '<div class="evo-card-passive"><span class="ecp-name">Intents</span><div class="lwc-chips">' + intents.map(intentChip).join('') + '</div></div>' : '') +
+      '<div class="evo-card-passive"><span class="ecp-name">Hidden Feast Boons</span><div class="lwc-chips">' +
+        (boons.length ? boons.map(boonChip).join('') : '<span class="gm-empty">None to sap</span>') +
+      '</div></div>' +
     '</div>';
   }
 

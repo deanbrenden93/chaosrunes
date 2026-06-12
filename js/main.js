@@ -35,7 +35,24 @@
       'assets/Back Button.png',
       'assets/Descend Button.png',
       'assets/Character Button.png',
-      'assets/Options Gear Button.png'
+      'assets/Options Gear Button.png',
+      'assets/Act Button.png',
+      'assets/Skip Button.png',
+      // illustrated map node medallions
+      'assets/Battle Node.png',
+      'assets/Elite Node.png',
+      'assets/Event Node.png',
+      'assets/Cache Node.png',
+      'assets/Soulstone Node.png',
+      'assets/Floor Boss Node.png',
+      'assets/Soulhunter Node.png',
+      'assets/Bazaar Node.png',
+      'assets/Rest Node.png',
+      // combat: deck/discard piles + soulstone slot & stone
+      'assets/Deck Icon.png',
+      'assets/Discard Icon.png',
+      'assets/Soulstone Slot.png',
+      'assets/Soulstone Stone.png'
     ].forEach(addImg);
     // every art reference declared in the data, harvested generically so new
     // collections (blessings, items, souls, …) and new `img`/`selectBg` fields

@@ -251,7 +251,7 @@
            t.closest('.intent') ||
            t.closest('.status-badge') ||
            t.closest('.pc-passive-badge') ||
-           t.closest('#pile-tray .pile') ||
+           t.closest('.pile') ||
            t.closest('#btn-recall');
   }
   // a tip's body minus its lead <b>name</b> (the panel header already names it)
@@ -832,6 +832,10 @@
     const hasPlaced = B.sockets.some(s => s !== null);
     btn.disabled = !!B.resolving;
     btn.classList.toggle('is-skip', !hasPlaced);
+    const src = hasPlaced ? 'assets/Act Button.png' : 'assets/Skip Button.png';
+    const art = btn.querySelector('.det-art'), glow = btn.querySelector('.det-glow');
+    if (art && !art.src.endsWith(src)) { art.src = src; art.alt = hasPlaced ? 'Act' : 'Skip'; }
+    if (glow && !glow.src.endsWith(src)) glow.src = src;
     const lab = btn.querySelector('.det-label');
     const sub = btn.querySelector('.det-sub');
     if (lab) lab.textContent = hasPlaced ? 'Act' : 'Skip';
@@ -1119,16 +1123,16 @@
   function renderSockets() {
     const row = $('socket-row');
     row.innerHTML = '';
-    // scale the row down as sockets pile up so a wide row never overlaps the
-    // left character panel (3-5 keep the full 152px; 9 packs to ~94px)
+    // Up to 5 sockets ride a full-size straight row. Past that, shrink them 30%
+    // and honeycomb them (a zig-zag strip that nests the hexes) so even a 9-socket
+    // beast packs tight and never slides under the side panels.
     const n = B.sockets.length;
-    let size = 152, gap = 30;
-    if (n >= 9) { size = 94; gap = 12; }
-    else if (n === 8) { size = 104; gap = 14; }
-    else if (n === 7) { size = 118; gap = 18; }
-    else if (n === 6) { size = 134; gap = 24; }
+    const honey = n > 5;
+    const size = honey ? 106 : 152;     // 152 * 0.7 ≈ 106
+    const gap = honey ? 0 : 30;
     row.style.setProperty('--sock-size', size + 'px');
     row.style.setProperty('--sock-gap', gap + 'px');
+    row.classList.toggle('honeycomb', honey);
     const firstFree = firstFreeSocket();
     B.sockets.forEach((id, i) => {
       const list = slotList(i);

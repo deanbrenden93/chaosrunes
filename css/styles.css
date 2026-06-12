@@ -28,6 +28,21 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ---- Make it feel like a native app, not a web page ----
+   Kill the mobile tap flash, the long-press callout/selection, image drag
+   ghosts, and the focus rings that betray a browser underneath. */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+:focus { outline: none; }
+:focus-visible { outline: none; }
+button, a, .btn, [role="button"], .screen, .mapnode, .glyph, .socket, img, svg {
+  -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+img { -webkit-user-drag: none; -khtml-user-drag: none; user-drag: none; }
+
 /* ============ BOOT LOADING SCREEN ============ */
 .loading-screen {
   position: fixed; inset: 0; z-index: 9999;
@@ -340,24 +355,6 @@ html, body {
   display: flex; align-items: center; justify-content: space-between;
   width: 1560px; margin-top: 18px;
 }
-/* ---- Back button: a carved astral ghost-rune ---- */
-#btn-start-back {
-  position: relative; min-width: 138px;
-  font-size: 19px; letter-spacing: 0.14em; text-transform: uppercase;
-  color: #cdbff0;
-  background: linear-gradient(180deg, rgba(34,24,52,0.92), rgba(15,10,25,0.94));
-  border: 1px solid rgba(150,120,210,0.42);
-  border-radius: 12px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
-  transition: transform .16s, border-color .2s, box-shadow .25s, color .2s, letter-spacing .2s;
-}
-#btn-start-back:hover {
-  color: #fff; border-color: rgba(192,162,255,0.85); letter-spacing: 0.2em;
-  box-shadow: 0 9px 26px rgba(0,0,0,0.55), 0 0 22px rgba(150,110,230,0.42);
-  transform: translateY(-2px);
-}
-#btn-start-back:active { transform: translateY(1px); }
-
 /* ============================================================
    MODE SELECT  (New Game → Classic / Descension)
    ============================================================ */
@@ -1065,6 +1062,47 @@ html, body {
   100% { transform: translateY(-26px) scaleY(0.5) scaleX(0.45); opacity: 0; }
 }
 
+/* ---- illustrated medallion node tokens (art replaces the coined emoji) ---- */
+/* The token frame/fill/label are baked into the PNG, so the node becomes a
+   bare anchor that just hangs the artwork; interactive states are glows. */
+.mapnode.has-art {
+  width: 104px; height: 104px;
+  background: none; border: none; border-radius: 0;
+  box-shadow: none; overflow: visible;
+  filter: drop-shadow(0 6px 11px rgba(0,0,0,0.75));
+}
+.mapnode.has-art .node-art-img {
+  position: absolute; left: 50%; top: -3px; transform: translateX(-50%);
+  width: 118px; height: auto; pointer-events: none;
+}
+.mapnode.has-art.type-boss { width: 132px; height: 132px; }
+.mapnode.has-art.type-boss .node-art-img { width: 152px; top: -4px; }
+.mapnode.has-art .node-label { display: none; }   /* the name is part of the art */
+.mapnode.has-art .shadowflames { display: none; }
+/* reachable: warm golden bloom + the existing bob; current: bright white halo */
+.mapnode.has-art.reachable {
+  border: none; box-shadow: none;
+  filter: drop-shadow(0 6px 11px rgba(0,0,0,0.75)) drop-shadow(0 0 16px rgba(245,201,105,0.7));
+}
+.mapnode.has-art.type-soulstone.reachable {
+  filter: drop-shadow(0 6px 11px rgba(0,0,0,0.75)) drop-shadow(0 0 18px rgba(120,225,240,0.75));
+}
+.mapnode.has-art.type-shadow.reachable {
+  filter: drop-shadow(0 6px 11px rgba(0,0,0,0.75)) drop-shadow(0 0 18px rgba(170,60,200,0.75));
+}
+.mapnode.has-art.type-boss.reachable,
+.mapnode.has-art.type-elite.reachable {
+  filter: drop-shadow(0 6px 11px rgba(0,0,0,0.75)) drop-shadow(0 0 20px rgba(255,90,70,0.7));
+}
+.mapnode.has-art.current {
+  border: none; box-shadow: none; color: inherit;
+  filter: drop-shadow(0 6px 11px rgba(0,0,0,0.75)) drop-shadow(0 0 22px rgba(255,255,255,0.85));
+}
+.mapnode.has-art.visited {
+  opacity: 0.5; border: none;
+  filter: drop-shadow(0 5px 9px rgba(0,0,0,0.7)) saturate(0.45) brightness(0.62);
+}
+
 /* Soulhunter's battle aura — a cold dark halo behind the sprite */
 .combatant.foe-shadow .c-sprite {
   filter: drop-shadow(0 0 18px rgba(150,40,180,0.55)) drop-shadow(0 0 6px rgba(0,0,0,0.9));
@@ -1083,12 +1121,14 @@ html, body {
 
 /* Soulstone meter on the soulstone screen */
 .soulstone-meter { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 8px; }
-.ss-pips { display: flex; gap: 10px; }
-.ss-pip {
-  font-size: 30px; line-height: 1; color: #2a3a48;
-  text-shadow: 0 0 2px #000; transition: color .2s, text-shadow .2s, transform .2s;
+.ss-pips { display: flex; gap: 12px; align-items: center; }
+.ss-pip { line-height: 0; transition: transform .2s; }
+.ss-pip .ss-pip-img {
+  width: 40px; height: 52px; object-fit: contain; display: block;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6)); opacity: .82; transition: filter .2s, opacity .2s;
 }
-.ss-pip.lit { color: #7fe6f0; text-shadow: 0 0 14px rgba(120,225,240,0.85), 0 0 4px #fff; transform: scale(1.08); }
+.ss-pip.lit { transform: scale(1.1); }
+.ss-pip.lit .ss-pip-img { opacity: 1; filter: drop-shadow(0 0 12px rgba(120,180,255,0.85)) drop-shadow(0 0 4px rgba(255,255,255,0.5)); }
 .ss-meter-label { font-family: 'Spectral', serif; font-size: 16px; color: var(--text-dim); }
 
 /* white (colorless) Soul-glyph tinting */
@@ -1784,47 +1824,71 @@ html, body {
 }
 .hand-area { position: relative; width: 100%; display: flex; align-items: flex-end; justify-content: center; min-height: 182px; }
 
+/* ACT / SKIP — illustrated button art swaps with the socketed state.
+   Mirrors the character disc on the right: same footprint (160 * 1.42 ≈ 227px)
+   and the same bottom anchor, flipped to the right edge of the screen. */
 .btn-detonate {
-  position: absolute; right: 70px; bottom: 16px;
-  width: 196px; padding: 18px;
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
-  background: radial-gradient(circle at 50% 30%, #ff8a4a, #c4321e 70%);
-  border: 2px solid #ffb074;
-  border-radius: 16px;
-  box-shadow: 0 0 30px rgba(255,90,40,0.5), inset 0 2px 0 rgba(255,255,255,0.25);
+  position: absolute; right: 92px; bottom: 56px; z-index: 6;
+  width: 227px; height: 227px; padding: 0;
+  background: none; border: none; border-radius: 0; box-shadow: none;
+  transition: transform .12s ease;
 }
-.btn-detonate .det-label { font-size: 34px; font-weight: 900; letter-spacing: 0.1em; text-shadow: 0 2px 6px rgba(0,0,0,0.5); }
-.btn-detonate .det-sub { font-size: 14px; font-family: 'Spectral'; opacity: 0.85; font-style: italic; }
-.btn-detonate:not(:disabled):not(.is-skip) { animation: det-glow 1.6s ease-in-out infinite; }
-@keyframes det-glow { 50% { box-shadow: 0 0 48px rgba(255,120,40,0.85), inset 0 2px 0 rgba(255,255,255,0.25); } }
+.btn-detonate .det-label, .btn-detonate .det-sub { display: none; }  /* labels are baked into the art */
+/* the face medallion */
+.btn-detonate .det-art {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 1;
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.6));
+  transition: filter .2s ease;
+}
+/* a copy of the medallion behind the face, wearing the accent halo. Only its
+   blurred drop-shadow shows (the body is hidden by the face), so the glow hugs
+   the medallion silhouette. We animate its opacity → smooth, never a rectangle. */
+.btn-detonate .det-glow {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 0;
+  pointer-events: none; opacity: 0; transition: opacity .35s ease;
+  filter: drop-shadow(0 0 15px rgba(255,120,40,0.95)) drop-shadow(0 0 30px rgba(255,90,20,0.6));
+}
+.btn-detonate:not(:disabled):not(.is-skip) .det-glow { animation: det-glow-pulse 1.7s ease-in-out infinite; }
+@keyframes det-glow-pulse { 0%, 100% { opacity: .28; } 50% { opacity: .92; } }
+.btn-detonate:not(:disabled):hover .det-glow { opacity: 1; animation: none; }
+.btn-detonate:not(:disabled):hover .det-art { filter: brightness(1.08) drop-shadow(0 8px 18px rgba(0,0,0,0.6)); }
+/* neutralize the generic .btn hover/box-shadow so no rectangle leaks through */
+.btn-detonate:hover:not(:disabled) { transform: none; filter: none; box-shadow: none; }
+.btn-detonate:not(:disabled):active { transform: scale(0.95); }
+.btn-detonate:disabled .det-art { filter: grayscale(0.45) brightness(0.7) drop-shadow(0 4px 10px rgba(0,0,0,0.6)); }
+.btn-detonate:disabled .det-glow { opacity: 0; animation: none; }
 
-/* SKIP state: calm, neutral — no fiery glow */
-.btn-detonate.is-skip {
-  background: radial-gradient(circle at 50% 30%, #5a5470, #34304a 70%);
-  border-color: #8b84a8;
-  box-shadow: 0 0 16px rgba(0,0,0,0.4), inset 0 2px 0 rgba(255,255,255,0.12);
+/* SKIP state: a calm, neutral halo instead of the fiery pulse */
+.btn-detonate.is-skip .det-glow {
+  filter: drop-shadow(0 0 15px rgba(160,160,185,0.85)) drop-shadow(0 0 28px rgba(120,120,150,0.5));
 }
 
-.btn-recall { position: absolute; right: 78px; bottom: 132px; font-size: 16px; padding: 8px 16px; }
+.btn-recall { position: absolute; right: 340px; bottom: 150px; font-size: 16px; padding: 8px 16px; z-index: 7; }
 
-/* ---------- draw / discard piles ---------- */
-.pile-tray {
-  position: absolute; right: 34px; bottom: 188px; z-index: 7;
-  display: flex; flex-direction: column; gap: 14px; align-items: center;
+/* ---------- draw / discard piles (illustrated icons flanking the sockets) --- */
+/* the sockets sit centered with the deck icon to their left and the discard icon
+   to their right; the whole strip stays clear of the side panels. */
+.socket-zone {
+  display: flex; align-items: center; justify-content: center; gap: 30px;
+  width: 100%;
 }
+.socket-zone .socket-row { margin: 0; }
 .pile {
-  position: relative; width: 96px; height: 92px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  background: linear-gradient(160deg, rgba(40,30,60,0.95), rgba(14,10,22,0.96));
-  border: 2px solid var(--panel-edge); border-radius: 14px; color: var(--text);
-  box-shadow: 0 10px 26px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
-  cursor: pointer; transition: transform .14s, border-color .2s, box-shadow .2s;
+  position: relative; flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: none; border: none; padding: 0; color: var(--text);
+  cursor: pointer; transition: transform .14s, filter .2s;
 }
-.pile:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 14px 30px rgba(0,0,0,0.6), 0 0 18px rgba(245,201,105,0.3); }
-.pile .pile-art { font-size: 36px; line-height: 1; filter: drop-shadow(0 0 8px rgba(180,150,255,0.45)); }
+.pile .pile-art-img {
+  width: 92px; height: 92px; object-fit: contain;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.65));
+  transition: filter .2s, transform .14s;
+}
+.pile:hover { transform: translateY(-3px); }
+.pile:hover .pile-art-img { filter: drop-shadow(0 8px 16px rgba(0,0,0,0.7)) drop-shadow(0 0 16px rgba(245,201,105,0.55)); }
 .pile .pile-label { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-dim); }
 .pile .pile-count {
-  position: absolute; top: -11px; right: -11px; min-width: 28px; height: 28px; padding: 0 6px;
+  position: absolute; top: -6px; right: -6px; min-width: 28px; height: 28px; padding: 0 6px;
   display: flex; align-items: center; justify-content: center;
   background: var(--gold); color: #1a1020; font-family: 'Cinzel', serif; font-weight: 700; font-size: 16px;
   border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.55); border: 1.5px solid rgba(0,0,0,0.3);
@@ -1833,8 +1897,7 @@ html, body {
 .pile.pulse { animation: pilePulse .42s cubic-bezier(.2,1.4,.4,1); }
 @keyframes pilePulse {
   0%   { transform: translateY(0) scale(1); }
-  45%  { transform: translateY(-5px) scale(1.13); border-color: var(--gold);
-         box-shadow: 0 16px 32px rgba(0,0,0,0.6), 0 0 28px rgba(245,201,105,0.6); }
+  45%  { transform: translateY(-5px) scale(1.13); }
   100% { transform: translateY(0) scale(1); }
 }
 
@@ -1887,6 +1950,31 @@ html, body {
 .pv-float-tip .dyn-up { color: #8ef58a; text-shadow: 0 0 8px rgba(120,240,120,0.6); }
 .pv-float-tip .gt-up { color: #ffce7a; }
 
+/* Lost Woods bestiary inspector — the combat-tip feature set, but DOCKED as a
+   persistent panel to the right of the monster card. Hovering a chip studies it
+   here; the last studied item stays pinned (reads like an inspector). */
+/* anchored to the RIGHT of the card, but floats in/out on hover (never docked,
+   so the card never shifts). Hidden + nudged right by default, slides in on .show */
+.lw-side-tip {
+  position: absolute; left: calc(100% + 26px); top: 50%;
+  width: 320px; max-height: 80vh; overflow-y: auto; text-align: left;
+  background: rgba(8,5,14,0.97); border: 1px solid var(--panel-edge);
+  border-radius: 14px; padding: 22px 24px; font-family: 'Spectral';
+  box-shadow: 0 18px 40px rgba(0,0,0,0.6),
+              inset 0 0 30px color-mix(in srgb, var(--lw-acc, var(--gold)) 8%, transparent),
+              0 0 26px color-mix(in srgb, var(--lw-acc, var(--gold)) 20%, transparent);
+  opacity: 0; transform: translate(18px, -50%); pointer-events: none;
+  transition: opacity .2s ease, transform .26s cubic-bezier(.2,.8,.3,1);
+}
+.lw-side-tip.show { opacity: 1; transform: translate(0, -50%); }
+.lw-side-tip .lst-head {
+  font-family: 'Cinzel'; font-size: 17px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--lw-acc, var(--gold)); margin-bottom: 13px; padding-bottom: 11px;
+  border-bottom: 1px solid color-mix(in srgb, var(--lw-acc, var(--gold)) 32%, transparent);
+}
+.lw-side-tip .lst-body { font-size: 19px; line-height: 1.55; color: var(--text-dim); }
+.lw-side-tip .lst-body b { color: var(--text); font-family: 'Cinzel'; font-size: 21px; display: inline-block; margin-bottom: 7px; }
+
 /* ---------- hexagon shapes ---------- */
 /* flat-top hexagon used by glyph tiles (matches the rune art) */
 .hex-flat { clip-path: polygon(25% 2%, 75% 2%, 100% 50%, 75% 98%, 25% 98%, 0 50%); }
@@ -1900,6 +1988,19 @@ html, body {
   min-height: calc(var(--sock-size, 152px) + 4px);
   flex-wrap: nowrap; max-width: calc(100% - 360px); margin: 0 auto;
 }
+/* honeycomb: the hexes nest in a zig-zag strip. They overlap horizontally on
+   their slanted edges (negative margin) and alternate up/down so the flat-top
+   hexagons interlock like a comb. align-self handles the vertical zig so we
+   never fight the transform-based socket animations. */
+.socket-row.honeycomb {
+  gap: 0; align-items: center;
+  min-height: calc(var(--sock-size) * 1.46);
+  max-width: calc(100% - 240px);
+}
+.socket-row.honeycomb .socket { margin-left: calc(var(--sock-size) * -0.24); }
+.socket-row.honeycomb .socket:first-child { margin-left: 0; }
+.socket-row.honeycomb .socket:nth-child(odd)  { align-self: flex-start; }
+.socket-row.honeycomb .socket:nth-child(even) { align-self: flex-end; }
 .socket {
   width: var(--sock-size, 152px); height: var(--sock-size, 152px);
   flex: 0 0 auto;
@@ -3224,15 +3325,15 @@ html, body {
 .soulstone-modal .socket-modal-sub b { color: #cdbcff; }
 .ss-chain { display: flex; gap: 0; justify-content: center; align-items: center; margin: 10px 0 30px; min-height: 96px; }
 .ss-gem {
-  position: relative; flex: none; width: 64px; height: 64px;
-  display: flex; align-items: center; justify-content: center; border-radius: 50%;
-  background: radial-gradient(circle at 50% 36%, rgba(30,22,52,0.95), rgba(8,6,16,0.92));
-  border: 2px solid rgba(150,130,255,0.24); box-shadow: inset 0 0 14px rgba(0,0,0,0.6);
+  position: relative; flex: none; width: 58px; height: 76px;
+  display: flex; align-items: center; justify-content: center;
 }
-.ss-gem-core { font-size: 30px; line-height: 1; color: rgba(150,130,200,0.4); transition: color .3s, text-shadow .3s; }
-.ss-gem.lit { border-color: rgba(170,140,255,0.72); box-shadow: inset 0 0 14px rgba(0,0,0,0.5), 0 0 24px rgba(140,100,240,0.5); }
-.ss-gem.lit .ss-gem-core { color: #c9b6ff; text-shadow: 0 0 16px rgba(150,110,255,0.95), 0 0 6px #fff; }
-.ss-link { flex: none; width: 34px; height: 4px; border-radius: 2px; background: rgba(150,130,255,0.14); }
+.ss-gem-core {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+  opacity: .8; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.6)); transition: opacity .3s, filter .3s;
+}
+.ss-gem.lit .ss-gem-core { opacity: 1; filter: drop-shadow(0 0 16px rgba(130,170,255,0.9)) drop-shadow(0 0 5px rgba(255,255,255,0.55)); }
+.ss-link { flex: none; width: 26px; height: 4px; border-radius: 2px; background: rgba(150,130,255,0.14); }
 .ss-link.lit {
   background: linear-gradient(90deg, rgba(170,140,255,0.85), rgba(140,100,240,0.6));
   box-shadow: 0 0 12px rgba(140,100,240,0.5);
@@ -5118,6 +5219,55 @@ html, body {
 #screen-monsterbook .map-bg {
   filter: brightness(0.5) saturate(0.7) hue-rotate(-18deg);
 }
+/* The Star Chart sits over a deep celestial night-sky so the glowing
+   constellation branches read like real star-lines. (mirrors the beast-select
+   star map, dimmed a touch so the colored limbs pop). */
+#screen-stonetable .map-bg { display: none; }
+#screen-stonetable .bg-runes {
+  inset: 0; filter: none; z-index: 1;
+  background-color: #03020a;
+  background-image:
+    radial-gradient(50% 44% at 18% 16%, rgba(96,72,176,0.22), transparent 70%),
+    radial-gradient(46% 40% at 84% 80%, rgba(54,98,156,0.20), transparent 72%),
+    radial-gradient(40% 34% at 76% 20%, rgba(160,84,160,0.13), transparent 70%),
+    radial-gradient(44% 40% at 30% 86%, rgba(96,120,176,0.12), transparent 72%),
+    radial-gradient(120% 100% at 50% 46%, transparent 34%, rgba(2,1,7,0.94) 100%),
+    radial-gradient(1.6px 1.6px at 24px 32px, rgba(255,255,255,0.9), transparent),
+    radial-gradient(1.4px 1.4px at 132px 78px, rgba(214,224,255,0.8), transparent),
+    radial-gradient(1px 1px at 72px 162px, rgba(255,255,255,0.65), transparent),
+    radial-gradient(2.2px 2.2px at 204px 120px, rgba(245,201,105,0.7), transparent),
+    radial-gradient(1px 1px at 302px 52px, rgba(255,255,255,0.55), transparent),
+    radial-gradient(1.6px 1.6px at 250px 224px, rgba(196,176,255,0.7), transparent),
+    radial-gradient(1px 1px at 40px 260px, rgba(255,255,255,0.5), transparent);
+  background-repeat:
+    no-repeat, no-repeat, no-repeat, no-repeat, no-repeat,
+    repeat, repeat, repeat, repeat, repeat, repeat, repeat;
+  background-position: center;
+  background-size:
+    cover, cover, cover, cover, cover,
+    360px 300px, 360px 300px, 220px 240px, 400px 360px, 280px 200px, 340px 320px, 300px 280px;
+}
+/* faint graticule only — the ecliptic rings were distracting, so they're gone */
+#screen-stonetable .bg-runes::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.42;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(140,160,220,0.035) 0 1px, transparent 1px 92px),
+    repeating-linear-gradient(90deg, rgba(140,160,220,0.035) 0 1px, transparent 1px 92px);
+  background-repeat: repeat, repeat;
+  background-position: center;
+}
+#screen-stonetable .bg-runes::after {
+  content: ''; position: absolute; inset: -6%; pointer-events: none;
+  background-image:
+    radial-gradient(2px 2px at 160px 90px, rgba(255,255,255,0.85), transparent),
+    radial-gradient(2.4px 2.4px at 360px 200px, rgba(245,201,105,0.8), transparent),
+    radial-gradient(2px 2px at 90px 320px, rgba(196,176,255,0.8), transparent),
+    radial-gradient(2.2px 2.2px at 440px 60px, rgba(255,255,255,0.8), transparent);
+  background-repeat: repeat; background-size: 520px 420px;
+  animation: start-stars-drift 40s linear infinite, cs-twinkle 4.6s ease-in-out infinite;
+}
+/* lift the table content above the sky layers */
+#screen-stonetable .lw-screen { z-index: 2; }
 .lw-fog {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background:
@@ -5126,60 +5276,111 @@ html, body {
   animation: drift 26s ease-in-out infinite alternate;
 }
 
-/* ---- HUB clearing ---- */
-.lw-clearing {
-  position: absolute; inset: 0; z-index: 2;
-  display: flex; flex-direction: column; align-items: center;
-  padding: 56px 60px 40px;
+/* ---- HUB: a top-down dead-forest clearing dotted with POI points ---- */
+/* Ground: a sickly clearing of light ringed by black forest (top-down). */
+.lw-ground {
+  position: absolute; inset: 0; z-index: 0;
+  background:
+    radial-gradient(ellipse 58% 52% at 50% 54%, rgba(78,92,62,0.55) 0%, rgba(40,50,34,0.5) 34%, rgba(14,18,12,0.85) 66%, #060805 100%),
+    radial-gradient(circle at 50% 54%, rgba(150,180,120,0.10), transparent 40%),
+    #050604;
 }
-.lw-hub-head { text-align: center; margin-bottom: 30px; }
+/* Canopy: scattered dead-tree shadow blobs around the dark rim. */
+.lw-canopy {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: .9;
+  background:
+    radial-gradient(circle at 8% 16%, rgba(0,0,0,0.85), transparent 16%),
+    radial-gradient(circle at 22% 86%, rgba(0,0,0,0.8), transparent 15%),
+    radial-gradient(circle at 88% 12%, rgba(0,0,0,0.85), transparent 17%),
+    radial-gradient(circle at 93% 80%, rgba(0,0,0,0.82), transparent 16%),
+    radial-gradient(circle at 50% 4%, rgba(0,0,0,0.8), transparent 22%),
+    radial-gradient(circle at 4% 54%, rgba(0,0,0,0.78), transparent 13%),
+    radial-gradient(circle at 96% 50%, rgba(0,0,0,0.78), transparent 13%);
+}
+.lw-hub-head {
+  position: absolute; top: 40px; left: 0; right: 0; z-index: 3;
+  text-align: center; pointer-events: none;
+}
 .lw-hub-title {
-  font-family: 'Cinzel'; font-size: 58px; font-weight: 800; letter-spacing: .04em;
+  font-family: 'Cinzel'; font-size: 56px; font-weight: 800; letter-spacing: .05em;
   color: #d8e6d0; margin: 0;
-  text-shadow: 0 0 28px rgba(120,180,120,0.45), 0 4px 16px rgba(0,0,0,0.7);
+  text-shadow: 0 0 30px rgba(120,180,120,0.5), 0 4px 16px rgba(0,0,0,0.8);
 }
-.lw-hub-sub { font-size: 21px; color: #9fb09c; margin: 10px 0 0; opacity: .85; }
-.lw-pois {
-  flex: 1; display: flex; flex-wrap: wrap; gap: 30px;
-  align-items: center; justify-content: center; align-content: center;
-  max-width: 1500px;
-}
+.lw-hub-sub { font-size: 20px; color: #a6b8a0; margin: 8px 0 0; opacity: .82; }
+.lw-corner-back { position: absolute; top: 36px; left: 44px; z-index: 6; }
+
+/* the clickable map surface; POIs are placed by absolute % coordinates */
+.lw-map { position: absolute; inset: 0; z-index: 4; }
 .lw-poi {
-  width: 280px; min-height: 250px;
-  display: flex; flex-direction: column; align-items: center; text-align: center;
-  gap: 12px; padding: 28px 24px;
-  background: linear-gradient(180deg, rgba(28,32,26,0.92), rgba(14,18,14,0.96));
-  border: 1px solid rgba(150,190,150,0.28); border-radius: 18px;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.55), inset 0 0 30px rgba(80,120,80,0.06);
-  cursor: pointer; color: #e6efe0;
-  transition: transform .18s ease, box-shadow .2s ease, border-color .2s ease;
+  position: absolute; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  background: none; border: none; padding: 0; cursor: pointer;
+  width: 200px; color: #eaf3e3;
+  transition: transform .2s ease;
 }
-.lw-poi:hover {
-  transform: translateY(-6px) scale(1.02);
-  border-color: rgba(170,220,160,0.6);
-  box-shadow: 0 28px 64px rgba(0,0,0,0.6), 0 0 40px rgba(110,180,110,0.25);
-}
-.lw-poi-marker {
-  width: 92px; height: 92px; border-radius: 50%;
+.lw-poi:hover { transform: translate(-50%, -52%) scale(1.06); }
+/* the marker: a glowing carved stone the player taps */
+.lw-poi-pin {
+  position: relative; width: 116px; height: 116px;
   display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 50% 38%, rgba(120,170,120,0.35), rgba(20,28,20,0.9));
-  border: 2px solid rgba(160,210,160,0.4);
-  box-shadow: inset 0 0 22px rgba(0,0,0,0.6), 0 0 26px rgba(110,170,110,0.25);
+  border-radius: 50% 50% 48% 48%;
+  background: radial-gradient(circle at 50% 34%, rgba(120,160,110,0.4), rgba(22,30,20,0.96) 72%);
+  border: 2px solid rgba(150,200,140,0.45);
+  box-shadow: inset 0 -8px 22px rgba(0,0,0,0.7), inset 0 4px 14px rgba(150,200,140,0.18),
+              0 16px 32px rgba(0,0,0,0.6);
 }
-.lw-poi-icon { font-size: 46px; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.6)); }
-.lw-poi-name { font-family: 'Cinzel'; font-size: 26px; font-weight: 700; color: #eaf3e3; }
-.lw-poi-blurb { font-size: 16px; line-height: 1.4; color: #a9bba4; }
-.lw-poi-soon {
-  cursor: default; opacity: .58; filter: grayscale(.5);
-  border-style: dashed; border-color: rgba(150,160,170,0.3);
+.lw-poi-glow {
+  position: absolute; inset: -22px; border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, rgba(130,200,120,0.4), transparent 68%);
+  opacity: .6; animation: lwPulse 3.4s ease-in-out infinite;
 }
-.lw-poi-soon:hover { transform: none; box-shadow: 0 20px 50px rgba(0,0,0,0.55); border-color: rgba(150,160,170,0.3); }
+@keyframes lwPulse { 50% { opacity: 1; transform: scale(1.12); } }
+.lw-poi-icon { font-size: 56px; filter: drop-shadow(0 3px 8px rgba(0,0,0,0.7)); }
+.lw-poi-name {
+  font-family: 'Cinzel'; font-size: 25px; font-weight: 700; color: #eef7e6;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.85), 0 0 16px rgba(110,170,110,0.4);
+}
+.lw-poi-blurb {
+  max-width: 230px; font-size: 14px; line-height: 1.35; color: #b6c6ae;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.9); opacity: 0; transform: translateY(-4px);
+  transition: opacity .2s ease, transform .2s ease;
+}
+.lw-poi:hover .lw-poi-blurb { opacity: 1; transform: translateY(0); }
+.lw-poi:hover .lw-poi-glow { opacity: 1; }
+.lw-poi:hover .lw-poi-pin {
+  border-color: rgba(190,240,170,0.85);
+  box-shadow: inset 0 -8px 22px rgba(0,0,0,0.7), 0 0 38px rgba(140,210,130,0.55), 0 16px 32px rgba(0,0,0,0.6);
+}
+/* sealed POIs read as cold, broken stones */
+.lw-poi-soon { cursor: default; }
+.lw-poi-soon .lw-poi-pin {
+  filter: grayscale(.7) brightness(.7);
+  background: radial-gradient(circle at 50% 34%, rgba(110,120,130,0.3), rgba(18,20,24,0.96) 72%);
+  border-color: rgba(150,160,170,0.35);
+}
+.lw-poi-soon .lw-poi-glow { display: none; }
+.lw-poi-soon .lw-poi-name { color: #b8bcc4; }
+.lw-poi-soon:hover { transform: translate(-50%, -50%); }
+.lw-poi-soon:hover .lw-poi-pin { border-color: rgba(150,160,170,0.35); box-shadow: inset 0 -8px 22px rgba(0,0,0,0.7), 0 16px 32px rgba(0,0,0,0.6); }
 .lw-poi-seal {
-  margin-top: auto; font-family: 'Cinzel'; font-size: 13px; letter-spacing: .14em;
+  font-family: 'Cinzel'; font-size: 12px; letter-spacing: .14em;
   text-transform: uppercase; color: #c4b07a;
-  border: 1px solid rgba(196,176,122,0.4); border-radius: 999px; padding: 4px 12px;
+  border: 1px solid rgba(196,176,122,0.4); border-radius: 999px; padding: 3px 11px;
+  background: rgba(10,10,14,0.6);
 }
-.lw-leave { margin-top: 26px; }
+/* Star Chart POI — a celestial cairn glowing cold starlight blue */
+.lw-poi-stonetable .lw-poi-pin {
+  background: radial-gradient(circle at 50% 32%, rgba(150,170,255,0.5), rgba(16,18,40,0.96) 72%);
+  border-color: rgba(160,180,255,0.55);
+  box-shadow: inset 0 -8px 22px rgba(0,0,0,0.7), inset 0 4px 14px rgba(160,190,255,0.25),
+              0 16px 32px rgba(0,0,0,0.6);
+}
+.lw-poi-stonetable .lw-poi-glow { background: radial-gradient(circle, rgba(150,180,255,0.5), transparent 68%); }
+.lw-poi-stonetable .lw-poi-icon { color: #dce6ff; text-shadow: 0 0 18px rgba(170,195,255,0.9); }
+.lw-poi-stonetable:hover .lw-poi-pin {
+  border-color: rgba(200,215,255,0.9);
+  box-shadow: inset 0 -8px 22px rgba(0,0,0,0.7), 0 0 38px rgba(160,190,255,0.6), 0 16px 32px rgba(0,0,0,0.6);
+}
 
 /* ---- sub-screen frame ---- */
 .lw-screen {
@@ -5195,14 +5396,28 @@ html, body {
   font-family: 'Cinzel'; font-size: 46px; font-weight: 800; letter-spacing: .03em;
   color: #e8ddc8; text-shadow: 0 0 22px rgba(200,170,110,0.35), 0 3px 12px rgba(0,0,0,0.7);
 }
-.lw-head-spacer, .lw-sub-back { min-width: 150px; }
+.lw-head-spacer { min-width: 188px; }
 .mb-progress {
-  min-width: 150px; text-align: right;
+  min-width: 188px; text-align: right; padding-right: 58px;
   font-family: 'Cinzel'; font-size: 19px; color: #c98a5a; letter-spacing: .04em;
 }
 .lw-body {
   flex: 1; overflow-y: auto; overscroll-behavior: contain;
-  padding: 6px 14px 24px; scrollbar-width: thin;
+  padding: 6px 14px 24px;
+  scrollbar-width: thin; scrollbar-color: rgba(150,200,140,0.55) rgba(10,14,10,0.5);
+}
+/* stylized scrollbars across every Lost Woods surface */
+.lw-body::-webkit-scrollbar, .st-roster::-webkit-scrollbar { width: 12px; height: 12px; }
+.lw-body::-webkit-scrollbar-track, .st-roster::-webkit-scrollbar-track {
+  background: rgba(10,14,10,0.5); border-radius: 8px;
+}
+.lw-body::-webkit-scrollbar-thumb, .st-roster::-webkit-scrollbar-thumb {
+  border-radius: 8px; border: 2px solid transparent; background-clip: padding-box;
+  background-color: rgba(120,170,110,0.55);
+  box-shadow: inset 0 0 6px rgba(150,210,140,0.4);
+}
+.lw-body::-webkit-scrollbar-thumb:hover, .st-roster::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(160,220,150,0.85);
 }
 .lw-empty {
   text-align: center; color: #9aa0ad; font-size: 21px; font-style: italic;
@@ -5276,50 +5491,102 @@ html, body {
 .gm-empty { color: #6a7080; font-style: italic; font-size: 13px; }
 
 /* ---- STONE TABLE ---- */
+/* Beast picker as a sleek tab bar that lights up in the beast's own color. */
 .st-roster {
-  display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
-  margin-bottom: 24px;
+  display: flex; gap: 8px; justify-content: center; align-items: flex-end;
+  margin: 0 auto 26px; padding: 0 12px;
+  border-bottom: 1px solid rgba(245,201,105,0.16);
 }
 .st-beast {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  width: 120px; padding: 12px 8px; cursor: pointer; color: #d8d2e6;
-  background: rgba(20,16,32,0.7); border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 14px; transition: transform .15s, border-color .2s, box-shadow .2s;
+  position: relative; display: flex; align-items: center; gap: 11px;
+  padding: 11px 24px 13px; cursor: pointer; color: #b3abc6;
+  background: linear-gradient(180deg, rgba(30,24,46,0.55), rgba(14,11,22,0.15));
+  border: 1px solid rgba(255,255,255,0.08); border-bottom: none;
+  border-radius: 15px 15px 0 0;
+  transition: transform .18s ease, color .18s ease, background .2s ease, border-color .2s ease;
 }
-.st-beast:hover { transform: translateY(-3px); border-color: rgba(245,201,105,0.5); }
+.st-beast::after {
+  content: ''; position: absolute; left: 16px; right: 16px; bottom: -1px; height: 3px;
+  border-radius: 3px; background: var(--acc, var(--gold));
+  box-shadow: 0 0 14px var(--acc, var(--gold)); opacity: 0; transition: opacity .2s;
+}
+.st-beast:hover {
+  color: #f1ecfb; transform: translateY(-2px);
+  background: linear-gradient(180deg, rgba(44,34,62,0.7), rgba(18,14,28,0.25));
+}
 .st-beast.active {
-  border-color: var(--gold); box-shadow: 0 0 24px rgba(245,201,105,0.3);
-  background: rgba(40,32,18,0.7);
+  color: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc, var(--gold)) 24%, rgba(30,22,44,0.9)), rgba(20,15,30,0.4));
+  border-color: color-mix(in srgb, var(--acc, var(--gold)) 55%, transparent);
 }
-.st-beast-img { width: 64px; height: 64px; object-fit: contain; }
-.st-beast-emoji { font-size: 50px; }
-.st-beast-name { font-family: 'Cinzel'; font-size: 16px; font-weight: 600; }
-.st-tree {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  flex-wrap: wrap; padding: 10px;
+.st-beast.active::after { opacity: 1; }
+.st-beast-img { width: 42px; height: 42px; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.6)); }
+.st-beast-emoji { font-size: 34px; }
+.st-beast-name { font-family: 'Cinzel'; font-size: 19px; font-weight: 700; letter-spacing: .02em; }
+/* Wide evolution tree: a glowing branching limb spanning ~80% of the stage,
+   with bare portrait nodes (no card containers) hung along it. */
+.st-tree { display: flex; justify-content: center; padding: 10px 0 20px; }
+.st-stage { position: relative; width: 1700px; height: 820px; max-width: 100%; }
+.st-branches-svg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  overflow: visible; pointer-events: none;
 }
-.st-base-col { display: flex; align-items: center; }
-.st-branches { display: flex; flex-direction: column; gap: 36px; }
-.st-branch { display: flex; align-items: center; gap: 8px; }
-.st-col-t2 { display: flex; flex-direction: column; gap: 14px; }
-.st-connector {
-  width: 46px; height: 3px;
-  background: linear-gradient(90deg, rgba(245,201,105,0.1), rgba(245,201,105,0.55));
-  border-radius: 2px;
+.st-branch-line {
+  fill: none; stroke-linecap: round;
+  stroke-dasharray: 2400; stroke-dashoffset: 2400;
+  animation: stBranchDraw 1s ease forwards;
 }
-.st-connector-main { width: 56px; }
+@keyframes stBranchDraw { to { stroke-dashoffset: 0; } }
 .st-node {
-  width: 150px; display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 12px 10px; cursor: pointer; color: #e6e0f2;
-  background: linear-gradient(180deg, rgba(28,22,40,0.94), rgba(14,11,22,0.97));
-  border: 1px solid color-mix(in srgb, var(--acc) 45%, transparent);
-  border-radius: 14px; transition: transform .15s, box-shadow .2s;
+  position: absolute; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: 210px; background: none; border: none; padding: 0; cursor: pointer;
+  color: #e6e0f2; transition: transform .18s ease;
 }
-.st-node:hover { transform: scale(1.05); box-shadow: 0 0 26px color-mix(in srgb, var(--acc) 40%, transparent); }
-.st-node-base { box-shadow: 0 0 22px color-mix(in srgb, var(--acc) 30%, transparent); }
-.st-node-img { width: 88px; height: 88px; object-fit: contain; }
-.st-node-name { font-family: 'Cinzel'; font-size: 17px; font-weight: 700; color: #f2ead4; text-align: center; }
-.st-node-tag { font-size: 12px; color: var(--acc); text-align: center; opacity: .9; }
+.st-node:hover { transform: translate(-50%, -53%) scale(1.07); }
+/* Both states carry the SAME two-shadow structure (a tight dark grounding +
+   an accent halo), so the hover transition grows the colour in smoothly and
+   never flashes a big black glow. */
+/* The glow is a SECOND copy of the portrait sitting behind the real one, wearing
+   a static accent drop-shadow — so the halo hugs the monster's silhouette, not a
+   circle. We animate only opacity + scale (GPU-composited), which keeps it smooth
+   and stops it from popping in after the resize the way a live filter did. */
+.st-node-port {
+  display: block; position: relative;
+  filter: drop-shadow(0 5px 7px rgba(0,0,0,0.5));   /* static grounding shadow only */
+}
+.st-node-glow {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  z-index: 0; pointer-events: none;
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--acc) 92%, transparent))
+          drop-shadow(0 0 26px color-mix(in srgb, var(--acc) 66%, transparent));
+  opacity: 0; transform: scale(0.8); transform-origin: center 58%;
+  transition: opacity .3s ease, transform .3s cubic-bezier(.2,.8,.3,1);
+}
+.st-node:hover .st-node-glow { opacity: 1; transform: scale(1); }
+.st-node-img { position: relative; z-index: 1; width: 134px; height: 134px; object-fit: contain; display: block; }
+.st-node-base .st-node-img { width: 162px; height: 162px; }
+.st-node-name {
+  font-family: 'Cinzel'; font-size: 22px; font-weight: 700; color: #f4ecd6; text-align: center;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.9), 0 0 18px color-mix(in srgb, var(--acc) 50%, transparent);
+}
+.st-node-tag {
+  font-family: 'Cinzel', serif; font-size: 14.5px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; text-align: center;
+  color: color-mix(in srgb, var(--acc) 82%, #fff); opacity: .96;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.9), 0 0 12px color-mix(in srgb, var(--acc) 45%, transparent);
+}
+/* undiscovered forms: a black silhouette with a faint accent halo + ? watermark */
+.st-node-locked .st-node-img { filter: brightness(0) saturate(0); opacity: .9; }
+.st-node-locked .st-node-glow {
+  filter: brightness(0)
+          drop-shadow(0 0 12px color-mix(in srgb, var(--acc) 80%, transparent))
+          drop-shadow(0 0 22px color-mix(in srgb, var(--acc) 52%, transparent));
+  opacity: .5; transform: scale(0.9);
+}
+.st-node-locked:hover .st-node-glow { opacity: .85; transform: scale(1); }
+.st-node-locked .st-node-name { color: #b6aed0; letter-spacing: .18em; }
+.st-node-locked .st-node-tag { color: color-mix(in srgb, var(--acc) 55%, #b6aed0); opacity: .8; }
 
 /* ---- MONSTER BOOK ---- */
 .mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; }
@@ -5356,63 +5623,216 @@ html, body {
 .mb-locked .mb-name, .mb-seen .mb-name { color: #8a90a0; }
 .mb-sub { font-size: 13px; color: #9aa0ad; }
 
-/* ---- shared detail modal ---- */
+/* ============================================================
+   LOST WOODS DETAIL MODALS — two bespoke, dramatic reveals.
+   ============================================================ */
 .lw-modal-panel {
-  position: relative; width: 620px; max-width: 88%;
+  position: relative; width: 620px; max-width: 90%;
   background: linear-gradient(180deg, rgba(30,24,44,0.99), rgba(15,11,24,0.99));
   border: 1px solid color-mix(in srgb, var(--lw-acc, var(--gold)) 50%, rgba(200,170,255,0.28));
-  border-radius: 20px; padding: 32px 36px;
+  border-radius: 22px; padding: 32px 36px;
   box-shadow: 0 30px 80px rgba(0,0,0,0.75), 0 0 50px color-mix(in srgb, var(--lw-acc, var(--gold)) 22%, transparent);
-  animation: screen-in .25s ease both;
 }
+.lw-modal-panel.lwm-pop { animation: lwmPop .44s cubic-bezier(.2,1.3,.4,1) both; }
+@keyframes lwmPop { 0% { transform: scale(.84); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 .lw-modal-x {
-  position: absolute; top: 12px; right: 14px; width: 38px; height: 38px;
+  position: absolute; top: 14px; right: 16px; width: 38px; height: 38px; z-index: 5;
   border-radius: 50%; border: 1px solid rgba(255,255,255,0.18);
-  background: rgba(0,0,0,0.35); color: #e6e0f2; font-size: 18px; cursor: pointer;
+  background: rgba(0,0,0,0.4); color: #e6e0f2; font-size: 18px; cursor: pointer;
   transition: background .15s, transform .15s;
 }
-.lw-modal-x:hover { background: rgba(220,80,80,0.4); transform: scale(1.08); }
-.lwm-detail { display: flex; gap: 24px; align-items: flex-start; }
-.lwm-port {
-  width: 200px; height: 200px; flex-shrink: 0; border-radius: 16px; overflow: hidden;
-  display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--acc, var(--gold)) 32%, transparent), rgba(8,6,16,0.92));
-  border: 1px solid color-mix(in srgb, var(--acc, var(--gold)) 50%, transparent);
+.lw-modal-x:hover { background: rgba(220,80,80,0.45); transform: scale(1.1) rotate(90deg); }
+
+/* ---- DETAIL MODALS: the panel is now just a transparent stage; the big
+   evolution-style card (.lw-card) is the whole visual. The close button rides
+   the card's top-right corner. ---- */
+.lw-modal-panel.kind-stone,
+.lw-modal-panel.kind-book {
+  width: auto; max-width: none; padding: 0; overflow: visible;
+  background: none; border: none; box-shadow: none;
 }
-.lwm-img { width: 100%; height: 100%; object-fit: contain; }
-.lwm-emoji { font-size: 110px; }
-.lwm-info { flex: 1; min-width: 0; }
-.lwm-name { font-family: 'Cinzel'; font-size: 30px; font-weight: 800; color: #f2ead4; }
-.lwm-tag { font-size: 16px; color: var(--acc, var(--gold)); margin: 2px 0 14px; }
-.lwm-passive-name { font-family: 'Cinzel'; font-size: 20px; font-weight: 700; color: #ffd36b; margin-bottom: 4px; }
-.lwm-passive-text { font-size: 17px; line-height: 1.5; color: #d6d0e2; }
+.lw-modal-panel.kind-stone .lw-modal-x,
+.lw-modal-panel.kind-book .lw-modal-x { top: 18px; right: 18px; }
+
+/* The overlay itself scrolls (and centres via margin:auto) so the card can grow
+   to its natural height. That keeps the corner brackets glued to the TRUE bottom
+   of the content instead of a clipped, mid-content scroll edge. */
+#lw-modal { align-items: flex-start; justify-content: center; overflow-y: auto; padding: 40px 0; }
+#lw-modal .lw-modal-panel { margin: auto; }
+
+/* the detail card: a static twin of the evolution-selection card, scaled up
+   to fill the empty screen real-estate the old square modal wasted. */
+.lw-card.evo-card {
+  flex: none; width: 600px; max-width: 94vw; overflow: hidden;
+  cursor: default; text-align: left;
+  padding: 32px 30px 40px;   /* clearance so the corner brackets sit BELOW all content */
+  animation: lwmPop .44s cubic-bezier(.2,1.3,.4,1) both;
+}
+.lw-card.evo-card:hover { transform: none; }                 /* static — don't lift in a centered modal */
+.lw-card .evo-card-port { width: 372px; height: 372px; }     /* bigger monster than the in-run card */
+.lw-card .evo-card-name { font-size: 42px; }
+/* everything that isn't the big name was too small — bump the supporting text */
+.lw-card .evo-card-tag { font-size: 18px; letter-spacing: 3px; padding: 9px 24px; }
+.lw-card .ecp-name { font-size: 25px; }
+.lw-card .ecp-text { font-size: 22px; line-height: 1.6; }
+.lw-card .ecs-hp, .lw-card .evo-card-socket { font-size: 19px; padding: 9px 18px; }
+.lw-card .lwc-quote { font-size: 21px; line-height: 1.6; padding: 6px 8px 4px; }
+.lw-card .lwc-chip { font-size: 19px; padding: 10px 18px; }
+.lw-card [data-tip] { cursor: help; }
+.lw-card [data-tip]:hover { border-color: color-mix(in srgb, var(--acc) 70%, transparent); filter: brightness(1.12); }
+.lw-card .lwc-redact { font-size: 26px; letter-spacing: .3em; color: rgba(180,160,200,0.5); }
+.lw-card .gm-empty { font-size: 18px; }
+
+/* ---- STONE TABLE modal (legacy shrine markup, no longer emitted) ---- */
+.lw-modal-panel.kind-stone-legacy {
+  width: 600px; padding: 0 0 36px; overflow: hidden; text-align: center;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% 0%, color-mix(in srgb, var(--lw-acc) 26%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(26,20,40,0.99), rgba(11,8,18,0.99));
+  border-color: color-mix(in srgb, var(--lw-acc) 60%, transparent);
+  box-shadow: 0 30px 90px rgba(0,0,0,0.8), 0 0 70px color-mix(in srgb, var(--lw-acc) 32%, transparent);
+}
+.lwm-stone { position: relative; padding: 44px 36px 0; }
+.lwm-aura {
+  position: absolute; top: -130px; left: 50%; transform: translateX(-50%);
+  width: 470px; height: 470px; border-radius: 50%; z-index: 0; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--acc) 55%, transparent), transparent 62%);
+  filter: blur(10px); opacity: .8; animation: lwmAura 5s ease-in-out infinite;
+}
+@keyframes lwmAura { 50% { opacity: 1; transform: translateX(-50%) scale(1.1); } }
+.lwm-portal {
+  position: relative; z-index: 1; width: 230px; height: 230px; margin: 0 auto 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+.lwm-ring { position: absolute; border-radius: 50%; pointer-events: none; }
+.lwm-ring-a {
+  inset: 0; border: 2px dashed color-mix(in srgb, var(--acc) 60%, transparent);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--acc) 50%, transparent), inset 0 0 30px color-mix(in srgb, var(--acc) 28%, transparent);
+  animation: lwmSpin 20s linear infinite;
+}
+.lwm-ring-b { inset: 24px; border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: lwmSpin 30s linear infinite reverse; }
+@keyframes lwmSpin { to { transform: rotate(360deg); } }
+.lwm-portrait { position: relative; z-index: 2; width: 176px; height: 176px; display: flex; align-items: center; justify-content: center; }
+.lwm-stone .lwm-img {
+  width: 100%; height: 100%; object-fit: contain;
+  filter: drop-shadow(0 0 26px color-mix(in srgb, var(--acc) 60%, transparent)) drop-shadow(0 8px 16px rgba(0,0,0,0.6));
+}
+.lwm-stone .evo-card-emoji { font-size: 120px; }
+.lwm-name {
+  font-family: 'Cinzel'; font-size: 36px; font-weight: 800; color: #f6eed8;
+  text-shadow: 0 0 26px color-mix(in srgb, var(--acc) 60%, transparent), 0 3px 12px rgba(0,0,0,0.7);
+}
+.lwm-tag {
+  font-family: 'Cinzel'; font-size: 15px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--acc); margin: 6px 0 20px;
+}
+.lwm-passive-card {
+  text-align: left; margin: 0 32px; padding: 20px 24px; border-radius: 16px;
+  background: rgba(8,6,16,0.62); border: 1px solid color-mix(in srgb, var(--acc) 32%, rgba(255,255,255,0.08));
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.45);
+}
+.lwm-passive-name { font-family: 'Cinzel'; font-size: 22px; font-weight: 700; color: #ffd36b; margin-bottom: 7px; }
+.lwm-passive-text { font-size: 17px; line-height: 1.55; color: #ded7ea; }
 .lwm-passive-text b { color: #ffe39a; font-weight: 700; }
 .lwm-socket {
-  margin-top: 12px; font-size: 15px; color: #9fe0c0;
-  border: 1px dashed rgba(120,220,170,0.4); border-radius: 10px; padding: 8px 12px;
+  margin-top: 16px; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #aef0d0;
+  border: 1px dashed rgba(120,220,170,0.5); border-radius: 999px; padding: 7px 15px;
+  background: rgba(40,90,70,0.18);
 }
-.mb-desc { font-size: 16px; line-height: 1.5; color: #c3bdd0; margin-bottom: 12px; }
-.mb-unknown { font-size: 16px; font-style: italic; color: #9aa0ad; margin-bottom: 12px; }
-.mb-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.mb-badge {
-  font-size: 13px; letter-spacing: .04em; color: #ffce5e; padding: 3px 10px;
-  border: 1px solid rgba(255,206,94,0.45); border-radius: 999px;
+.lwm-socket b { color: #d6ffe9; }
+.lwm-socket-ico { color: var(--acc); font-size: 16px; }
+
+/* ---- bestiary card extras (lore line, intel chips, redaction) ---- */
+.lwc-quote {
+  font-family: 'Spectral', serif; font-size: 16px; line-height: 1.55;
+  color: #d6cbe0; font-style: italic; text-align: center;
+  padding: 4px 6px 2px; opacity: .92;
 }
-.mb-block { margin-top: 12px; }
-.mb-block-label {
-  font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
-  color: #8a90a0; margin-bottom: 6px;
+.lw-card-book .evo-card-port.lwc-port-seen .evo-card-img {
+  filter: brightness(.34) contrast(1.05) saturate(.6);
 }
-.mb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.mb-chip {
-  font-size: 13px; color: #e0dcec; padding: 4px 10px; border-radius: 8px;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+.lwc-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.lwc-chip {
+  font-size: 14px; color: #efe6d8; padding: 6px 13px; border-radius: 9px;
+  background: color-mix(in srgb, var(--acc) 10%, rgba(0,0,0,0.32));
+  border: 1px solid color-mix(in srgb, var(--acc) 34%, rgba(255,255,255,0.08));
 }
-.mb-chip-boon { color: #c98aff; border-color: rgba(201,138,255,0.4); background: rgba(120,70,180,0.12); }
-.mb-rows { display: flex; flex-direction: column; gap: 6px; }
-.mb-row { display: flex; justify-content: space-between; gap: 14px; font-size: 15px; }
-.mb-row-k { color: #9aa0ad; }
-.mb-row-v { color: #d6d0e2; }
+.lwc-chip-boon { color: #e7d0ff; border-color: rgba(201,138,255,0.42); background: rgba(90,50,130,0.22); }
+.lwc-redact { font-size: 19px; letter-spacing: .16em; color: rgba(170,150,180,0.4); }
+
+/* ---- undiscovered-form (locked) detail card ---- */
+.lw-card-locked .evo-card-port.lwc-port-silhouette .evo-card-img {
+  filter: brightness(0) saturate(0)
+          drop-shadow(0 0 26px color-mix(in srgb, var(--acc) 42%, transparent));
+  opacity: .92;
+}
+.lwc-port-silhouette .lwc-rune {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -54%);
+  font-family: 'Cinzel', serif; font-size: 150px; font-weight: 900; line-height: 1;
+  color: color-mix(in srgb, var(--acc) 60%, #fff); opacity: .26;
+  text-shadow: 0 0 26px color-mix(in srgb, var(--acc) 55%, transparent);
+  pointer-events: none;
+}
+.lw-card-locked .evo-card-name { letter-spacing: .3em; color: #cfc6e6; }
+.lwc-mystery { font-style: italic; text-align: center; }
+.lwc-mystery b { font-weight: 800; color: color-mix(in srgb, var(--acc) 60%, #fff); }
+
+/* ---- MONSTER BOOK modal (legacy journal markup, no longer emitted) ---- */
+.lw-modal-panel.kind-book-legacy {
+  width: 650px; padding: 30px 36px 34px;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(150,40,30,0.16), transparent 70%),
+    linear-gradient(180deg, rgba(26,16,16,0.99), rgba(13,9,10,0.99));
+  border-color: rgba(201,138,90,0.5);
+  box-shadow: 0 30px 84px rgba(0,0,0,0.82), 0 0 56px rgba(180,60,40,0.2);
+}
+.mbm-head {
+  display: flex; gap: 22px; align-items: center;
+  padding-bottom: 18px; margin-bottom: 18px;
+  border-bottom: 1px solid rgba(201,138,90,0.25);
+}
+.mbm-portrait {
+  position: relative; width: 132px; height: 132px; flex-shrink: 0; border-radius: 14px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 28%, rgba(130,44,40,0.42), rgba(8,5,8,0.96));
+  border: 1px solid rgba(201,138,90,0.42);
+  box-shadow: inset 0 0 26px rgba(0,0,0,0.6);
+}
+.mbm-img { width: 100%; height: 100%; object-fit: contain; }
+.mbm-emoji { font-size: 82px; }
+.mbm-portrait-fog { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 130%, rgba(0,0,0,0.65), transparent 58%); }
+.mbm-seen .mbm-img { filter: brightness(.42) contrast(1.1); }
+.mbm-id { flex: 1; min-width: 0; }
+.mbm-tier {
+  display: inline-block; font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 3px 12px; border-radius: 999px; background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.16); margin-bottom: 9px;
+}
+.mbm-tier.mb-tier-common { color: #c9b8a8; border-color: rgba(255,255,255,0.18); }
+.mbm-tier.mb-tier-elite  { color: #ffce5e; border-color: rgba(255,206,94,0.5); }
+.mbm-tier.mb-tier-boss   { color: #ff7a6a; border-color: rgba(255,90,60,0.55); }
+.mbm-tier.mb-tier-shadow { color: #b98cff; border-color: rgba(185,140,255,0.5); }
+.mbm-name { font-family: 'Cinzel'; font-size: 34px; font-weight: 800; color: #f3e3d0; text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
+.mbm-unseen .mbm-name { color: #b0a4c0; }
+.mbm-hp { font-family: 'Cinzel'; font-size: 17px; color: #e0857a; margin-top: 3px; }
+.mbm-quote {
+  font-size: 16px; line-height: 1.55; color: #cdbcae; font-style: italic;
+  margin-bottom: 14px; padding-left: 14px; border-left: 3px solid rgba(201,138,90,0.5);
+}
+.mbm-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.mbm-badge {
+  font-size: 13px; letter-spacing: .04em; color: #ffce5e; padding: 4px 12px;
+  border: 1px solid rgba(255,206,94,0.45); border-radius: 999px; background: rgba(255,206,94,0.06);
+}
+.mbm-block { margin-top: 14px; }
+.mbm-block-label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #a98a72; margin-bottom: 8px; }
+.mbm-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.mbm-chip {
+  font-size: 13px; color: #ecdfd2; padding: 5px 12px; border-radius: 8px;
+  background: rgba(60,30,24,0.5); border: 1px solid rgba(201,138,90,0.32);
+}
+.mbm-chip-boon { color: #d8a6ff; border-color: rgba(201,138,255,0.42); background: rgba(90,50,130,0.2); }
+.mbm-redact { font-size: 18px; letter-spacing: .14em; color: rgba(150,120,140,0.45); }
 
 /* ============================================================
    ART BUTTONS — bespoke button images replace the CSS-drawn faces.
@@ -5437,22 +5857,32 @@ html, body {
 .btn-begin.btn-art:disabled { filter: grayscale(0.65) brightness(0.62); opacity: 0.75; cursor: default; transform: none; }
 .btn-begin.btn-art.armed { filter: drop-shadow(0 0 30px rgba(245,201,105,0.6)); transform: translateY(-2px); }
 
-/* Back (beast-select) */
-#btn-start-back.btn-art { height: 58px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5)); }
-#btn-start-back .btn-back-img { height: 100%; }
-#btn-start-back.btn-art:hover {
-  filter: brightness(1.12) drop-shadow(0 6px 18px rgba(150,110,230,0.45));
-  transform: translateY(-2px); letter-spacing: normal;
+/* Universal BACK button — one image art for every "go back" control app-wide.
+   Background-image so any button just needs the .btn-back class (text hidden). */
+.btn-back {
+  background: url("../assets/Back Button.png") center / contain no-repeat !important;
+  border: none !important; box-shadow: none !important;
+  width: 188px; height: 52px; min-width: 0 !important; padding: 0 !important;
+  font-size: 0 !important; color: transparent !important; line-height: 0;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
+  transition: transform .16s ease, filter .25s ease;
 }
-#btn-start-back.btn-art:active { transform: translateY(1px); }
+.btn-back:hover {
+  filter: brightness(1.12) drop-shadow(0 6px 18px rgba(150,110,230,0.5));
+  transform: translateY(-2px);
+}
+.btn-back:active { transform: translateY(1px); }
 
 /* Character (map header → Collection) */
 #btn-collection.btn-art { height: 54px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5)); }
 #btn-collection .btn-char-img { height: 100%; }
 #btn-collection.btn-art:hover { filter: brightness(1.12) drop-shadow(0 0 16px rgba(245,201,105,0.4)); }
 
-/* Options gear (floating, all screens but Home) */
+/* Options gear — bare image, sat in line just LEFT of the Character button.
+   The stage is a fixed 1920×1080 canvas, so these offsets track the header. */
 .btn-options-gear {
+  left: auto; right: 266px; top: 89px;
   background: none; border: none; box-shadow: none; padding: 0;
   width: 50px; height: 50px;
 }
@@ -5461,3 +5891,8 @@ html, body {
   transform: rotate(90deg); box-shadow: none;
   filter: drop-shadow(0 0 12px rgba(245,201,105,0.55));
 }
+/* off the map (and beast/mode select), the gear leaps to the top-right corner,
+   the mirror of the usual top-left back button's height */
+.btn-options-gear.gear-corner { right: 44px; top: 36px; left: auto; }
+/* combat: same horizontal spot as the corner, but lowered to the map's height */
+.btn-options-gear.gear-combat { right: 44px; top: 89px; left: auto; }
