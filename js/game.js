@@ -601,7 +601,9 @@
 
     // --- fixed rows ---
     floors[LAST][0].type = 'boss';
-    placeOn(PREBOSS, 'rest');           // breather right before the boss
+    // the entire last traversable row is a wall of rests — a guaranteed full
+    // breather to mend and prepare before every floor boss
+    floors[PREBOSS].forEach(n => { n.type = 'rest'; });
 
     // --- Soulhunter: the shadow elite, exactly one per floor (act) ---
     placeInRange(2, LAST - 2, 'shadow', { freshFloor: true });
@@ -790,7 +792,11 @@
       const icon = art
         ? `<img class="node-art-img" src="${art}" width="${artW}" alt="" draggable="false">`
         : `<span>${NODE_ICON[node.type]}</span>`;
-      n.innerHTML = flames + icon + `<span class="node-label">${nodeLabel(node)}</span>`;
+      // the idle "bob" lives on an inner wrapper so it never fights the hover
+      // scale (which sits on the outer node); a per-node seed desyncs the float
+      n.style.setProperty('--seed', (node.floor * 7 + node.idx * 3) % 19);
+      n.innerHTML = '<span class="mapnode-inner">' + flames + icon + '</span>' +
+        `<span class="node-label">${nodeLabel(node)}</span>`;
       if (node.id === curId) n.classList.add('current');
       else if (node.visited) n.classList.add('visited');
       // debug "any node" lets every node (except the one we're standing on) be entered
@@ -3969,28 +3975,39 @@
     const host = $('well-cats');
     if (!host) return;
     const cats = wellCatalog();
+    const C = 2 * Math.PI * 66;   // circumference of the radial meter ring
     host.innerHTML = cats.map(cat => {
       const p = wellCatPending(cat);
       const done = p.st.lockedRemaining === 0;
-      const pips = Array.from({ length: WELL_PER_UNLOCK }, (_, i) =>
-        '<span class="well-pip' + (i < p.within ? ' lit' : '') + '"></span>').join('');
-      // always present so toggling it never reflows the card (reserves its slot)
-      const xbadge = '<span class="well-meter-x' + (p.cycles > 0 ? ' on' : '') + '">+' + (p.cycles > 0 ? p.cycles : '') + '</span>';
-      return '<div class="well-cat' + (done ? ' done' : '') + (p.cycles > 0 ? ' charged' : '') + '" data-cat="' + cat.id + '" style="--acc:' + cat.accent + '">' +
-        '<div class="well-cat-top">' +
-          '<span class="well-cat-icon">' + wellCatIcon(cat) + '</span>' +
-          '<div class="well-cat-titles"><div class="well-cat-name">' + cat.label + '</div>' +
-            '<div class="well-cat-prog">' + (done ? '<b>Complete</b>' : (p.st.unlocked + ' / ' + p.st.total + ' unlocked')) + '</div></div>' +
-          '<button class="well-cat-browse" data-act="browse" aria-label="Browse">⊙</button>' +
+      // the ring fills toward the next unlock; a completed cycle reads as a full ring
+      const frac = done ? 1 : (p.cycles > 0 && p.within === 0 ? 1 : p.within / WELL_PER_UNLOCK);
+      const offset = (1 - frac) * C;
+      const xbadge = '<span class="wd-x' + (p.cycles > 0 ? ' on' : '') + '">+' + (p.cycles > 0 ? p.cycles : '') + '</span>';
+      return '<div class="well-meter-cell' + (done ? ' done' : '') + (p.cycles > 0 ? ' charged' : '') +
+            (p.staged > 0 ? ' staged' : '') + '" data-cat="' + cat.id + '" style="--acc:' + cat.accent + '">' +
+        '<button class="wd-browse" data-act="browse" aria-label="Browse collection">⊙</button>' +
+        '<div class="wd-disc-wrap">' +
+          '<div class="wd-disc">' +
+            '<svg class="wd-ring" viewBox="0 0 160 160" aria-hidden="true">' +
+              '<circle class="wd-track" cx="80" cy="80" r="66"></circle>' +
+              '<circle class="wd-arc' + (frac >= 1 ? ' full' : '') + '" cx="80" cy="80" r="66" ' +
+                'style="stroke-dasharray:' + C + ';stroke-dashoffset:' + offset + '"></circle>' +
+            '</svg>' +
+            '<div class="wd-gear"></div>' +
+            '<div class="wd-rune"></div>' +
+            '<div class="wd-portrait">' + wellCatIcon(cat) + '</div>' +
+            xbadge +
+            (done ? '' : '<span class="wd-staged-bubble' + (p.staged > 0 ? ' on' : '') + '">+' + p.staged + '</span>') +
+          '</div>' +
         '</div>' +
-        '<div class="well-meter">' + pips + xbadge + '</div>' +
-        (done ? '<div class="well-cat-done">Fully discovered</div>' :
-          '<div class="well-cat-ctrls">' +
-            '<button class="well-step" data-act="add" data-d="-1">−</button>' +
-            '<span class="well-cat-staged">' + (p.staged > 0 ? '+' + p.staged : '0') + '</span>' +
-            '<button class="well-step" data-act="add" data-d="1">+</button>' +
-            '<button class="well-step well-step-5" data-act="add" data-d="5">+5</button>' +
-            '<button class="well-max" data-act="max">Max</button>' +
+        '<div class="wd-name">' + cat.label + '</div>' +
+        '<div class="wd-prog">' + (done ? '<b>Complete</b>' : (p.st.unlocked + ' / ' + p.st.total)) + '</div>' +
+        (done ? '<div class="wd-done">Fully discovered</div>' :
+          '<div class="wd-ctrls">' +
+            '<button class="wd-step" data-act="add" data-d="-1" aria-label="Remove a stone">−</button>' +
+            '<button class="wd-step" data-act="add" data-d="1" aria-label="Add a stone">+</button>' +
+            '<button class="wd-mini" data-act="max">Max</button>' +
+            '<button class="wd-mini" data-act="clear">Clear</button>' +
           '</div>') +
       '</div>';
     }).join('');
@@ -4010,18 +4027,22 @@
     if (castBtn) { castBtn.disabled = staged <= 0; castBtn.classList.toggle('ready', staged > 0); }
   }
   function onWellCatClick(e) {
-    const card = e.target.closest('.well-cat');
+    const card = e.target.closest('.well-meter-cell');
     if (!card) return;
     const catId = card.dataset.cat;
     const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
     if (act === 'browse') { SFX.click(); openWellBrowse(catId); return; }
+    const cur = wellStage[catId] || 0;
+    if (act === 'clear') {
+      if (cur === 0) return;
+      wellStage[catId] = 0; SFX.hover(); renderWell(); return;
+    }
     const cats = wellCatalog();
     const cat = cats.find(c => c.id === catId);
     if (!cat) return;
     const st = wellCatState(cat);
     const maxUseful = st.lockedRemaining * WELL_PER_UNLOCK - st.meter;
     if (maxUseful <= 0) return;
-    const cur = wellStage[catId] || 0;
     const avail = wellAvailable();
     let next = cur;
     if (act === 'max') next = Math.min(maxUseful, cur + avail);
@@ -4042,8 +4063,8 @@
     if (castBtn) castBtn.disabled = true;
     if (clearBtn) clearBtn.disabled = true;
     SFX.act();
-    // stones pour from the bank into the well, then it surges and surfaces the prize
-    flyStonesToWell(staged, () => {
+    // stones pour from each meter into the well, then it surges and surfaces the prize
+    flyStonesToWell(snapshot, () => {
       const revealed = wellCast(snapshot);
       wellStage = {};
       const stage = $('well-stage');
@@ -4053,55 +4074,100 @@
       showWellReveal(revealed, staged);
     });
   }
-  // arc the cast stones from the bottom counter into the well's pool
-  function flyStonesToWell(count, done) {
+  // arc the cast stones out of each meter's disc and into the well's pool. Each
+  // stone is tinted to the color of the meter it came from and lands with a plip.
+  function flyStonesToWell(staged, done) {
     const screen = $('screen-well');
-    const bank = $('well-bank');
     const pool = screen && screen.querySelector('.well-pool');
-    if (!screen || !bank || !pool) { if (done) done(); return; }
+    if (!screen || !pool) { if (done) done(); return; }
     const sr = screen.getBoundingClientRect();
-    const br = bank.getBoundingClientRect();
     const pr = pool.getBoundingClientRect();
-    const sx = br.left + br.width / 2 - sr.left;
-    const sy = br.top + br.height / 2 - sr.top;
     const tx = pr.left + pr.width / 2 - sr.left;
     const ty = pr.top + pr.height / 2 - sr.top;
-    const dx = tx - sx, dy = ty - sy;
-    const n = Math.max(1, Math.min(count, 16));
+    // gather a flight plan: one source disc per staged category (capped for perf)
+    const flights = [];
+    Object.keys(staged || {}).forEach(catId => {
+      const want = staged[catId] || 0;
+      if (want <= 0) return;
+      const cell = screen.querySelector('.well-meter-cell[data-cat="' + catId + '"]');
+      const disc = cell && (cell.querySelector('.wd-portrait') || cell.querySelector('.wd-disc'));
+      if (!disc) return;
+      const dr = disc.getBoundingClientRect();
+      const cat = WELL_CATS.find(c => c.id === catId);
+      const color = resolveColor(cat ? cat.accent : '#c9a6ff');
+      const per = Math.max(1, Math.min(want, 8));
+      cell.classList.add('pouring');
+      for (let i = 0; i < per; i++) {
+        flights.push({
+          sx: dr.left + dr.width / 2 - sr.left,
+          sy: dr.top + dr.height / 2 - sr.top,
+          color, cell
+        });
+      }
+    });
+    if (!flights.length) { if (done) done(); return; }
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) { setTimeout(done, 120); return; }
-    bank.classList.add('pouring');
+    const clearPouring = () => screen.querySelectorAll('.well-meter-cell.pouring').forEach(c => c.classList.remove('pouring'));
+    if (reduce) { setTimeout(() => { clearPouring(); if (done) done(); }, 160); return; }
+    // interleave stones from different meters so they cascade together
+    flights.sort(() => Math.random() - 0.5);
+    const n = flights.length;
     let landed = 0;
     const finish = () => {
       if (++landed >= n) {
-        bank.classList.remove('pouring');
+        clearPouring();
         setTimeout(() => { if (pool) pool.classList.remove('splash'); }, 460);
         if (done) done();
       }
     };
-    for (let i = 0; i < n; i++) {
+    flights.forEach((f, i) => {
+      const dx = tx - f.sx, dy = ty - f.sy;
       const s = document.createElement('div');
       s.className = 'well-fly-stone';
       s.textContent = '✦';
-      s.style.left = sx + 'px';
-      s.style.top = sy + 'px';
+      s.style.left = f.sx + 'px';
+      s.style.top = f.sy + 'px';
+      s.style.color = f.color;
+      s.style.textShadow = '0 0 12px ' + f.color + ', 0 0 26px ' + f.color;
       screen.appendChild(s);
-      const arcX = dx * 0.5 + (Math.random() * 90 - 45);
-      const arcY = dy * 0.5 - (110 + Math.random() * 80);   // lob upward first
-      const dur = 540 + Math.random() * 200;
+      const arcX = dx * 0.5 + (Math.random() * 70 - 35);
+      const arcY = dy * 0.5 - (120 + Math.random() * 80);   // lob upward first
+      const dur = 560 + Math.random() * 200;
       const anim = s.animate([
         { transform: 'translate(-50%,-50%) scale(.3)', opacity: 0, offset: 0 },
-        { transform: 'translate(calc(-50% + ' + (arcX * 0.4) + 'px), calc(-50% + ' + (arcY * 0.5) + 'px)) scale(1.2)', opacity: 1, offset: 0.18 },
+        { transform: 'translate(calc(-50% + ' + (arcX * 0.4) + 'px), calc(-50% + ' + (arcY * 0.5) + 'px)) scale(1.25)', opacity: 1, offset: 0.18 },
         { transform: 'translate(calc(-50% + ' + arcX + 'px), calc(-50% + ' + arcY + 'px)) scale(1.05)', opacity: 1, offset: 0.55 },
-        { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(.32)', opacity: 0.6, offset: 1 }
-      ], { duration: dur, delay: i * 60, easing: 'cubic-bezier(.45,0,.55,1)', fill: 'forwards' });
+        { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(.3)', opacity: 0.5, offset: 1 }
+      ], { duration: dur, delay: i * 70, easing: 'cubic-bezier(.45,0,.55,1)', fill: 'forwards' });
       const onEnd = () => {
         s.remove();
+        SFX.wellDrop(landed);
+        spawnWellSplash(pool, f.color);
         if (pool) { pool.classList.remove('splash'); void pool.offsetWidth; pool.classList.add('splash'); }
         finish();
       };
       anim.onfinish = onEnd;
       anim.oncancel = onEnd;
+    });
+  }
+  // a quick colored ripple + droplet burst where a stone hits the water
+  function spawnWellSplash(pool, color) {
+    if (!pool) return;
+    const ring = document.createElement('span');
+    ring.className = 'well-land-ring';
+    ring.style.borderColor = color;
+    pool.appendChild(ring);
+    ring.addEventListener('animationend', () => ring.remove());
+    for (let k = 0; k < 4; k++) {
+      const drop = document.createElement('span');
+      drop.className = 'well-land-drop';
+      drop.style.background = color;
+      const ang = (Math.PI * 2 * k) / 4 + Math.random() * 0.8;
+      const dist = 16 + Math.random() * 14;
+      drop.style.setProperty('--dx', Math.cos(ang) * dist + 'px');
+      drop.style.setProperty('--dy', (-Math.abs(Math.sin(ang)) * dist - 6) + 'px');
+      pool.appendChild(drop);
+      drop.addEventListener('animationend', () => drop.remove());
     }
   }
   // ---- the climactic reveal ----
@@ -4112,28 +4178,56 @@
     const lvl = n >= 6 ? 3 : n >= 3 ? 2 : (n >= 1 ? 1 : 0);
     const titles = ['The well drinks your offering…', 'Fate stirs awake', 'The well surges with light', 'A torrent of fate breaks free!'];
     const title = titles[lvl];
-    const grid = n
-      ? revealed.map((r, i) => {
-          const kindLab = r.label.replace(/s$/, '');
-          return '<div class="well-rv-card" style="--acc:' + r.accent + ';animation-delay:' + (220 + i * 180) + 'ms">' +
-            '<div class="well-rv-new">Unlocked</div>' +
-            '<div class="well-rv-kind">' + kindLab + '</div>' +
-            r.entry.art.replace('well-ent-art', 'well-ent-art well-rv-art') +
-            '<div class="well-rv-name">' + r.entry.name + '</div>' +
-            '<div class="well-rv-desc">' + r.entry.desc + '</div>' +
-          '</div>';
-        }).join('')
+    const cards = revealed.map((r, i) => {
+      const kindLab = r.label.replace(/s$/, '');
+      return '<div class="well-rv-card" style="--acc:' + r.accent + ';animation-delay:' + (220 + i * 140) + 'ms">' +
+        '<div class="well-rv-new">Unlocked</div>' +
+        '<div class="well-rv-kind">' + kindLab + '</div>' +
+        r.entry.art.replace('well-ent-art', 'well-ent-art well-rv-art') +
+        '<div class="well-rv-name">' + r.entry.name + '</div>' +
+        '<div class="well-rv-desc">' + r.entry.desc + '</div>' +
+      '</div>';
+    }).join('');
+    const body = n
+      ? '<div class="well-carousel' + (n > 6 ? ' scrollable' : '') + '">' +
+          '<button class="well-car-nav prev" aria-label="Previous">‹</button>' +
+          '<div class="well-car-track">' + cards + '</div>' +
+          '<button class="well-car-nav next" aria-label="Next">›</button>' +
+        '</div>'
       : '<div class="well-rv-none">The offering of <b>' + stonesSpent + '</b> ✦ sinks into the dark. Its power is <b>banked</b> — return with more to draw it out.</div>';
     ov.innerHTML =
       '<div class="well-reveal-veil"></div>' +
       '<div class="well-reveal-inner well-rv-lvl-' + lvl + '">' +
         '<div class="well-reveal-burst" aria-hidden="true"></div>' +
         '<h2 class="well-reveal-title">' + title + '</h2>' +
-        '<div class="well-reveal-grid' + (n > 3 ? ' many' : '') + '">' + grid + '</div>' +
+        body +
         '<button class="btn well-reveal-close">' + (n ? 'Claim your fortune' : 'So be it') + '</button>' +
       '</div>';
     ov.classList.remove('hidden');
     requestAnimationFrame(() => ov.classList.add('show'));
+    // wire the carousel: arrows scroll one card-column; fade edges are pure CSS
+    const track = ov.querySelector('.well-car-track');
+    if (track) {
+      const colW = () => {
+        const card = track.querySelector('.well-rv-card');
+        const cw = card ? card.getBoundingClientRect().width : 240;
+        const gap = parseFloat(getComputedStyle(track).columnGap || getComputedStyle(track).gap) || 22;
+        return cw + gap;
+      };
+      const syncNav = () => {
+        const prev = ov.querySelector('.well-car-nav.prev');
+        const next = ov.querySelector('.well-car-nav.next');
+        const maxScroll = track.scrollWidth - track.clientWidth - 2;
+        if (prev) prev.classList.toggle('hide', track.scrollLeft <= 2);
+        if (next) next.classList.toggle('hide', track.scrollLeft >= maxScroll);
+      };
+      const prev = ov.querySelector('.well-car-nav.prev');
+      const next = ov.querySelector('.well-car-nav.next');
+      if (prev) prev.addEventListener('click', () => { SFX.click(); track.scrollBy({ left: -colW() * 2, behavior: 'smooth' }); });
+      if (next) next.addEventListener('click', () => { SFX.click(); track.scrollBy({ left: colW() * 2, behavior: 'smooth' }); });
+      track.addEventListener('scroll', syncNav, { passive: true });
+      requestAnimationFrame(syncNav);
+    }
     // escalating chime: one reward ping per unlock, a victory flourish for a big haul
     if (n) {
       revealed.forEach((r, i) => setTimeout(() => SFX.reward(), 240 + i * 180));
@@ -4276,8 +4370,13 @@
     const layer = $('lw-fireflies');
     if (!layer) return;
     layer.innerHTML = '';
+    // Touch GPUs: these animated, glow-shadowed motes force the whole hub onto
+    // composited layers, which makes the big background <img> exceed the max
+    // texture size and tear into tiles. Skip them entirely on touch — they're
+    // imperceptible on a phone anyway — so the backdrop paints cleanly.
     const canHover = !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
-    const count = canHover ? 20 : 9;
+    if (!canHover) return;
+    const count = 20;
     const W = 1920, H = 1080;
     for (let i = 0; i < count; i++) {
       const f = document.createElement('span');

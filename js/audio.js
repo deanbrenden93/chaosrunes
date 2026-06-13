@@ -332,6 +332,13 @@
     victory() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.4, 'triangle', 0.2), i * 110)); },
     defeat() { [392, 330, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.5, 'sine', 0.2, { glide: f * 0.7 }), i * 160)); },
     reward() { if (!playSample('reward')) [659, 988].forEach((f, i) => setTimeout(() => tone(f, 0.3, 'triangle', 0.18), i * 100)); },
+    // a wishing stone plunking into the well — a soft watery plip that brightens as they stack
+    wellDrop(i) {
+      const f = 300 + (Math.min(i || 0, 10) * 26);
+      tone(f, 0.14, 'sine', 0.17, { glide: f * 0.5 });
+      tone(f * 2.3, 0.07, 'sine', 0.05);
+      noise(0.07, 0.06, 2400);
+    },
     // souls / coins — a warm treasure shimmer; richer the bigger the haul
     coins(n) {
       const v = Math.min(1, 0.55 + (n || 0) / 70);

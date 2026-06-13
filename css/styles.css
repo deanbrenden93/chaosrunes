@@ -1025,10 +1025,21 @@ html, body {
   color: var(--text);
   border-color: var(--gold);
   box-shadow: inset 0 2px 12px rgba(0,0,0,0.45), 0 0 22px rgba(245,201,105,0.55);
-  animation: node-bob 1.8s ease-in-out infinite;
 }
-.mapnode.reachable:hover { transform: translate(-50%,-50%) scale(1.14); }
-@keyframes node-bob { 50% { transform: translate(-50%, -58%); } }
+/* the inner wrapper holds the icon + flames and does the idle float, so the
+   outer node is free to own the hover scale without the two transforms fighting */
+.mapnode-inner {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.mapnode.reachable .mapnode-inner {
+  animation: node-bob 1.9s ease-in-out infinite;
+  animation-delay: calc(var(--seed, 0) * -0.11s);   /* desync each node's float */
+}
+/* hover lives entirely on the outer node and eases via its own transition */
+.mapnode.reachable:hover { transform: translate(-50%,-50%) scale(1.16); z-index: 6; }
+.mapnode.reachable:hover .mapnode-inner { animation-duration: 1.4s; }
+@keyframes node-bob { 50% { transform: translateY(-9px); } }
 .mapnode.visited { color: #6f6790; border-color: rgba(130,118,165,0.5); opacity: 0.6; filter: drop-shadow(0 5px 9px rgba(0,0,0,0.7)) saturate(0.7); }
 .mapnode.current { border-color: #fff; box-shadow: inset 0 2px 12px rgba(0,0,0,0.4), 0 0 30px rgba(255,255,255,0.6); color: #fff; }
 .mapnode.type-elite { border-width: 4px; }
@@ -1054,7 +1065,7 @@ html, body {
 .mapnode.type-shadow.reachable {
   border-color: #b86fd6;
   box-shadow: inset 0 2px 14px rgba(0,0,0,0.6), 0 0 26px rgba(150,40,180,0.6);
-  animation: node-bob 1.8s ease-in-out infinite, shadow-throb 2.4s ease-in-out infinite;
+  animation: shadow-throb 2.4s ease-in-out infinite;   /* filter-only; bob is on the inner wrapper */
 }
 @keyframes shadow-throb { 50% { filter: drop-shadow(0 7px 13px rgba(0,0,0,0.85)) drop-shadow(0 0 14px rgba(150,40,180,0.5)); } }
 .mapnode.type-shadow > span:not(.shadowflames):not(.node-label) { position: relative; z-index: 2; }
@@ -5390,9 +5401,14 @@ html, body {
    the screens stay fully readable and, crucially, stable.
    ------------------------------------------------------------------- */
 @media (pointer: coarse) {
-  /* keep the atmospheric mist on phones, but drop the blur filters (the costly
-     bit) — the soft radial gradients read fine on their own */
-  .lw-mist::before, .lw-mist::after { filter: none; }
+  /* The animated fog / mist / firefly layers each promote a composited surface.
+     Stacked over the full-screen background <img> on the scaled stage, they push
+     mobile GPUs past their texture/compositing budget and the backdrop tears into
+     tiles (or drops to black). They're barely perceptible on a phone, so remove
+     them outright here — this is what keeps the Lost Woods stable on mobile. */
+  #screen-lostwoods .lw-fog,
+  #screen-lostwoods .lw-mist,
+  #screen-lostwoods .lw-fireflies { display: none !important; }
 
   /* the brightness/saturate/hue-rotate filter on the sub-screen
      backdrops forces a full-screen offscreen buffer that glitches on
@@ -6151,86 +6167,41 @@ html, body {
   background-repeat: no-repeat, no-repeat, repeat, repeat, repeat, no-repeat;
   background-size: cover, cover, 360px 300px, 300px 260px, 420px 340px, cover;
 }
-.well-balance { display: inline-flex; align-items: center; gap: 8px; font-family: 'Cinzel'; font-size: 18px; color: #e7dcff; }
-.well-balance b { font-size: 22px; color: #fff; }
-.well-balance-gem { color: #c9a6ff; font-size: 20px; text-shadow: 0 0 12px rgba(180,120,255,0.8); }
-
-.well-body { padding: 8px 28px 110px; }
-.well-wrap { display: flex; gap: 30px; align-items: flex-start; max-width: 1500px; margin: 0 auto; }
-
-/* ---- the wishing-stone bank: big, gilded, anchored bottom-center ---- */
-.well-bank {
-  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
-  z-index: 14; display: flex; align-items: center; gap: 14px;
-  padding: 11px 30px 11px 24px; border-radius: 999px; pointer-events: none;
-  background:
-    radial-gradient(120% 160% at 50% -40%, rgba(150,96,228,0.28), transparent 70%),
-    linear-gradient(180deg, rgba(40,27,66,0.94), rgba(15,10,28,0.96));
-  border: 1px solid rgba(196,156,255,0.5);
-  box-shadow:
-    0 0 30px rgba(150,90,222,0.4), inset 0 0 24px rgba(126,84,206,0.18),
-    inset 0 1px 0 rgba(255,255,255,0.12), 0 14px 34px rgba(0,0,0,0.55);
-}
-.well-bank::before, .well-bank::after {
-  content: ''; position: absolute; top: 50%; width: 7px; height: 7px;
-  transform: translateY(-50%) rotate(45deg); border-radius: 1px;
-  background: linear-gradient(135deg, #f0dcff, #b07bff);
-  box-shadow: 0 0 10px rgba(190,130,255,0.8);
-}
-.well-bank::before { left: -3px; }
-.well-bank::after { right: -3px; }
-.well-bank-gem {
-  font-size: 30px; line-height: 1; color: #dcbcff;
-  text-shadow: 0 0 16px rgba(190,130,255,0.95), 0 0 30px rgba(150,90,220,0.6);
-  animation: wellGemPulse 2.8s ease-in-out infinite;
-}
-@keyframes wellGemPulse { 0%,100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.12); filter: brightness(1.25); } }
-.well-bank-count {
-  font-family: 'Cinzel'; font-weight: 900; font-size: 36px; line-height: 1; color: #fff;
-  text-shadow: 0 0 16px rgba(196,140,255,0.7), 0 2px 6px rgba(0,0,0,0.7); min-width: 1ch; text-align: center;
-}
-.well-bank-label {
-  font-family: 'Cinzel'; font-weight: 700; font-size: 14px; letter-spacing: .16em;
-  text-transform: uppercase; color: #c6b6e8;
-}
-.well-bank.pouring { animation: wellBankPour .5s ease; }
-@keyframes wellBankPour { 0%,100% { transform: translateX(-50%) scale(1); } 40% { transform: translateX(-50%) scale(1.06); box-shadow: 0 0 44px rgba(180,120,255,0.6), 0 14px 34px rgba(0,0,0,0.55); } }
-
-/* a single stone in flight from the bank to the well */
-.well-fly-stone {
-  position: absolute; z-index: 20; pointer-events: none;
-  font-family: 'Cinzel'; font-size: 24px; color: #ecd7ff; will-change: transform, opacity;
-  text-shadow: 0 0 12px rgba(196,140,255,0.95), 0 0 24px rgba(150,90,220,0.7);
-}
-/* the pool flashes as each stone lands */
-.well-pool.splash { animation: wellPoolSplash .42s ease-out; }
-@keyframes wellPoolSplash {
-  0% { box-shadow: 0 0 40px rgba(170,110,255,0.7); }
-  35% { box-shadow: 0 0 72px rgba(214,176,255,0.95); transform: translate(-50%,-50%) scale(1.35); }
-  100% { box-shadow: 0 0 40px rgba(170,110,255,0.7); transform: translate(-50%,-50%) scale(1); }
+/* ============================================================
+   THE ENCHANTED WELL — full-screen layout (well on top, a row of
+   six circular stone-meters below). Everything is sized to fit inside
+   the fixed 1080-tall stage so nothing clips off the top/bottom.
+   ============================================================ */
+.well-body {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  gap: 14px; padding: 0 24px 4px;
 }
 
-/* ---- the living well ---- */
+/* ---- upper area: the living well + cast bar ---- */
+.well-top {
+  flex: 1 1 auto; min-height: 0; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+}
 .well-stage {
-  position: relative; flex: 0 0 38%; min-width: 300px; align-self: stretch;
-  min-height: 420px;
+  position: relative; flex: 1 1 auto; min-height: 0; width: 100%;
   display: flex; align-items: center; justify-content: center;
 }
 .well-aura {
-  position: absolute; left: 50%; top: 50%; width: 116%; height: 88%;
+  position: absolute; left: 50%; top: 50%; width: 460px; height: 360px; max-width: 90%;
   transform: translate(-50%, -50%);
   background: radial-gradient(50% 50% at 50% 50%, rgba(150,92,224,0.42), rgba(96,52,168,0.16) 46%, transparent 70%);
   filter: blur(6px); animation: wellAura 5.5s ease-in-out infinite;
 }
 @keyframes wellAura { 0%,100% { opacity: .55; transform: translate(-50%,-50%) scale(.94); } 50% { opacity: .9; transform: translate(-50%,-50%) scale(1.06); } }
 .well-art {
-  position: relative; z-index: 2; width: min(86%, 460px); height: auto;
+  position: relative; z-index: 2; height: 100%; max-height: 440px; width: auto; max-width: 64%;
+  object-fit: contain;
   filter: drop-shadow(0 24px 34px rgba(0,0,0,0.7)) drop-shadow(0 0 26px rgba(150,90,220,0.35));
   animation: wellBob 6s ease-in-out infinite;
 }
 @keyframes wellBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
 .well-pool {
-  position: absolute; z-index: 3; left: 50%; top: 47%; width: 38%; height: 16%;
+  position: absolute; z-index: 3; left: 50%; top: 47%; width: 120px; height: 42px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background: radial-gradient(50% 50% at 50% 50%, rgba(214,180,255,0.9), rgba(150,92,224,0.5) 45%, transparent 72%);
@@ -6239,7 +6210,7 @@ html, body {
 }
 @keyframes wellGlow { 0%,100% { opacity: .8; } 50% { opacity: 1; } }
 .well-ripple {
-  position: absolute; left: 50%; top: 50%; width: 60%; height: 60%;
+  position: absolute; left: 50%; top: 50%; width: 100%; height: 220%;
   transform: translate(-50%, -50%) scale(.3);
   border: 2px solid rgba(206,176,255,0.6); border-radius: 50%;
   opacity: 0; animation: wellRipple 3.6s ease-out infinite;
@@ -6253,92 +6224,72 @@ html, body {
 @keyframes wellSurge { 0% { opacity: 1; transform: translate(-50%,-50%) scale(1.25); } 100% { opacity: .55; transform: translate(-50%,-50%) scale(1); } }
 @keyframes wellPoolSurge { 0% { opacity: 1; box-shadow: 0 0 90px rgba(200,150,255,0.95); transform: translate(-50%,-50%) scale(1.5); } 100% { opacity: .8; transform: translate(-50%,-50%) scale(1); } }
 
-/* ---- casting panel ---- */
-.well-cast { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
-.well-intro {
-  font-family: 'Spectral'; font-size: 17px; line-height: 1.5; color: #c8bce0;
-  margin: 4px 0 14px; max-width: 760px;
+/* the pool flashes as each stone lands */
+.well-pool.splash { animation: wellPoolSplash .42s ease-out; }
+@keyframes wellPoolSplash {
+  0% { box-shadow: 0 0 40px rgba(170,110,255,0.7); }
+  35% { box-shadow: 0 0 72px rgba(214,176,255,0.95); transform: translate(-50%,-50%) scale(1.35); }
+  100% { box-shadow: 0 0 40px rgba(170,110,255,0.7); transform: translate(-50%,-50%) scale(1); }
 }
-.well-intro b { color: #e9ddff; }
-.well-cats {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
-  align-content: start;
+/* a stone in flight — color is set inline to match its source meter */
+.well-fly-stone {
+  position: absolute; z-index: 30; pointer-events: none;
+  font-family: 'Cinzel'; font-size: 28px; color: #ecd7ff; will-change: transform, opacity;
 }
-.well-cat {
-  position: relative; border-radius: 14px; padding: 14px 16px;
-  background: linear-gradient(180deg, rgba(26,20,40,0.92), rgba(12,9,22,0.95));
-  border: 1px solid color-mix(in srgb, var(--acc) 38%, rgba(120,100,160,0.3));
-  box-shadow: inset 0 0 26px rgba(120,80,200,0.06), 0 10px 24px rgba(0,0,0,0.4);
-  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+/* the colored ring + droplets a stone kicks up when it lands */
+.well-land-ring {
+  position: absolute; left: 50%; top: 50%; width: 12px; height: 12px;
+  transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%;
+  pointer-events: none; opacity: .9; animation: wellLandRing .5s ease-out forwards;
 }
-.well-cat.charged {
-  border-color: color-mix(in srgb, var(--acc) 80%, #fff 10%);
-  box-shadow: 0 0 24px color-mix(in srgb, var(--acc) 45%, transparent), inset 0 0 30px color-mix(in srgb, var(--acc) 14%, transparent);
+@keyframes wellLandRing { to { width: 86px; height: 60px; opacity: 0; } }
+.well-land-drop {
+  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 50%;
+  transform: translate(-50%, -50%); pointer-events: none;
+  animation: wellLandDrop .46s ease-out forwards;
 }
-.well-cat.done { opacity: .62; filter: saturate(.7); }
-.well-cat-top { display: flex; align-items: center; gap: 12px; }
-.well-cat-icon { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
-.well-cat-img { width: 46px; height: 46px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); }
-.well-cat-emoji { font-size: 34px; }
-.well-cat-titles { flex: 1 1 auto; min-width: 0; }
-.well-cat-name { font-family: 'Cinzel'; font-size: 18px; font-weight: 700; color: #f1ebff; }
-.well-cat-prog { font-family: 'Spectral'; font-size: 13px; color: color-mix(in srgb, var(--acc) 70%, #cfc4e6); }
-.well-cat-prog b { color: #fff; }
-.well-cat-browse {
-  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
-  background: rgba(255,255,255,0.06); border: 1px solid color-mix(in srgb, var(--acc) 50%, transparent);
-  color: color-mix(in srgb, var(--acc) 80%, #fff); font-size: 16px; line-height: 1;
-  transition: background .15s ease, transform .15s ease;
+@keyframes wellLandDrop {
+  0% { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity: 0; }
 }
-.well-cat-browse:hover { background: color-mix(in srgb, var(--acc) 30%, transparent); transform: scale(1.1); }
-/* fixed min-height + a permanently-reserved badge slot so the card never
-   changes size when the +X appears — no layout pop */
-.well-meter { display: flex; align-items: center; gap: 6px; margin: 12px 0; position: relative; min-height: 26px; }
-.well-pip {
-  flex: 1 1 auto; height: 11px; border-radius: 6px;
-  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.08);
-  transition: background .25s ease, box-shadow .25s ease;
-}
-.well-pip.lit {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 90%, #fff 18%), var(--acc));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--acc) 70%, transparent);
-}
-.well-meter-x {
-  flex: 0 0 auto; margin-left: 6px; min-width: 36px; text-align: center;
-  font-family: 'Cinzel'; font-weight: 800; font-size: 16px; line-height: 22px;
-  color: #fff; padding: 0 8px; border-radius: 999px;
-  background: color-mix(in srgb, var(--acc) 60%, rgba(0,0,0,0.4));
-  box-shadow: 0 0 14px color-mix(in srgb, var(--acc) 60%, transparent);
-  visibility: hidden; opacity: 0; transform: scale(.55);
-  transition: opacity .22s ease, transform .22s cubic-bezier(.2,1.4,.4,1);
-}
-.well-meter-x.on { visibility: visible; opacity: 1; transform: scale(1); }
-.well-cat-ctrls { display: flex; align-items: center; gap: 8px; }
-.well-step, .well-max {
-  cursor: pointer; border-radius: 9px; font-family: 'Cinzel'; font-weight: 700;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); color: #e8e0f7;
-  transition: background .15s ease, border-color .15s ease, transform .1s ease;
-}
-.well-step { width: 38px; height: 34px; font-size: 18px; }
-.well-step-5 { width: 44px; font-size: 14px; }
-.well-max { height: 34px; padding: 0 14px; font-size: 13px; letter-spacing: .04em; margin-left: auto;
-  background: color-mix(in srgb, var(--acc) 24%, rgba(0,0,0,0.3)); border-color: color-mix(in srgb, var(--acc) 50%, transparent); }
-.well-step:hover, .well-max:hover { background: color-mix(in srgb, var(--acc) 34%, transparent); border-color: var(--acc); }
-.well-step:active, .well-max:active { transform: translateY(1px); }
-.well-cat-staged { min-width: 38px; text-align: center; font-family: 'Cinzel'; font-weight: 800; font-size: 16px; color: #fff; }
-.well-cat-done { font-family: 'Cinzel'; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: color-mix(in srgb, var(--acc) 80%, #fff); text-align: center; padding: 6px 0 2px; }
 
-.well-foot {
-  display: flex; align-items: center; justify-content: space-between; gap: 18px;
-  margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(150,120,210,0.2);
+/* ---- the cast bar: stone balance + pending + buttons ---- */
+.well-castbar {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  gap: 26px; flex-wrap: wrap; padding: 2px 0;
 }
-.well-pending { font-family: 'Spectral'; font-size: 16px; color: #c4b8de; }
+.well-bank {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 9px 24px 9px 20px; border-radius: 999px;
+  background:
+    radial-gradient(120% 160% at 50% -40%, rgba(150,96,228,0.28), transparent 70%),
+    linear-gradient(180deg, rgba(40,27,66,0.94), rgba(15,10,28,0.96));
+  border: 1px solid rgba(196,156,255,0.5);
+  box-shadow:
+    0 0 26px rgba(150,90,222,0.32), inset 0 0 22px rgba(126,84,206,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.12), 0 10px 26px rgba(0,0,0,0.5);
+}
+.well-bank-gem {
+  font-size: 30px; line-height: 1; color: #dcbcff;
+  text-shadow: 0 0 16px rgba(190,130,255,0.95), 0 0 30px rgba(150,90,220,0.6);
+  animation: wellGemPulse 2.8s ease-in-out infinite;
+}
+@keyframes wellGemPulse { 0%,100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.12); filter: brightness(1.25); } }
+.well-bank-count {
+  font-family: 'Cinzel'; font-weight: 900; font-size: 34px; line-height: 1; color: #fff;
+  text-shadow: 0 0 16px rgba(196,140,255,0.7), 0 2px 6px rgba(0,0,0,0.7); min-width: 1ch; text-align: center;
+}
+.well-bank-label {
+  font-family: 'Cinzel'; font-weight: 700; font-size: 15px; letter-spacing: .14em;
+  text-transform: uppercase; color: #c6b6e8;
+}
+.well-pending { font-family: 'Spectral'; font-size: 19px; color: #cbbfe6; text-align: center; }
 .well-pending b { color: #fff; }
 .well-pend-x { color: #d8b6ff; }
-.well-foot-btns { display: flex; gap: 12px; }
-.well-clear-btn { background: rgba(255,255,255,0.06); }
+.well-castbar-btns { display: flex; gap: 14px; }
+.well-clear-btn { background: rgba(255,255,255,0.07); font-size: 16px; padding: 11px 22px; }
 .well-cast-btn {
-  font-family: 'Cinzel'; font-weight: 800; letter-spacing: .04em; padding: 12px 28px;
+  font-family: 'Cinzel'; font-weight: 800; letter-spacing: .04em; font-size: 17px; padding: 12px 30px;
   background: linear-gradient(180deg, #7a46c8, #4f2da0);
   border: 1px solid rgba(200,160,255,0.5); color: #fff;
   box-shadow: 0 10px 26px rgba(80,40,150,0.5);
@@ -6347,56 +6298,219 @@ html, body {
 .well-cast-btn.ready { animation: wellCastReady 1.8s ease-in-out infinite; }
 @keyframes wellCastReady { 0%,100% { box-shadow: 0 10px 26px rgba(80,40,150,0.5), 0 0 0 rgba(190,140,255,0); } 50% { box-shadow: 0 10px 30px rgba(80,40,150,0.6), 0 0 26px rgba(190,140,255,0.6); } }
 
-/* ---- the climactic reveal ---- */
+/* ============================================================
+   THE SIX CIRCULAR STONE-METERS (reusing the combat disc look —
+   gear frame + rune ring + radial gauge, gauge filled with stones)
+   ============================================================ */
+.well-meters-row {
+  flex: 0 0 auto; display: flex; gap: 16px; justify-content: center; align-items: flex-start;
+  padding: 4px 0 2px;
+}
+.well-meter-cell {
+  position: relative; flex: 1 1 0; min-width: 0; max-width: 300px;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.well-meter-cell.done { opacity: .68; filter: saturate(.7); }
+
+.wd-browse {
+  position: absolute; top: 2px; right: 8px; z-index: 5;
+  width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+  background: rgba(255,255,255,0.06); border: 1px solid color-mix(in srgb, var(--acc) 50%, transparent);
+  color: color-mix(in srgb, var(--acc) 82%, #fff); font-size: 17px; line-height: 1;
+  transition: background .15s ease, transform .15s ease;
+}
+.wd-browse:hover { background: color-mix(in srgb, var(--acc) 32%, transparent); transform: scale(1.1); }
+
+/* the disc itself — drawn at 160px and scaled to fit the cell */
+.wd-disc-wrap {
+  --wd-s: 0.96;
+  width: calc(160px * var(--wd-s)); height: calc(160px * var(--wd-s));
+  flex: none; display: flex; align-items: center; justify-content: center;
+}
+.wd-disc { position: relative; width: 160px; height: 160px; flex: none; transform: scale(var(--wd-s)); transform-origin: center; }
+.wd-disc::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; z-index: 0;
+  background: radial-gradient(circle,
+    transparent 73px, rgba(0,0,0,0.55) 74px,
+    #241a30 75px, #6b5836 76.5px, #f5c969 78px, #b8923f 79px, #4a3a22 80px, transparent 80.5px);
+  filter: drop-shadow(0 0 9px rgba(245,201,105,0.32));
+}
+.wd-gear {
+  position: absolute; inset: 0; border-radius: 50%; z-index: 0; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, rgba(245,201,105,0.6) 0 1.8deg, transparent 1.8deg 10deg);
+  -webkit-mask: radial-gradient(circle, transparent 69px, #000 70px, #000 74px, transparent 75px);
+  mask: radial-gradient(circle, transparent 69px, #000 70px, #000 74px, transparent 75px);
+  animation: pc-spin 34s linear infinite; opacity: 0.8;
+}
+.wd-rune {
+  position: absolute; inset: 18px; border-radius: 50%; z-index: 2; pointer-events: none;
+  border: 2px dashed color-mix(in srgb, var(--acc) 70%, #b07bff 30%);
+  opacity: 0.5; animation: pc-spin-rev 26s linear infinite;
+}
+.well-meter-cell.charged .wd-rune { opacity: 0.85; animation-duration: 14s; }
+
+/* the radial stone gauge */
+.wd-ring { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; overflow: visible; }
+.wd-ring .wd-track { fill: none; stroke: rgba(0,0,0,0.55); stroke-width: 8; }
+.wd-ring .wd-arc {
+  fill: none; stroke: var(--acc); stroke-width: 8; stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+  transition: stroke-dashoffset .5s cubic-bezier(.3,.9,.3,1);
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--acc) 80%, transparent));
+}
+.wd-ring .wd-arc.full { filter: drop-shadow(0 0 11px color-mix(in srgb, var(--acc) 95%, #fff 20%)); }
+
+/* recessed portrait well holding the category icon */
+.wd-portrait {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  width: 116px; height: 116px; border-radius: 50%; z-index: 2;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.wd-portrait::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; z-index: 0;
+  background: radial-gradient(circle at 50% 32%, color-mix(in srgb, var(--acc) 30%, transparent), rgba(8,5,16,0.92));
+  box-shadow: inset 0 0 26px rgba(0,0,0,0.7), 0 0 0 2px rgba(0,0,0,0.55);
+}
+.wd-portrait .well-cat-img {
+  position: relative; z-index: 2; width: 92px; height: 92px; object-fit: contain;
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,0.6));
+}
+.wd-portrait .well-cat-emoji {
+  position: relative; z-index: 2; font-size: 60px; line-height: 1;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.55));
+}
+
+/* completed-unlock count pill, hugging the ring */
+.wd-x {
+  position: absolute; top: 6px; right: 6px; z-index: 4; min-width: 34px;
+  font-family: 'Cinzel'; font-weight: 800; font-size: 16px; line-height: 24px;
+  color: #fff; padding: 0 9px; border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 85%, #fff 14%), var(--acc));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--acc) 70%, transparent);
+  visibility: hidden; opacity: 0; transform: scale(.5);
+  transition: opacity .22s ease, transform .22s cubic-bezier(.2,1.4,.4,1);
+}
+.wd-x.on { visibility: visible; opacity: 1; transform: scale(1); }
+/* staged-stones bubble at the foot of the disc */
+.wd-staged-bubble {
+  position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%) scale(.5); z-index: 4;
+  font-family: 'Cinzel'; font-weight: 800; font-size: 16px; color: #fff;
+  padding: 2px 12px; border-radius: 999px; white-space: nowrap;
+  background: linear-gradient(180deg, rgba(20,14,32,0.96), rgba(8,5,16,0.96));
+  border: 1px solid var(--acc); box-shadow: 0 0 16px color-mix(in srgb, var(--acc) 55%, transparent);
+  opacity: 0; visibility: hidden; transition: opacity .2s ease, transform .2s cubic-bezier(.2,1.4,.4,1);
+}
+.wd-staged-bubble.on { opacity: 1; visibility: visible; transform: translateX(-50%) scale(1); }
+.well-meter-cell.pouring .wd-disc { animation: wellDiscPour .5s ease; }
+@keyframes wellDiscPour { 40% { transform: scale(calc(var(--wd-s) * 1.05)); } }
+
+.wd-name {
+  font-family: 'Cinzel'; font-weight: 700; font-size: 19px; color: #f1ebff; margin-top: 12px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6); line-height: 1.1;
+}
+.wd-prog { font-family: 'Spectral'; font-size: 16px; color: color-mix(in srgb, var(--acc) 70%, #cfc4e6); margin-top: 2px; }
+.wd-prog b { color: #fff; }
+.wd-done {
+  font-family: 'Cinzel'; font-size: 14px; letter-spacing: .12em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--acc) 80%, #fff); padding: 12px 0 2px;
+}
+
+/* per-meter controls: −, +, Max, Clear */
+.wd-ctrls { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.wd-step, .wd-mini {
+  cursor: pointer; font-family: 'Cinzel'; font-weight: 800; color: #ece4f8;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 11px;
+  transition: background .15s ease, border-color .15s ease, transform .1s ease;
+}
+.wd-step { width: 46px; height: 46px; font-size: 26px; line-height: 1; }
+.wd-mini {
+  height: 40px; padding: 0 16px; font-size: 15px; letter-spacing: .03em;
+  background: color-mix(in srgb, var(--acc) 22%, rgba(0,0,0,0.3));
+  border-color: color-mix(in srgb, var(--acc) 48%, transparent);
+}
+.wd-step:hover, .wd-mini:hover { background: color-mix(in srgb, var(--acc) 34%, transparent); border-color: var(--acc); }
+.wd-step:active, .wd-mini:active { transform: translateY(1px); }
+
+/* ============================================================
+   THE CLIMACTIC REVEAL — a two-row horizontal carousel that fades
+   out toward the left/right so only the centered cards read fully
+   ============================================================ */
 .well-reveal { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .3s ease; }
 .well-reveal.hidden { display: none; }
 .well-reveal.show { opacity: 1; }
-.well-reveal-veil { position: absolute; inset: 0; background: radial-gradient(60% 60% at 50% 42%, rgba(40,20,80,0.7), rgba(4,2,10,0.92)); backdrop-filter: blur(4px); }
-.well-reveal-inner { position: relative; z-index: 1; text-align: center; max-width: min(1200px, 92%); padding: 10px; transform: translateY(10px); animation: wellRevealIn .4s ease both; }
+.well-reveal-veil { position: absolute; inset: 0; background: radial-gradient(60% 60% at 50% 42%, rgba(40,20,80,0.7), rgba(4,2,10,0.94)); backdrop-filter: blur(4px); }
+.well-reveal-inner { position: relative; z-index: 1; text-align: center; width: 100%; max-width: 96%; padding: 10px; transform: translateY(10px); animation: wellRevealIn .4s ease both; }
 @keyframes wellRevealIn { from { opacity: 0; transform: translateY(28px) scale(.96); } to { opacity: 1; transform: none; } }
-.well-reveal-burst { position: absolute; left: 50%; top: 36%; width: 6px; height: 6px; transform: translate(-50%,-50%); border-radius: 50%; box-shadow: 0 0 60px 30px rgba(190,140,255,0.5); animation: wellBurst 1s ease-out; }
+.well-reveal-burst { position: absolute; left: 50%; top: 30%; width: 6px; height: 6px; transform: translate(-50%,-50%); border-radius: 50%; box-shadow: 0 0 60px 30px rgba(190,140,255,0.5); animation: wellBurst 1s ease-out; }
 .well-rv-lvl-2 .well-reveal-burst { box-shadow: 0 0 90px 50px rgba(200,150,255,0.6); }
 .well-rv-lvl-3 .well-reveal-burst { box-shadow: 0 0 130px 80px rgba(220,170,255,0.7); }
 @keyframes wellBurst { 0% { opacity: 1; } 100% { opacity: 0; } }
 .well-reveal-title {
-  font-family: 'Cinzel'; font-weight: 900; font-size: 38px; letter-spacing: .04em; margin: 0 0 22px;
+  font-family: 'Cinzel'; font-weight: 900; font-size: 44px; letter-spacing: .04em; margin: 0 0 22px;
   background: linear-gradient(180deg, #f3e6ff, #c79bff 60%, #9a6be0);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
   filter: drop-shadow(0 2px 10px rgba(0,0,0,0.6)) drop-shadow(0 0 22px rgba(170,110,255,0.45));
 }
-.well-rv-lvl-3 .well-reveal-title { font-size: 46px; }
-.well-reveal-grid { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; }
-.well-reveal-grid.many { gap: 12px; }
+.well-rv-lvl-3 .well-reveal-title { font-size: 52px; }
+
+/* carousel: arrows flank a masked, snap-scrolling 2-row grid */
+.well-carousel { position: relative; width: min(1040px, 96%); margin: 0 auto; display: flex; align-items: center; }
+.well-car-track {
+  display: grid; grid-auto-flow: column; grid-auto-columns: max-content;
+  grid-template-rows: repeat(2, auto); justify-content: center;
+  gap: 22px; width: 100%; overflow-x: auto; overflow-y: hidden;
+  padding: 18px 60px; scroll-snap-type: x proximity;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 16%, #000 84%, transparent 100%);
+  scrollbar-width: none;
+}
+.well-car-track::-webkit-scrollbar { display: none; }
+.well-car-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
+  width: 56px; height: 56px; border-radius: 50%; cursor: pointer;
+  font-family: 'Cinzel'; font-size: 34px; line-height: 1; color: #f0e6ff;
+  background: linear-gradient(180deg, rgba(48,32,76,0.96), rgba(20,12,36,0.96));
+  border: 1px solid rgba(196,156,255,0.55); box-shadow: 0 8px 22px rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity .2s ease, transform .15s ease, background .15s ease;
+}
+.well-car-nav:hover { background: linear-gradient(180deg, rgba(72,48,116,0.98), rgba(30,18,52,0.98)); transform: translateY(-50%) scale(1.06); }
+.well-car-nav.prev { left: -6px; }
+.well-car-nav.next { right: -6px; }
+.well-car-nav.hide { opacity: 0; pointer-events: none; }
+
 .well-rv-card {
-  position: relative; width: 220px; padding: 16px 16px 18px; border-radius: 16px;
+  position: relative; width: 252px; height: 320px; padding: 20px 18px; border-radius: 18px;
+  display: flex; flex-direction: column; align-items: center; scroll-snap-align: center;
   background: linear-gradient(180deg, rgba(26,20,42,0.96), rgba(12,8,22,0.97));
-  border: 1px solid var(--acc); box-shadow: 0 0 28px color-mix(in srgb, var(--acc) 40%, transparent), 0 16px 36px rgba(0,0,0,0.6);
+  border: 1px solid var(--acc); box-shadow: 0 0 30px color-mix(in srgb, var(--acc) 42%, transparent), 0 18px 40px rgba(0,0,0,0.6);
   opacity: 0; transform: translateY(24px) scale(.9); animation: wellRvCard .5s cubic-bezier(.2,1.3,.4,1) both;
 }
-.well-reveal-grid.many .well-rv-card { width: 176px; padding: 12px; }
 @keyframes wellRvCard { to { opacity: 1; transform: none; } }
 .well-rv-new {
-  position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
-  font-family: 'Cinzel'; font-weight: 800; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-  color: #fff; padding: 3px 12px; border-radius: 999px;
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+  font-family: 'Cinzel'; font-weight: 800; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+  color: #fff; padding: 4px 14px; border-radius: 999px; white-space: nowrap;
   background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 85%, #fff 12%), var(--acc));
   box-shadow: 0 0 16px color-mix(in srgb, var(--acc) 60%, transparent);
 }
-.well-rv-kind { font-family: 'Cinzel'; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: color-mix(in srgb, var(--acc) 75%, #d8cdee); margin: 6px 0 8px; }
-.well-rv-art, .well-ent-art { display: flex; align-items: center; justify-content: center; height: 92px; margin: 2px 0 8px; }
-.well-ent-art .bless-art-img, .well-ent-art .item-art-img { width: 76px; height: 76px; object-fit: contain; }
+.well-rv-kind { font-family: 'Cinzel'; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: color-mix(in srgb, var(--acc) 75%, #d8cdee); margin: 8px 0 8px; }
+.well-rv-art, .well-ent-art { display: flex; align-items: center; justify-content: center; height: 104px; margin: 2px 0 10px; }
+.well-ent-art .bless-art-img, .well-ent-art .item-art-img { width: 86px; height: 86px; object-fit: contain; }
 /* glyph plates render smaller than image art so the carved rune isn't oversized */
-.well-ent-art .g-img, .well-ent-art .g-hex { width: 58px; height: 58px; }
-.well-ent-art .g-hex .g-rune { font-size: 34px; }
-.well-reveal-grid.many .well-rv-art { height: 74px; }
-.well-rv-name { font-family: 'Cinzel'; font-weight: 700; font-size: 18px; color: #f3eeff; margin-bottom: 6px; }
-.well-rv-desc { font-family: 'Spectral'; font-size: 13.5px; line-height: 1.4; color: #cabfe2; }
+.well-ent-art .g-img, .well-ent-art .g-hex { width: 66px; height: 66px; }
+.well-ent-art .g-hex .g-rune { font-size: 38px; }
+.well-rv-name { font-family: 'Cinzel'; font-weight: 700; font-size: 21px; color: #f3eeff; margin-bottom: 7px; line-height: 1.1; }
+.well-rv-desc {
+  font-family: 'Spectral'; font-size: 15px; line-height: 1.4; color: #cabfe2;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+}
 .well-rv-desc b { color: #fff; }
-.well-rv-none { font-family: 'Spectral'; font-size: 20px; line-height: 1.5; color: #d3c8ec; max-width: 560px; }
+.well-rv-none { font-family: 'Spectral'; font-size: 22px; line-height: 1.5; color: #d3c8ec; max-width: 620px; margin: 0 auto; }
 .well-rv-none b { color: #fff; }
 .well-reveal-close {
-  display: block; margin: 26px auto 0; font-family: 'Cinzel'; font-weight: 800; letter-spacing: .04em;
-  padding: 12px 30px; background: linear-gradient(180deg, #7a46c8, #4f2da0);
+  display: block; margin: 26px auto 0; font-family: 'Cinzel'; font-weight: 800; letter-spacing: .04em; font-size: 18px;
+  padding: 13px 34px; background: linear-gradient(180deg, #7a46c8, #4f2da0);
   border: 1px solid rgba(200,160,255,0.5); color: #fff; box-shadow: 0 10px 26px rgba(80,40,150,0.5);
 }
 
@@ -6419,15 +6533,11 @@ html, body {
 .well-br-desc { font-family: 'Spectral'; font-size: 13px; line-height: 1.4; color: #c4b9de; }
 .well-br-desc b, .well-br-name b { color: #fff; }
 
-/* tablet / phone: stack the well above the casting panel */
+/* touch / small viewports: drop the GPU-heavy backdrop blur and tighten the
+   meter row a touch so all six discs stay on one comfortable line */
 @media (max-width: 900px), (pointer: coarse) {
-  .well-wrap { flex-direction: column; gap: 12px; }
-  .well-stage { flex: 0 0 auto; min-width: 0; min-height: 220px; align-self: center; width: 100%; }
-  .well-art { width: min(46%, 260px); }
-  .well-cats { grid-template-columns: 1fr; }
   .well-reveal-veil { backdrop-filter: none; }
-  .well-bank { gap: 10px; padding: 9px 22px; bottom: 12px; }
-  .well-bank-gem { font-size: 24px; }
-  .well-bank-count { font-size: 28px; }
-  .well-bank-label { font-size: 12px; letter-spacing: .12em; }
+  .well-meters-row { gap: 10px; }
+  .wd-disc-wrap { --wd-s: 0.86; }
+  .well-carousel { width: 98%; }
 }
