@@ -3914,7 +3914,7 @@
       }
     }
     META.runHistory.unshift(snapshotRun(win, stones));
-    META.runHistory = META.runHistory.slice(0, 5);
+    META.runHistory = META.runHistory.slice(0, RUN_HISTORY_MAX);
     grantWishingStones(stones);   // persists the whole META profile (saveMeta)
 
     clearSave();   // the run is over either way — no checkpoint to resume
@@ -3952,6 +3952,10 @@
   // Modeled on the type-guarded loadSettings/saveSettings pattern.
   // ============================================================
   const META_KEY = 'cg_meta_v1';
+  // keep (effectively) every run the player has ever finished — the Gravemarker
+  // remembers them all. The cap is only a guardrail against unbounded growth /
+  // localStorage quota; saveMeta trims oldest entries if a write ever fails.
+  const RUN_HISTORY_MAX = 1000;
   function freshMeta() {
     return {
       v: 1,
@@ -3961,7 +3965,7 @@
       descension: { cleared: 0 },   // highest Descension level fully cleared (0..MAX_DESCENSION)
       stats: { runs: 0, wins: 0, classicWins: 0, descensionWins: 0, bestDescension: 0, bestAct: 0,
                playTimeMs: 0, kills: 0, bestCombo: 0, bestHit: 0, bestTurnDmg: 0, soulsGained: 0 },
-      runHistory: [],               // last 5 end-of-run build snapshots (Gravemarker reads these)
+      runHistory: [],               // every end-of-run build snapshot, newest first (Gravemarker reads these)
       bestiary: { seen: {}, defeated: {} },  // enemy id -> true (Monster Book)
       evolved: {}                   // evolution form id -> true (Star Chart reveals)
     };
@@ -3978,7 +3982,7 @@
           if (m.wishMeters && typeof m.wishMeters === 'object') META.wishMeters = m.wishMeters;
           if (m.descension && typeof m.descension.cleared === 'number') META.descension.cleared = m.descension.cleared;
           if (m.stats && typeof m.stats === 'object') Object.assign(META.stats, m.stats);
-          if (Array.isArray(m.runHistory)) META.runHistory = m.runHistory.slice(0, 5);
+          if (Array.isArray(m.runHistory)) META.runHistory = m.runHistory.slice(0, RUN_HISTORY_MAX);
           if (m.bestiary && typeof m.bestiary === 'object') {
             if (m.bestiary.seen && typeof m.bestiary.seen === 'object') META.bestiary.seen = m.bestiary.seen;
             if (m.bestiary.defeated && typeof m.bestiary.defeated === 'object') META.bestiary.defeated = m.bestiary.defeated;
@@ -3990,7 +3994,16 @@
     root.CG.Meta = META;   // the Lost Woods screens read the profile from here
   }
   function saveMeta() {
-    try { localStorage.setItem(META_KEY, JSON.stringify(META)); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(META_KEY, JSON.stringify(META)); return; }
+    catch (e) { /* likely a quota overflow — fall through and shed old runs */ }
+    // If the profile won't fit (huge run history), drop the oldest runs a chunk
+    // at a time until it persists, so newer runs and the rest of the profile survive.
+    const hist = META.runHistory || [];
+    for (let keep = Math.min(hist.length, 200); keep >= 0; keep -= 50) {
+      META.runHistory = hist.slice(0, keep);
+      try { localStorage.setItem(META_KEY, JSON.stringify(META)); return; }
+      catch (e2) { /* still too big — trim further */ }
+    }
   }
   // ---- lifetime play-clock: banks ACTIVE wall-time into META.stats.playTimeMs.
   // Hidden/backgrounded time is excluded (the clock resets when the tab returns). ----
@@ -4212,7 +4225,6 @@
       const xbadge = '<span class="wd-x' + (p.cycles > 0 ? ' on' : '') + '">+' + (p.cycles > 0 ? p.cycles : '') + '</span>';
       return '<div class="well-meter-cell' + (done ? ' done' : '') + (p.cycles > 0 ? ' charged' : '') +
             (p.staged > 0 ? ' staged' : '') + '" data-cat="' + cat.id + '" style="--acc:' + cat.accent + '">' +
-        '<button class="wd-browse" data-act="browse" aria-label="Browse collection">⊙</button>' +
         '<div class="wd-disc-wrap">' +
           '<div class="wd-disc">' +
             '<svg class="wd-ring" viewBox="0 0 160 160" aria-hidden="true">' +
@@ -4269,7 +4281,6 @@
     if (!card) return;
     const catId = card.dataset.cat;
     const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
-    if (act === 'browse') { SFX.click(); openWellBrowse(catId); return; }
     const cur = wellStage[catId] || 0;
     if (act === 'clear') {
       if (cur === 0) return;
@@ -4505,30 +4516,6 @@
     if (close) close.addEventListener('click', doClose);
     if (veil) veil.addEventListener('click', doClose);
   }
-  // ---- browse a category's full collection (locked = enticing mystery) ----
-  function openWellBrowse(catId) {
-    const cats = wellCatalog();
-    const cat = cats.find(c => c.id === catId);
-    if (!cat) return;
-    const st = wellCatState(cat);
-    const cards = cat.entries.map(e => {
-      const unlocked = !!META.unlocks[e.key];
-      if (!unlocked) {
-        return '<div class="well-br-card locked"><div class="well-ent-art well-br-art"><span class="well-br-q">?</span></div>' +
-          '<div class="well-br-name">? ? ?</div><div class="well-br-desc">Locked — cast wishing stones to draw it from the well.</div></div>';
-      }
-      return '<div class="well-br-card"><div class="well-br-new">Unlocked</div>' +
-        e.art.replace('well-ent-art', 'well-ent-art well-br-art') +
-        '<div class="well-br-name">' + e.name + '</div>' +
-        '<div class="well-br-desc">' + e.desc + '</div></div>';
-    }).join('');
-    const html = '<div class="well-browse" style="--acc:' + cat.accent + '">' +
-      '<div class="well-browse-head"><h3>' + cat.label + '</h3>' +
-        '<span class="well-browse-prog">' + st.unlocked + ' / ' + st.total + ' unlocked</span></div>' +
-      '<div class="well-browse-grid">' + cards + '</div></div>';
-    openLwModal(html, resolveColor(cat.accent), 'well');
-  }
-
   // ============================================================
   // LOST WOODS  — the between-runs meta hub and its read-only screens
   // (Gravemarker / Stone Table / Monster Book). All data shown here is
@@ -4544,7 +4531,7 @@
     if (body) body.innerHTML = html;
     m.style.setProperty('--lw-acc', accent || 'var(--gold)');
     if (panel) {
-      panel.classList.remove('kind-stone', 'kind-book');
+      panel.classList.remove('kind-stone', 'kind-book', 'kind-run');
       if (kind) panel.classList.add('kind-' + kind);
       // replay the bloom-in each open
       panel.classList.remove('lwm-pop'); void panel.offsetWidth; panel.classList.add('lwm-pop');
@@ -4756,7 +4743,9 @@
     if (rs.soulsGained) bits.push(chip('souls', rs.soulsGained));
     return '<div class="gm-section"><div class="gm-sec-label">This Run</div><div class="gm-rs-row">' + bits.join('') + '</div></div>';
   }
-  function gmDeckChips(deck) {
+  // ---- detailed chips (used in the run-detail modal): each carries a data-tip
+  //      so hovering pops the shared inspector with full rules text. ----
+  function gmDeckChipsTip(deck) {
     const counts = {};
     (deck || []).forEach(id => { const b = baseOf(id); counts[b] = (counts[b] || 0) + 1; });
     const ids = Object.keys(counts);
@@ -4764,22 +4753,32 @@
     return ids.map(b => {
       const g = GLYPHS[b];
       if (!g) return '';
-      return '<span class="gm-pill" style="--g-color:var(--' + g.color + ')">' + g.name +
-        (counts[b] > 1 ? ' <b>×' + counts[b] + '</b>' : '') + '</span>';
+      const tip = escAttr('<b>' + g.name + '</b><br>' + DATA.formatDesc(g));
+      return '<span class="gm-pill gm-pill-tip" data-cat="Glyph" data-tip="' + tip + '" style="--g-color:var(--' + g.color + ')">' +
+        g.name + (counts[b] > 1 ? ' <b>×' + counts[b] + '</b>' : '') + '</span>';
     }).join('');
   }
-  function gmBlessChips(ids) {
+  function gmBlessChipsTip(ids) {
     const map = allBlessMap();
     const list = (ids || []).map(id => map[id]).filter(Boolean);
     if (!list.length) return '<span class="gm-empty">—</span>';
-    return list.map(bl => '<span class="gm-pill gm-pill-art">' + blessArtHTML(bl, 'gm-pill-img') + ' ' + bl.name + '</span>').join('');
+    return list.map(bl => {
+      const tip = escAttr('<b>' + bl.name + '</b><br>' + (bl.desc || ''));
+      return '<span class="gm-pill gm-pill-art gm-pill-tip" data-cat="Blessing" data-tip="' + tip + '">' +
+        blessArtHTML(bl, 'gm-pill-img') + ' ' + bl.name + '</span>';
+    }).join('');
   }
-  function gmItemChips(ids) {
+  function gmItemChipsTip(ids) {
     const list = (ids || []).map(id => ITEMS[id]).filter(Boolean);
     if (!list.length) return '<span class="gm-empty">—</span>';
-    return list.map(it => '<span class="gm-pill gm-pill-art">' + itemArtHTML(it, 'gm-pill-img') + ' ' + it.name + '</span>').join('');
+    return list.map(it => {
+      const tip = escAttr('<b>' + it.name + '</b><br>' + (it.desc || ''));
+      return '<span class="gm-pill gm-pill-art gm-pill-tip" data-cat="Item" data-tip="' + tip + '">' +
+        itemArtHTML(it, 'gm-pill-img') + ' ' + it.name + '</span>';
+    }).join('');
   }
-  function gmRunCard(snap) {
+  // common bits both the summary card and the detail modal need
+  function gmRunVisuals(snap) {
     const beast = MONSTERS[snap.beast];
     const finalForm = (snap.evoChoices && snap.evoChoices.length)
       ? evoFormById(snap.beast, snap.evoChoices[snap.evoChoices.length - 1]) : null;
@@ -4790,32 +4789,85 @@
       const f = evoFormById(snap.beast, fid);
       return f ? f.name : fid;
     });
-    const when = new Date(snap.at || Date.now());
-    const date = when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const portrait = img
+      ? '<img class="gm-port-img" src="' + img + '" alt="" draggable="false">'
+      : '<span class="gm-port-emoji">' + ((beast && beast.emoji) || '✦') + '</span>';
     const result = snap.win
       ? '<span class="gm-result gm-win">Victory</span>'
       : '<span class="gm-result gm-loss">Fell on Floor ' + (snap.act || 1) + '</span>';
     const modeTag = snap.mode === 'descension'
       ? '<span class="gm-mode gm-mode-desc">⮟ Descent ' + roman(snap.descension || 1) + '</span>'
       : '<span class="gm-mode">Classic</span>';
-    const portrait = img
-      ? '<img class="gm-port-img" src="' + img + '" alt="" draggable="false">'
-      : '<span class="gm-port-emoji">' + ((beast && beast.emoji) || '✦') + '</span>';
-    return '<div class="gm-card" style="--acc:' + accent + '">' +
+    return { beast, img, accent, name, path, portrait, result, modeTag };
+  }
+  // a compact, clickable summary tile — full detail lives in openRunDetail()
+  function gmRunCard(snap, idx) {
+    const v = gmRunVisuals(snap);
+    const when = new Date(snap.at || Date.now());
+    const date = when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const nDeck = (snap.deck || []).length;
+    const nBless = (snap.blessings || []).length;
+    const nItems = (snap.items || []).length;
+    const counts = '<span class="gm-foot-count">' + nDeck + ' glyphs</span>' +
+      '<span class="gm-foot-count">' + nBless + ' blessings</span>' +
+      '<span class="gm-foot-count">' + nItems + ' items</span>';
+    return '<div class="gm-card gm-card-click" data-run="' + idx + '" role="button" tabindex="0" ' +
+        'aria-label="Inspect run: ' + escAttr(v.name) + '" style="--acc:' + v.accent + '">' +
       '<div class="gm-card-head">' +
-        '<div class="gm-port">' + portrait + '</div>' +
+        '<div class="gm-port">' + v.portrait + '</div>' +
         '<div class="gm-card-id">' +
-          '<div class="gm-card-name">' + name + '</div>' +
-          '<div class="gm-card-meta">' + modeTag + result + '<span class="gm-stones">✦ ' + (snap.stones || 0) + '</span></div>' +
-          (path.length ? '<div class="gm-path">' + path.join(' <span class="gm-arrow">›</span> ') + '</div>' : '') +
+          '<div class="gm-card-name">' + v.name + '</div>' +
+          '<div class="gm-card-meta">' + v.modeTag + v.result + '<span class="gm-stones">✦ ' + (snap.stones || 0) + '</span></div>' +
+          (v.path.length ? '<div class="gm-path">' + v.path.join(' <span class="gm-arrow">›</span> ') + '</div>' : '') +
           '<div class="gm-date">' + date + '</div>' +
         '</div>' +
       '</div>' +
       gmRunStatStrip(snap) +
-      '<div class="gm-section"><div class="gm-sec-label">Deck</div><div class="gm-chips">' + gmDeckChips(snap.deck) + '</div></div>' +
-      '<div class="gm-section"><div class="gm-sec-label">Blessings</div><div class="gm-chips">' + gmBlessChips(snap.blessings) + '</div></div>' +
-      '<div class="gm-section"><div class="gm-sec-label">Items</div><div class="gm-chips">' + gmItemChips(snap.items) + '</div></div>' +
+      '<div class="gm-card-foot"><div class="gm-foot-counts">' + counts + '</div>' +
+        '<span class="gm-foot-cta">Inspect <span class="gm-arrow">›</span></span></div>' +
     '</div>';
+  }
+  // the big, hover-rich run dossier
+  function openRunDetail(snap) {
+    const v = gmRunVisuals(snap);
+    const when = new Date(snap.at || Date.now());
+    const date = when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' · ' + when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const rs = snap.runStats || {};
+    const kills = (rs.killsNormal || 0) + (rs.killsElite || 0) + (rs.killsBoss || 0);
+    const tiles =
+      runStatTile('Run Time', formatDuration(snap.durationMs || 0), { hero: true }) +
+      runStatTile('Enemies Slain', kills) +
+      runStatTile('Normal', rs.killsNormal || 0) +
+      runStatTile('Elites', rs.killsElite || 0) +
+      runStatTile('Bosses', rs.killsBoss || 0) +
+      runStatTile('Souls Gained', rs.soulsGained || 0) +
+      runStatTile('Blessings', (snap.blessings || []).length) +
+      runStatTile('Items Found', rs.itemsObtained || 0) +
+      runStatTile('Items Used', rs.itemsUsed || 0) +
+      runStatTile('Highest Combo', rs.bestCombo || 0) +
+      runStatTile('Best Turn', rs.bestTurnDmg || 0) +
+      runStatTile('Biggest Hit', rs.bestHit || 0);
+    const html = '<div class="grm" style="--acc:' + v.accent + '">' +
+      '<div class="grm-head">' +
+        '<div class="grm-port">' + v.portrait + '</div>' +
+        '<div class="grm-id">' +
+          '<div class="grm-name">' + v.name + '</div>' +
+          '<div class="grm-badges">' + v.modeTag + v.result +
+            '<span class="gm-stones">✦ ' + (snap.stones || 0) + ' earned</span></div>' +
+          (v.path.length ? '<div class="grm-path">' + v.path.join(' <span class="gm-arrow">›</span> ') + '</div>' : '') +
+          '<div class="grm-date">' + date + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="grm-sec"><div class="grm-sec-label">Run Record</div><div class="grm-stats">' + tiles + '</div></div>' +
+      '<div class="grm-sec"><div class="grm-sec-label">Deck — ' + (snap.deck || []).length + ' glyphs</div>' +
+        '<div class="gm-chips">' + gmDeckChipsTip(snap.deck) + '</div></div>' +
+      '<div class="grm-sec"><div class="grm-sec-label">Blessings</div>' +
+        '<div class="gm-chips">' + gmBlessChipsTip(snap.blessings) + '</div></div>' +
+      '<div class="grm-sec"><div class="grm-sec-label">Items Carried</div>' +
+        '<div class="gm-chips">' + gmItemChipsTip(snap.items) + '</div></div>' +
+    '</div>';
+    openLwModal(html, resolveColor(v.accent), 'run');
   }
   function buildGravemarker() {
     const body = $('gravemarker-body');
@@ -4844,7 +4896,24 @@
     const runs = hist.length
       ? '<div class="gm-runs">' + hist.map(gmRunCard).join('') + '</div>'
       : '<div class="lw-empty">No runs remembered yet. The Spire awaits its first offering.</div>';
-    body.innerHTML = stats + '<h3 class="gm-panel-title gm-recent-title">Recent Runs</h3>' + runs;
+    const runsTitle = hist.length
+      ? 'Remembered Runs <em class="gm-recent-count">' + hist.length + '</em>'
+      : 'Remembered Runs';
+    body.innerHTML = stats + '<h3 class="gm-panel-title gm-recent-title">' + runsTitle + '</h3>' + runs;
+    // each summary tile opens the full run dossier (click or keyboard)
+    const runsWrap = body.querySelector('.gm-runs');
+    if (runsWrap) {
+      const openFromEl = (el) => {
+        const card = el && el.closest('.gm-card-click');
+        if (!card) return;
+        const snap = hist[parseInt(card.dataset.run, 10)];
+        if (snap) { SFX.click(); openRunDetail(snap); }
+      };
+      runsWrap.addEventListener('click', (e) => openFromEl(e.target));
+      runsWrap.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFromEl(e.target); }
+      });
+    }
   }
 
   // ---- STONE TABLE ----

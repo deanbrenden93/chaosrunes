@@ -3866,12 +3866,35 @@ html, body {
 @keyframes cs-title-out {
   to { opacity: 0; transform: translateY(-12px) scale(1.05); letter-spacing: .6em; }
 }
+/* the whole character page scrolls vertically: the two-column body fills the
+   first screenful, then the full-width "This Run" row sits below it */
+.cs-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  padding-right: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--gold) 52%, #6b4ea0) rgba(0,0,0,0.32);
+}
+.cs-scroll::-webkit-scrollbar { width: 12px; }
+.cs-scroll::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.34); border-radius: 999px; margin: 4px 0;
+  box-shadow: inset 0 0 4px rgba(0,0,0,0.5);
+}
+.cs-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px; border: 2px solid rgba(0,0,0,0.4);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gold) 72%, #d4b6ff), color-mix(in srgb, var(--gold) 40%, #34244f));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--gold) 45%, transparent);
+}
+.cs-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffe7ad, color-mix(in srgb, var(--gold) 56%, #d4b6ff));
+}
 .cs-body {
-  flex: 1 1 auto; min-height: 0;
+  height: 100%; min-height: 0;
   display: grid; grid-template-columns: 560px 1fr; gap: 34px;
   animation: collection-rise .4s cubic-bezier(.2,.85,.3,1) both;
 }
 @keyframes collection-rise { from { opacity: 0; transform: translateY(20px); } }
+/* the full-width run-stats row below the two columns */
+.cs-runrow { margin-top: 22px; }
 
 /* shared section header */
 .collection-sec-head { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
@@ -5955,6 +5978,78 @@ html, body {
 .gm-pill[style*="--g-color"] { border-color: color-mix(in srgb, var(--g-color) 50%, transparent); }
 .gm-pill-img { width: 16px; height: 16px; object-fit: contain; vertical-align: middle; }
 .gm-empty { color: #6a7080; font-style: italic; font-size: 13px; }
+.gm-recent-count {
+  font-style: normal; font-size: 16px; color: var(--gold);
+  background: rgba(245,201,105,0.12); border: 1px solid rgba(245,201,105,0.3);
+  border-radius: 999px; padding: 1px 12px; margin-left: 8px; vertical-align: middle;
+}
+
+/* ---- the run summary tiles are now clickable; full detail opens in a modal ---- */
+.gm-card-click { cursor: pointer; text-align: left; transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+.gm-card-click:hover, .gm-card-click:focus-visible {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--acc) 75%, transparent);
+  box-shadow: 0 22px 50px rgba(0,0,0,0.6), 0 0 26px color-mix(in srgb, var(--acc) 28%, transparent);
+  outline: none;
+}
+.gm-card-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);
+}
+.gm-foot-counts { display: flex; flex-wrap: wrap; gap: 8px; }
+.gm-foot-count {
+  font-size: 12.5px; color: #b8aed0; font-variant-numeric: tabular-nums;
+  background: rgba(10,8,20,0.5); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px; padding: 3px 9px;
+}
+.gm-foot-cta {
+  font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .08em; white-space: nowrap;
+  color: color-mix(in srgb, var(--acc) 85%, #fff);
+}
+.gm-card-click:hover .gm-foot-cta .gm-arrow { transform: translateX(3px); display: inline-block; }
+.gm-foot-cta .gm-arrow { transition: transform .16s ease; }
+
+/* ============================================================
+   RUN DOSSIER MODAL — the big, hover-rich detail of a remembered run
+   ============================================================ */
+.lw-modal-panel.kind-run { width: 920px; max-width: 94%; padding: 30px 34px 34px; }
+.grm { text-align: left; }
+.grm-head { display: flex; gap: 20px; align-items: center; margin: 2px 0 22px; }
+.grm-port {
+  width: 116px; height: 116px; flex-shrink: 0; border-radius: 18px; overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--acc) 34%, transparent), rgba(8,6,16,0.92));
+  border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 26px color-mix(in srgb, var(--acc) 26%, transparent);
+}
+.grm-port .gm-port-img { width: 100%; height: 100%; object-fit: cover; }
+.grm-port .gm-port-emoji { font-size: 60px; }
+.grm-id { flex: 1; min-width: 0; }
+.grm-name {
+  font-family: 'Cinzel', serif; font-size: 34px; font-weight: 800; color: #f4ecd6; line-height: 1.05;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+}
+.grm-badges { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 9px 0 4px; }
+.grm-path { font-size: 15px; color: #c5b8e0; margin-top: 4px; }
+.grm-date { font-size: 13px; color: #80869a; margin-top: 6px; letter-spacing: .03em; }
+.grm-sec { margin-top: 20px; }
+.grm-sec-label {
+  font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: .14em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--acc) 70%, #d8cdef); margin-bottom: 11px;
+  padding-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, var(--acc) 26%, transparent);
+}
+.grm-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.grm .gm-chips { gap: 8px; }
+.grm .gm-pill { font-size: 14px; padding: 5px 12px; }
+.gm-pill-tip { cursor: help; transition: border-color .14s ease, background .14s ease, transform .14s ease; }
+.gm-pill-tip:hover {
+  transform: translateY(-2px);
+  background: rgba(255,255,255,0.1);
+  border-color: color-mix(in srgb, var(--lw-acc, var(--gold)) 60%, transparent);
+}
+@media (max-width: 900px), (pointer: coarse) {
+  .grm-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
 /* ---- STONE TABLE ---- */
 /* Beast picker as a sleek tab bar that lights up in the beast's own color. */
@@ -6560,15 +6655,6 @@ html, body {
 .well-mt-nav.prev { left: 2px; }
 .well-mt-nav.next { right: 2px; }
 .well-mt-nav.hide { opacity: 0; pointer-events: none; }
-
-.wd-browse {
-  position: absolute; top: 2px; right: 8px; z-index: 5;
-  width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
-  background: rgba(255,255,255,0.06); border: 1px solid color-mix(in srgb, var(--acc) 50%, transparent);
-  color: color-mix(in srgb, var(--acc) 82%, #fff); font-size: 17px; line-height: 1;
-  transition: background .15s ease, transform .15s ease;
-}
-.wd-browse:hover { background: color-mix(in srgb, var(--acc) 32%, transparent); transform: scale(1.1); }
 
 /* the disc itself — drawn at 160px and scaled up to fill the taller meter row */
 .wd-disc-wrap {

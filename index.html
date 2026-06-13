@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=20260613s" />
+  <link rel="stylesheet" href="css/styles.css?v=20260613u" />
 </head>
 <body>
   <!-- ============ BOOT LOADING SCREEN (covers everything until assets are warm) ============ -->
@@ -299,32 +299,34 @@
             <span class="cs-topbar-spacer" aria-hidden="true"></span>
           </header>
 
-          <div class="cs-body">
-            <aside id="collection-hero" class="cs-hero"><!-- hero panel injected --></aside>
+          <div class="cs-scroll">
+            <div class="cs-body">
+              <aside id="collection-hero" class="cs-hero"><!-- hero panel injected --></aside>
 
-            <main class="cs-glyphs">
-              <section class="cs-panel cs-panel-sockets">
-                <div class="collection-sec-head"><span class="csh-line"></span><h3>Sockets <em id="collection-socket-count"></em></h3><span class="csh-line"></span></div>
-                <div id="collection-sockets" class="collection-sockets"></div>
-              </section>
-              <section class="cs-panel cs-panel-pool">
-                <div class="collection-sec-head"><span class="csh-line"></span><h3>Glyph Pool <em id="collection-glyph-count"></em></h3><span class="csh-line"></span></div>
-                <div class="cs-pool-row">
-                  <div class="cs-glyphs-scroll">
-                    <div id="collection-glyphs" class="collection-glyphs"></div>
+              <main class="cs-glyphs">
+                <section class="cs-panel cs-panel-sockets">
+                  <div class="collection-sec-head"><span class="csh-line"></span><h3>Sockets <em id="collection-socket-count"></em></h3><span class="csh-line"></span></div>
+                  <div id="collection-sockets" class="collection-sockets"></div>
+                </section>
+                <section class="cs-panel cs-panel-pool">
+                  <div class="collection-sec-head"><span class="csh-line"></span><h3>Glyph Pool <em id="collection-glyph-count"></em></h3><span class="csh-line"></span></div>
+                  <div class="cs-pool-row">
+                    <div class="cs-glyphs-scroll">
+                      <div id="collection-glyphs" class="collection-glyphs"></div>
+                    </div>
+                    <aside id="deck-detail" class="deck-detail deck-detail-panel"></aside>
                   </div>
-                  <aside id="deck-detail" class="deck-detail deck-detail-panel"></aside>
-                </div>
-              </section>
-              <section class="cs-panel cs-panel-bless">
-                <div class="collection-sec-head"><span class="csh-line"></span><h3>Blessings <em id="collection-bless-count"></em></h3><span class="csh-line"></span></div>
-                <div id="collection-blessings" class="collection-blessings-row"></div>
-              </section>
-              <section class="cs-panel cs-panel-stats">
-                <div class="collection-sec-head"><span class="csh-line"></span><h3>This Run <em id="collection-runstats-timer" class="crs-timer-tag"></em></h3><span class="csh-line"></span></div>
-                <div id="collection-runstats" class="cs-runstats"></div>
-              </section>
-            </main>
+                </section>
+                <section class="cs-panel cs-panel-bless">
+                  <div class="collection-sec-head"><span class="csh-line"></span><h3>Blessings <em id="collection-bless-count"></em></h3><span class="csh-line"></span></div>
+                  <div id="collection-blessings" class="collection-blessings-row"></div>
+                </section>
+              </main>
+            </div>
+            <section class="cs-panel cs-panel-stats cs-runrow">
+              <div class="collection-sec-head"><span class="csh-line"></span><h3>This Run <em id="collection-runstats-timer" class="crs-timer-tag"></em></h3><span class="csh-line"></span></div>
+              <div id="collection-runstats" class="cs-runstats"></div>
+            </section>
           </div>
         </div>
       </section>
@@ -607,11 +609,11 @@
   <!-- floating layers rendered into stage by JS -->
   <div id="fx-layer" class="fx-layer"></div>
 
-  <script src="js/data.js?v=20260613s"></script>
-  <script src="js/audio.js?v=20260613s"></script>
-  <script src="js/scaling.js?v=20260613s"></script>
-  <script src="js/game.js?v=20260613s"></script>
-  <script src="js/battle.js?v=20260613s"></script>
-  <script src="js/main.js?v=20260613s"></script>
+  <script src="js/data.js?v=20260613u"></script>
+  <script src="js/audio.js?v=20260613u"></script>
+  <script src="js/scaling.js?v=20260613u"></script>
+  <script src="js/game.js?v=20260613u"></script>
+  <script src="js/battle.js?v=20260613u"></script>
+  <script src="js/main.js?v=20260613u"></script>
 </body>
 </html>
