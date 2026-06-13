@@ -46,6 +46,11 @@
       <section id="screen-mode" class="screen">
         <div class="bg-runes" aria-hidden="true"></div>
         <div class="mode-inner">
+          <div class="mode-stones" id="mode-stones" title="Wishing Stones earned across all runs">
+            <span class="ms-gem" aria-hidden="true">✦</span>
+            <span class="ms-val" id="mode-stones-val">0</span>
+            <span class="ms-lab">Wishing Stones</span>
+          </div>
           <header class="choose-banner">
             <h2 class="choose-head">Choose Your Path</h2>
             <p class="choose-sub">Climb the Spire as you know it — or descend into something far worse.</p>
@@ -53,25 +58,33 @@
           <div class="mode-cards">
             <button id="mode-classic" class="mode-card mode-card-classic">
               <div class="mode-card-glow" aria-hidden="true"></div>
+              <div class="mode-card-ribbon">The Pure Climb</div>
               <div class="mode-card-icon">⚔️</div>
               <h3 class="mode-card-name">Classic</h3>
-              <p class="mode-card-blurb">The Spire of Chaos: three floors, one end-boss. The pure climb.</p>
+              <p class="mode-card-blurb">The Spire of Chaos — three floors, one final horror. No modifiers, no mercy but your own.</p>
+              <ul class="mode-feats">
+                <li><span class="mf-ico">🗼</span> Three floors to the summit</li>
+                <li><span class="mf-ico">👑</span> Chaos Incarnate at the peak</li>
+                <li><span class="mf-ico ms-gem">✦</span> Earns Wishing Stones</li>
+              </ul>
               <span class="mode-card-go">Begin the Climb ›</span>
             </button>
             <button id="mode-descension" class="mode-card mode-card-descension">
               <div class="mode-card-glow" aria-hidden="true"></div>
               <div id="mode-desc-sigil" class="mode-card-sigil">I</div>
+              <div class="mode-card-ribbon mode-card-ribbon-desc">The Deepening</div>
               <div class="mode-card-icon">🕳️</div>
               <h3 class="mode-card-name">Descension</h3>
               <p id="mode-desc-depth" class="mode-card-depth">Descent I</p>
-              <p class="mode-card-blurb">Thirteen descents, each crueler than the last. Modifiers stack — and something waits at the bottom.</p>
+              <div id="mode-desc-track" class="mode-track" aria-label="Descent progress"></div>
+              <div id="mode-desc-next" class="mode-next"></div>
+              <div class="mode-stack-head"><span class="msh-line"></span><span id="mode-desc-count">Curses in Effect</span><span class="msh-line"></span></div>
               <div id="mode-desc-mods" class="mode-mods"></div>
               <span class="mode-card-go">Descend ›</span>
             </button>
           </div>
           <div class="mode-actions">
             <button id="btn-mode-back" class="btn btn-back" aria-label="Back">Back</button>
-            <div class="mode-stones" id="mode-stones" title="Wishing Stones earned across all runs">✦ <span id="mode-stones-val">0</span> Wishing Stones</div>
           </div>
         </div>
       </section>
@@ -306,6 +319,10 @@
               <section class="cs-panel cs-panel-bless">
                 <div class="collection-sec-head"><span class="csh-line"></span><h3>Blessings <em id="collection-bless-count"></em></h3><span class="csh-line"></span></div>
                 <div id="collection-blessings" class="collection-blessings-row"></div>
+              </section>
+              <section class="cs-panel cs-panel-stats">
+                <div class="collection-sec-head"><span class="csh-line"></span><h3>This Run <em id="collection-runstats-timer" class="crs-timer-tag"></em></h3><span class="csh-line"></span></div>
+                <div id="collection-runstats" class="cs-runstats"></div>
               </section>
             </main>
           </div>

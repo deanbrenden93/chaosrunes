@@ -2080,6 +2080,7 @@
     let prevId = null, chainPos = 0, fxIndex = 0, pendingCatalyst = [];
     B._devilRewards = [];        // boons banked this chain, paid out as their own finale
     B.lastMirrorTarget = null;   // resets each detonation; tracks what Mirrors are echoing
+    B.turnDmg = 0;               // accumulates this turn's total damage (Character stat)
     let comboLen = 0, comboPrev = null, maxCombo = 0, prevComboEl = null;
     // Lingering Cadence: a combo number carried from last turn seeds the first
     // fresh chain (the letters reset, but the count keeps climbing).
@@ -2140,7 +2141,7 @@
         const ct = targetRandom();
         if (ct[0]) addBurn(ct[0], comboLen);
       }
-      if (comboLen > maxCombo) maxCombo = comboLen;
+      if (comboLen > maxCombo) { maxCombo = comboLen; if (root.CG.Game.recordCombo) root.CG.Game.recordCombo(maxCombo); }
       B.comboNow = comboLen;   // Smoldering Tails / charges read this on every hit
       if (comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
       prevComboEl = (lt == null) ? null : sEl;
@@ -2295,6 +2296,9 @@
 
     // a fed Devil cools off; an ignored (but craving) one grows hungrier
     finalizeDevils();
+
+    // record this turn's total damage (the biggest single turn is a Character stat)
+    if (root.CG.Game.recordTurnDamage) root.CG.Game.recordTurnDamage(B.turnDmg || 0);
 
     await wait(250);
     await discardHand();
@@ -4208,6 +4212,11 @@
         feast(en, { dmg: dealt });
       }
     }
+    // per-run damage records: biggest single blow + running this-turn total
+    if (dealt > 0) {
+      B.turnDmg = (B.turnDmg || 0) + dealt;
+      if (root.CG.Game.recordSingleHit) root.CG.Game.recordSingleHit(dealt);
+    }
     return dealt;
   }
 
@@ -4523,6 +4532,8 @@
   function killEnemyVisual(en) {
     if (!en || !en.dom || en.dom.classList.contains('dying')) return;
     const tier = enemyTier(en);
+    if (root.CG.Game.recordKill) root.CG.Game.recordKill(tier);   // per-run kill tally
+
     const intDom = en.dom.querySelector('.intent'); if (intDom) intDom.style.display = 'none';
     deathSpectacle(en, tier);
     const d = en.dom;
@@ -5184,29 +5195,92 @@
     if (alive().length === 0 && !B.ended) { victory(); return; }
   }
 
+  // ============================================================
+  // ENEMY ACTION ANIMATIONS — one signature visual per action type, shared by
+  // every foe. Each action first telegraphs (a readable wind-up), THEN strikes,
+  // and only applies its effect at the moment of impact. Multi-action turns walk
+  // through these one at a time, so a turn reads as a clear sequence of distinct
+  // beats instead of a single simultaneous blur.
+  // ============================================================
+
+  // the acting foe gathers itself before it acts — a brief "tell" so the player
+  // can read what's coming. Resolves once the wind-up has played, so whatever
+  // strike follows lands on its own beat.
+  async function enemyWindup(en, color, big) {
+    if (!en || !en.dom || B.ended) return;
+    const d = en.dom;
+    const it = d.querySelector('.intent'); if (it) it.style.display = 'none';
+    d.style.setProperty('--enemy-fx', color || '#ff6a4a');
+    flashEl(d, big ? 'enemy-windup-big' : 'enemy-windup', big ? 560 : 440);
+    const p = center(d);
+    fxRing(p, color || '#ff6a4a', big ? 560 : 440, 'fx-ring-soft', big ? 1.15 : 0.85);
+    fxMotes(topOf(d, 8), big ? 9 : 6, color || '#ff6a4a', 'fx-mote-rise', big ? 60 : 44);
+    await wait(big ? 360 : 300);
+  }
+
+  // the foe lunges toward the player emblem (down-left) and recoils back to rest
+  function enemyLunge(en, big) {
+    const d = en && en.dom;
+    if (!d || typeof d.animate !== 'function') return;
+    const reach = big ? 28 : 18, drop = big ? 46 : 34, pop = big ? 1.12 : 1.07;
+    d.animate([
+      { transform: 'translate(0,0) scale(1)' },
+      { transform: 'translate(-' + reach + 'px,' + drop + 'px) scale(' + pop + ')', offset: 0.32 },
+      { transform: 'translate(0,0) scale(1)' }
+    ], { duration: big ? 440 : 380, easing: 'cubic-bezier(.3,.8,.3,1)' });
+  }
+
+  // fire a themed strike from the foe to `toPos`; the effect (onLand) fires the
+  // instant the bolt connects — never before. Resolves after impact.
+  function enemyBolt(en, toPos, color, kind, onLand) {
+    return new Promise(res => {
+      if (!en || !en.dom || B.ended) { if (onLand && !B.ended) onLand(); res(); return; }
+      bolt(center(en.dom), toPos, color, () => { if (onLand) onLand(); res(); }, kind);
+    });
+  }
+
+  // a quick slash streak where a melee strike connects
+  function enemySlashFx(pos, color) {
+    const f = fxSpawn(pos, 'fx-eslash', '', 380);
+    if (color) f.style.setProperty('--fx-color', color);
+  }
+  // a faceted guard plate snapping up around a foe
+  function enemyGuardFx(en) { if (en && en.dom) fxSpawn(center(en.dom), 'fx-shield', '', 760); }
+  // where on the player a hostile cast should land (portrait-anchored)
+  function targetPlayer(dx, dy) { return offset(center(playerArt()), dx || 0, dy || 0); }
+
   async function doEnemyAction(en, intent) {
     switch (intent.type) {
       case 'multi': {
-        for (const a of intent.actions) {
+        // walk each sub-action in sequence with a clear beat between them, so a
+        // foe's "defend then strike" reads as two distinct moves, not one blur
+        for (let i = 0; i < intent.actions.length; i++) {
           if (!en.alive || B.ended) break;
-          await doEnemyAction(en, a);
+          await doEnemyAction(en, intent.actions[i]);
           if (B.ended) return;
-          await wait(200);
+          if (i < intent.actions.length - 1) await wait(300);
         }
         break;
       }
       case 'attack': {
         const hits = intent.hits || 1;
+        const big = !!intent.big;
+        const color = big ? '#ff3a2a' : '#ff6a4a';
+        // one wind-up reads the incoming strike; multi-hits then rain in beats
+        await enemyWindup(en, color, big);
         for (let h = 0; h < hits; h++) {
+          if (!en.alive || B.ended) break;
           let dmg = intent.value;
           if (en.weak > 0) dmg = Math.max(1, Math.round(dmg * 0.55));
-          en.dom.querySelector('.intent').style.display = 'none';
-          en.dom.style.transition = 'transform .15s';
-          en.dom.style.transform = 'translateY(40px) scale(1.06)';
+          enemyLunge(en, big);
           SFX.enemyHit();
-          await wait(160);
-          en.dom.style.transform = '';
-          damagePlayer(dmg);
+          const target = targetPlayer(16, -8);
+          // damage lands exactly when the strike connects
+          await enemyBolt(en, target, color, 'k-fire', () => {
+            enemySlashFx(target, color);
+            damagePlayer(dmg);
+            if (big) shake(3);
+          });
           if (B.ended) return;
           // item-granted Thorns: the attacker bleeds for it (reflect flag stops
           // the foe's own Thornmail from recoiling back at us in turn)
@@ -5215,17 +5289,21 @@
             applyDamage(en, B.playerThorns, { reflect: true, strength: false, scare: false });
             if (B.ended) return;
           }
-          if (h < hits - 1) await wait(200);
+          if (h < hits - 1) await wait(230);
         }
         break;
       }
       case 'defend':
+        await enemyWindup(en, '#5ab6ff');
         en.shield += intent.value;
         setShieldPip(en.dom, en.shield);
+        enemyGuardFx(en);
         floatText(offset(center(en.dom), 0, -40), '+' + intent.value + '◆', 'shield');
         SFX.fireBlue(0);
+        await wait(280);
         break;
       case 'buff':
+        await enemyWindup(en, '#ff7a55');
         if (intent.turns) {
           en.strength = (en.strength || 0) + (intent.value || 3);
           en.strengthTurns = Math.max(en.strengthTurns || 0, intent.turns);
@@ -5234,104 +5312,136 @@
           en.empower = (en.empower || 0) + (intent.value || 4);
           floatText(offset(center(en.dom), 0, -40), 'Empowered', 'status');
         }
+        strengthFx(en.dom);
         SFX.firePurple(0);
+        await wait(280);
         break;
       case 'rally': {
         const val = intent.value || 4;
-        B.enemies.forEach(o => {
-          if (o !== en && o.alive) {
+        // the leader bellows, then a banner-bolt fans out to each ally; each is
+        // empowered the instant its bolt lands
+        await enemyWindup(en, '#ffd25a');
+        const allies = B.enemies.filter(o => o !== en && o.alive);
+        allies.forEach(o => {
+          enemyBolt(en, center(o.dom), '#ffd25a', 'k-holy', () => {
             o.empower = (o.empower || 0) + val;
             floatText(offset(center(o.dom), 0, -40), 'Rallied +' + val, 'status');
-            o.dom.classList.add('hit-flash');
-            setTimeout(() => o.dom.classList.remove('hit-flash'), 400);
-          }
+            strengthFx(o.dom);
+          });
         });
         SFX.firePurple(0);
-        await wait(200);
+        await wait(360);
         break;
       }
       case 'curse': {
         const slot = clampSlot(intent.slot);
-        B.slotFx[slot].cursed = intent.value;
-        B.slotFx[slot].caster = en;
-        renderSockets();
-        slotCurseFx($('socket-row').children[slot]);
-        floatText(playerPos(), 'Slot ' + (slot + 1) + ' Cursed', 'status');
+        await enemyWindup(en, '#c45cff');
+        const sEl = $('socket-row').children[slot];
+        const to = sEl ? center(sEl) : playerPos();
+        await enemyBolt(en, to, '#c45cff', 'k-shadow', () => {
+          B.slotFx[slot].cursed = intent.value;
+          B.slotFx[slot].caster = en;
+          renderSockets();
+          slotCurseFx($('socket-row').children[slot]);
+          floatText(offset(to, 0, -12), 'Slot ' + (slot + 1) + ' Cursed', 'status');
+        });
         SFX.firePurple(0);
-        await wait(360);
+        await wait(320);
         break;
       }
       case 'sunder': {
         const slot = clampSlot(intent.slot);
-        B.slotFx[slot].disabled = intent.value;
-        renderSockets();
-        slotBanishFx($('socket-row').children[slot]);
-        floatText(playerPos(), 'Slot ' + (slot + 1) + ' Sealed', 'status');
+        await enemyWindup(en, '#9aa0aa');
+        const sEl = $('socket-row').children[slot];
+        const to = sEl ? center(sEl) : playerPos();
+        await enemyBolt(en, to, '#9aa0aa', 'k-shadow', () => {
+          B.slotFx[slot].disabled = intent.value;
+          renderSockets();
+          slotBanishFx($('socket-row').children[slot]);
+          floatText(offset(to, 0, -12), 'Slot ' + (slot + 1) + ' Sealed', 'status');
+        });
         SFX.firePurple(0);
-        await wait(360);
+        await wait(320);
         break;
       }
       case 'trash': {
         const n = intent.count || 1;
-        if (intent.where === 'hand') {
-          for (let i = 0; i < n; i++) B.injected.push('rubble');
-          floatText(playerPos(), '+' + n + ' Rubble (hand)', 'status');
-        } else {
-          for (let i = 0; i < n; i++) root.CG.Game.state.pool.push('rubble');
-          floatText(playerPos(), '+' + n + ' Rubble (deck)', 'status');
-        }
+        await enemyWindup(en, '#b07bff');
+        await enemyBolt(en, playerPos(), '#b07bff', 'k-shadow', () => {
+          if (intent.where === 'hand') {
+            for (let i = 0; i < n; i++) B.injected.push('rubble');
+            floatText(playerPos(), '+' + n + ' Rubble (hand)', 'status');
+          } else {
+            for (let i = 0; i < n; i++) root.CG.Game.state.pool.push('rubble');
+            floatText(playerPos(), '+' + n + ' Rubble (deck)', 'status');
+          }
+        });
         SFX.firePurple(0);
-        await wait(220);
+        await wait(240);
         break;
       }
       case 'clog':
-        if (B.clogImmune) { B.clogImmune = false; floatText(playerPos(), 'Shrugged off!', 'status'); await wait(180); break; }
-        if (B.stuck.indexOf('deadweight') === -1) B.stuck.push('deadweight');
-        floatText(playerPos(), 'Dead Weight!', 'status');
+        if (B.clogImmune) { B.clogImmune = false; floatText(playerPos(), 'Shrugged off!', 'status'); await wait(200); break; }
+        await enemyWindup(en, '#b07bff');
+        await enemyBolt(en, playerPos(), '#b07bff', 'k-shadow', () => {
+          if (B.stuck.indexOf('deadweight') === -1) B.stuck.push('deadweight');
+          floatText(playerPos(), 'Dead Weight!', 'status');
+        });
         SFX.firePurple(0);
-        await wait(220);
+        await wait(240);
         break;
       case 'debuff': {
-        if (intent.stat === 'frail') { B.playerFrail = intent.value; floatText(playerPos(), 'Frail ' + intent.value, 'status'); weakFx(playerArt()); }
-        else { B.playerWeak = intent.value; floatText(playerPos(), 'Weak ' + intent.value, 'status'); weakFx(playerArt()); }
+        const frail = intent.stat === 'frail';
+        const color = frail ? '#b07bff' : '#aedd76';
+        await enemyWindup(en, color);
+        await enemyBolt(en, targetPlayer(0, -10), color, frail ? 'k-shadow' : 'k-venom', () => {
+          if (frail) { B.playerFrail = intent.value; floatText(playerPos(), 'Frail ' + intent.value, 'status'); }
+          else { B.playerWeak = intent.value; floatText(playerPos(), 'Weak ' + intent.value, 'status'); }
+          weakFx(playerArt());
+        });
         SFX.firePurple(0);
-        await wait(220);
+        await wait(240);
         break;
       }
       case 'summon': {
         if (en.summonsLeft == null) en.summonsLeft = intent.max || 2;
         if (en.summonsLeft > 0 && alive().length < MAX_ENEMIES) {
           en.summonsLeft--;
+          await enemyWindup(en, '#b07bff');
           spawnEnemy(root.CG.DATA.ENEMIES[intent.who]);
           floatText(offset(center(en.dom), 0, -40), 'Summon!', 'status');
           SFX.firePurple(0);
-          await wait(260);
+          await wait(300);
         } else {
           floatText(offset(center(en.dom), 0, -40), '…', 'status');
-          await wait(120);
+          await wait(140);
         }
         break;
       }
       case 'regen': {
         const v = intent.value || 6;
+        await enemyWindup(en, '#7ee07a');
         en.hp = Math.min(en.maxHp, en.hp + v);
         setBar(en.dom, en.hp, en.maxHp);
         floatText(offset(center(en.dom), 0, -40), '+' + v + '♥', 'heal');
         healFx(en.dom);
         SFX.fireBlue(0);
-        await wait(260);
+        await wait(280);
         break;
       }
       case 'siphon': {
         const v = intent.value || 2;
-        bolt(center(playerArt()), center(en.dom), '#c45cff');   // power drains toward the foe
-        await wait(140);
+        await enemyWindup(en, '#c45cff');
+        // the foe reaches out — power visibly drains FROM the player TO the foe,
+        // and the steal resolves when the tendril reaches it
+        await new Promise(res => bolt(center(playerArt()), center(en.dom), '#c45cff', () => res(), 'k-shadow'));
         if (intent.stat === 'strength') {
           const taken = Math.min(B.strength, v);
           if (taken > 0) {
             B.strength -= taken;
             en.strength = (en.strength || 0) + taken;
             en.strengthTurns = Math.max(en.strengthTurns || 0, 3);
+            strengthFx(en.dom);
           }
           floatText(playerPos(), taken > 0 ? 'Strength −' + taken : 'No Strength to drain', 'status');
         } else {
@@ -5341,11 +5451,12 @@
             setShieldPip($('player-monster'), B.playerShield);
             en.shield += taken;
             setShieldPip(en.dom, en.shield);
+            enemyGuardFx(en);
           }
           floatText(playerPos(), taken > 0 ? 'Block −' + taken : 'No Block to drain', 'status');
         }
         SFX.firePurple(0);
-        await wait(300);
+        await wait(280);
         break;
       }
     }

@@ -283,18 +283,49 @@
     if (sigil) sigil.textContent = roman(lvl);
     const depth = $('mode-desc-depth');
     if (depth) {
-      depth.innerHTML = 'Descent <b>' + roman(lvl) + '</b>' +
-        (cleared > 0 ? ' &middot; ' + cleared + ' cleared' : '') +
-        (mastered ? ' &middot; <span class="mode-mastered">Mastered</span>' : '');
+      depth.innerHTML = mastered
+        ? 'Descent <b>' + roman(MAX_DESCENSION) + '</b> &middot; <span class="mode-mastered">All Depths Mastered</span>'
+        : 'Descent <b>' + roman(lvl) + '</b> of ' + MAX_DESCENSION +
+          (cleared > 0 ? ' &middot; ' + cleared + ' cleared' : ' &middot; the first plunge');
     }
+    // ---- the 13-rung depth ladder: cleared / next / locked ----
+    const track = $('mode-desc-track');
+    if (track) {
+      let html = '';
+      for (let i = 1; i <= MAX_DESCENSION; i++) {
+        const done = i <= cleared;
+        const here = !mastered && i === lvl;
+        const cls = 'mt-rung' + (done ? ' done' : '') + (here ? ' here' : '') + (i > lvl && !mastered ? ' locked' : '');
+        html += '<span class="' + cls + '"><span class="mt-n">' + (done ? '✓' : i) + '</span></span>';
+      }
+      track.innerHTML = html;
+    }
+    // ---- the NEW curse this plunge adds, revealed front-and-centre ----
+    const next = $('mode-desc-next');
+    if (next) {
+      const all = DATA.DESCENSION_MODS || [];
+      const m = all[lvl - 1];
+      if (mastered) {
+        next.innerHTML = '<div class="mn-tag">Conquered</div>' +
+          '<div class="mn-name">The Spire holds nothing deeper</div>' +
+          '<div class="mn-desc">You have unmade all ' + MAX_DESCENSION + ' descents. Descend again to test your mastery.</div>';
+      } else if (m) {
+        next.innerHTML = '<div class="mn-tag">This plunge adds</div>' +
+          '<div class="mn-name"><b>' + roman(m.level) + '</b> ' + m.name + '</div>' +
+          '<div class="mn-desc">' + m.desc + '</div>';
+      } else { next.innerHTML = ''; }
+    }
+    // ---- the full stack of curses already in effect ----
     const mods = $('mode-desc-mods');
+    const active = DATA.descensionModsUpTo(lvl);
     if (mods) {
-      const active = DATA.descensionModsUpTo(lvl);
       mods.innerHTML = active.length
         ? active.map(m => '<span class="mode-mod' + (m.level === lvl ? ' mode-mod-new' : '') +
             '"><b>' + roman(m.level) + '</b> ' + m.name + '<em>' + m.desc + '</em></span>').join('')
-        : '<span class="mode-mod mode-mod-none">No modifiers yet.</span>';
+        : '<span class="mode-mod mode-mod-none">No curses yet — the first plunge is the gentlest.</span>';
     }
+    const count = $('mode-desc-count');
+    if (count) count.textContent = 'Curses in Effect · ' + active.length;
     const stones = $('mode-stones-val');
     if (stones) stones.textContent = META.wishingStones || 0;
   }
@@ -454,6 +485,63 @@
     return m;
   }
 
+  // ---- per-run statistics (Character screen "This Run" + Gravemarker cards) ----
+  function freshRunStats() {
+    return {
+      killsNormal: 0, killsElite: 0, killsBoss: 0,
+      soulsGained: 0, itemsObtained: 0, itemsUsed: 0,
+      bestCombo: 0, bestTurnDmg: 0, bestHit: 0
+    };
+  }
+  function ensureRunStats() {
+    if (!State) return null;
+    if (!State.stats) State.stats = freshRunStats();
+    return State.stats;
+  }
+  function runTotalKills(s) { s = s || {}; return (s.killsNormal || 0) + (s.killsElite || 0) + (s.killsBoss || 0); }
+  // battle.js funnels every foe death here, bucketed by tier
+  function recordKill(tier) {
+    const s = ensureRunStats(); if (!s) return;
+    if (tier === 'elite') s.killsElite = (s.killsElite || 0) + 1;
+    else if (tier === 'floorboss' || tier === 'finalboss' || tier === 'boss') s.killsBoss = (s.killsBoss || 0) + 1;
+    else s.killsNormal = (s.killsNormal || 0) + 1;
+  }
+  function recordSingleHit(dmg) { const s = ensureRunStats(); if (s && dmg > (s.bestHit || 0)) s.bestHit = dmg; }
+  function recordTurnDamage(dmg) { const s = ensureRunStats(); if (s && dmg > (s.bestTurnDmg || 0)) s.bestTurnDmg = dmg; }
+  function recordCombo(n) { const s = ensureRunStats(); if (s && n > (s.bestCombo || 0)) s.bestCombo = n; }
+  function runBlessingCount() {
+    if (!State || !State.blessings) return 0;
+    return Object.keys(State.blessings).filter(k => State.blessings[k]).length;
+  }
+  // active run time, banked across saves so a closed-then-resumed run doesn't
+  // count the offline gap; the live segment is excluded while the tab is hidden
+  function bankRunTime() {
+    if (!State) return;
+    const now = Date.now();
+    let d = now - (State.runClock || now);
+    State.runClock = now;
+    if (d < 0 || d > 12 * 60 * 60 * 1000) d = 0;   // ignore absurd gaps only (hidden time is excluded on visibility)
+    State.playMs = (State.playMs || 0) + d;
+  }
+  function runElapsedMs() {
+    if (!State) return 0;
+    const base = State.playMs || 0;
+    const hidden = (typeof document !== 'undefined' && document.hidden);
+    const since = hidden ? 0 : Math.max(0, Date.now() - (State.runClock || State.startedAt || Date.now()));
+    return base + since;
+  }
+  // dd:hh:mm:ss display (drops leading day field when zero for a tighter read)
+  function formatDuration(ms, forceDays) {
+    let s = Math.max(0, Math.floor((ms || 0) / 1000));
+    const d = Math.floor(s / 86400); s -= d * 86400;
+    const h = Math.floor(s / 3600); s -= h * 3600;
+    const m = Math.floor(s / 60); s -= m * 60;
+    const pad = n => (n < 10 ? '0' + n : '' + n);
+    if (d > 0 || forceDays) return pad(d) + ':' + pad(h) + ':' + pad(m) + ':' + pad(s);
+    if (h > 0) return pad(h) + ':' + pad(m) + ':' + pad(s);
+    return pad(m) + ':' + pad(s);
+  }
+
   function startRun(monsterId, opts) {
     opts = opts || {};
     pendingVictory = false;
@@ -484,7 +572,11 @@
       soulhunterKills: 0,        // Soulhunter forms cleared this run (0 → next is A, etc.)
       feastKills: [],            // Ghoul Feast: foes slain this run (for Skinwalker trophies)
       feastBoons: [],            // Ghoul Feast: kill-boons waiting to manifest next encounter
-      unlocks: Object.assign({}, META.unlocks)   // seeded from the meta-profile (granting is Pass 2)
+      unlocks: Object.assign({}, META.unlocks),  // seeded from the meta-profile (granting is Pass 2)
+      stats: freshRunStats(),    // live per-run tally (Character screen "This Run")
+      startedAt: Date.now(),     // wall-clock the run began
+      runClock: Date.now(),      // last point active run-time was banked
+      playMs: 0                  // accumulated ACTIVE run time (offline gaps excluded)
     };
     root.CG.State = State;
     // Map composition can read Descension effects, so generate it AFTER State is live.
@@ -1275,8 +1367,11 @@
         'var(--blue)', () => gainSocket(1)));
     }
 
-    // --- Soulhunter spoils: the soul blessing for the form you just slew ---
+    // --- Soulhunter spoils: a soulstone (always), plus the soul blessing for the form slain ---
     if (tier === 'shadow') {
+      claims.appendChild(claimCard('<img class="cc-icon-img" src="assets/Soulstone Stone.png" alt="" draggable="false">', 'Soulstone',
+        'Wrenched from the Soulhunter — a shard of raw soul. Gather <b>5</b> to evolve <b>' + activeMonster().name + '</b>.',
+        'var(--blue)', () => gainSoulstone()));
       const form = soulhunterForm();
       const sbId = { A: 'conjoined', B: 'conniving', C: 'calamitous' }[form];
       const sb = SOUL_BLESSINGS[sbId];
@@ -1392,6 +1487,7 @@
   }
   function gainSouls(amount, fromEl, onDone) {
     amount = soulsGainPreview(amount);   // applies Greed + any future soul bonuses
+    if (amount > 0) { const s = ensureRunStats(); if (s) s.soulsGained = (s.soulsGained || 0) + amount; }
     const start = State.souls;
     State.souls += amount;
     const target = soulTargetEl();
@@ -1963,6 +2059,7 @@
     const stacks = itemStacks();
     let slotIdx = stacks.length - 1;
     for (let i = stacks.length - 1; i >= 0; i--) { if (stacks[i].id === id) { slotIdx = i; break; } }
+    const so = ensureRunStats(); if (so) so.itemsObtained = (so.itemsObtained || 0) + 1;
     saveGame();
     flyItemToTopbar(ITEMS[id], slotIdx);   // also re-renders the tray
     return true;
@@ -1970,7 +2067,10 @@
   function removeFirstItem(id) {
     if (!State || !State.items) return;
     const i = State.items.indexOf(id);
-    if (i !== -1) State.items.splice(i, 1);
+    if (i !== -1) {
+      State.items.splice(i, 1);
+      const su = ensureRunStats(); if (su) su.itemsUsed = (su.itemsUsed || 0) + 1;
+    }
     renderItems();
     // Mid-combat consumption isn't committed to the save until the encounter is
     // actually resolved — so abandoning/continuing a reset encounter keeps the
@@ -3707,7 +3807,48 @@
       b.appendChild(relic);
     });
     const bc = $('collection-bless-count'); if (bc) bc.textContent = owned.length ? '· ' + owned.length : '';
+
+    buildCollectionRunStats();
   }
+
+  // ---- "This Run" stat board on the Character screen, with a live run timer ----
+  let runStatsTimer = null;
+  function runStatTile(label, val, opts) {
+    opts = opts || {};
+    return '<div class="crs-tile' + (opts.hero ? ' crs-hero' : '') + (opts.cls ? ' ' + opts.cls : '') + '">' +
+      '<div class="crs-val">' + val + '</div>' +
+      '<div class="crs-label">' + label + '</div>' +
+    '</div>';
+  }
+  function buildCollectionRunStats() {
+    const host = $('collection-runstats');
+    if (!host) return;
+    const s = ensureRunStats() || freshRunStats();
+    host.innerHTML =
+      runStatTile('Run Time', '<span id="crs-timer">' + formatDuration(runElapsedMs()) + '</span>', { hero: true, cls: 'crs-timer-tile' }) +
+      runStatTile('Enemies Slain', runTotalKills(s)) +
+      runStatTile('Normal', s.killsNormal || 0) +
+      runStatTile('Elites', s.killsElite || 0) +
+      runStatTile('Bosses', s.killsBoss || 0) +
+      runStatTile('Souls Gained', s.soulsGained || 0) +
+      runStatTile('Blessings', runBlessingCount()) +
+      runStatTile('Items Found', s.itemsObtained || 0) +
+      runStatTile('Items Used', s.itemsUsed || 0) +
+      runStatTile('Highest Combo', s.bestCombo || 0) +
+      runStatTile('Best Turn', s.bestTurnDmg || 0) +
+      runStatTile('Biggest Hit', s.bestHit || 0);
+    startRunStatsTimer();
+  }
+  function startRunStatsTimer() {
+    stopRunStatsTimer();
+    runStatsTimer = setInterval(() => {
+      const t = $('crs-timer');
+      const screen = $('screen-collection');
+      if (!t || !screen || !screen.classList.contains('is-active')) { stopRunStatsTimer(); return; }
+      t.textContent = formatDuration(runElapsedMs());
+    }, 1000);
+  }
+  function stopRunStatsTimer() { if (runStatsTimer) { clearInterval(runStatsTimer); runStatsTimer = null; } }
 
   // ============================================================
   // GAME OVER
@@ -3740,17 +3881,28 @@
       evoChoices: (m && m.evoChoices) ? m.evoChoices.slice() : [],
       deck: (State.pool || []).slice(),
       blessings: Object.keys(State.blessings || {}),
-      items: (State.items || []).slice()
+      items: (State.items || []).slice(),
+      durationMs: runElapsedMs(),
+      runStats: Object.assign({}, State.stats || freshRunStats())
     };
   }
 
   function gameOver(win) {
     // ---- META harvest — MUST run before clearSave() wipes the run ----
+    bankRunTime();    // finalize this run's active time
+    bankPlayTime();   // and the lifetime play-clock
     const isDescension = State.mode === 'descension';
     const lvl = State.descension || 0;
     const stones = awardWishingStones(win);
+    const rs = State.stats || freshRunStats();
     META.stats.runs = (META.stats.runs || 0) + 1;
     META.stats.bestAct = Math.max(META.stats.bestAct || 0, State.act || 1);
+    // fold the run's tallies into the lifetime records
+    META.stats.kills = (META.stats.kills || 0) + runTotalKills(rs);
+    META.stats.soulsGained = (META.stats.soulsGained || 0) + (rs.soulsGained || 0);
+    META.stats.bestCombo = Math.max(META.stats.bestCombo || 0, rs.bestCombo || 0);
+    META.stats.bestHit = Math.max(META.stats.bestHit || 0, rs.bestHit || 0);
+    META.stats.bestTurnDmg = Math.max(META.stats.bestTurnDmg || 0, rs.bestTurnDmg || 0);
     if (win) {
       META.stats.wins = (META.stats.wins || 0) + 1;
       if (isDescension) {
@@ -3807,7 +3959,8 @@
       unlocks: {},                  // meta-granted unlock keys (set by the Enchanted Well)
       wishMeters: {},               // per-category banked meter progress (Enchanted Well)
       descension: { cleared: 0 },   // highest Descension level fully cleared (0..MAX_DESCENSION)
-      stats: { runs: 0, wins: 0, classicWins: 0, descensionWins: 0, bestDescension: 0, bestAct: 0 },
+      stats: { runs: 0, wins: 0, classicWins: 0, descensionWins: 0, bestDescension: 0, bestAct: 0,
+               playTimeMs: 0, kills: 0, bestCombo: 0, bestHit: 0, bestTurnDmg: 0, soulsGained: 0 },
       runHistory: [],               // last 5 end-of-run build snapshots (Gravemarker reads these)
       bestiary: { seen: {}, defeated: {} },  // enemy id -> true (Monster Book)
       evolved: {}                   // evolution form id -> true (Star Chart reveals)
@@ -3838,6 +3991,33 @@
   }
   function saveMeta() {
     try { localStorage.setItem(META_KEY, JSON.stringify(META)); } catch (e) { /* ignore */ }
+  }
+  // ---- lifetime play-clock: banks ACTIVE wall-time into META.stats.playTimeMs.
+  // Hidden/backgrounded time is excluded (the clock resets when the tab returns). ----
+  let _playClock = Date.now();
+  function bankPlayTime() {
+    const now = Date.now();
+    let d = now - _playClock;
+    _playClock = now;
+    if (d < 0 || d > 5 * 60 * 1000) d = 0;   // ignore sleeps / hidden gaps
+    if (d > 0) {
+      if (!META.stats) META.stats = {};
+      META.stats.playTimeMs = (META.stats.playTimeMs || 0) + d;
+    }
+  }
+  function startPlayClock() {
+    _playClock = Date.now();
+    setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) { _playClock = Date.now(); return; }
+      bankPlayTime();
+    }, 30000);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { bankPlayTime(); bankRunTime(); saveMeta(); }
+        else { _playClock = Date.now(); if (State) State.runClock = Date.now(); }   // skip the hidden gap
+      });
+    }
+    if (root.addEventListener) root.addEventListener('beforeunload', () => { bankPlayTime(); bankRunTime(); saveMeta(); });
   }
   function grantWishingStones(n) {
     n = Math.max(0, Math.round(n || 0));
@@ -3934,6 +4114,7 @@
 
   // ---- WELL UI ----
   let wellStage = {};   // transient per-category staged stones (pre-cast)
+  let wellArcOffsets = {};   // last-rendered dashoffset per meter, so the ring animates from where it was rather than snapping
   function wellStaged() { return Object.keys(wellStage).reduce((s, k) => s + (wellStage[k] || 0), 0); }
   function wellAvailable() { return Math.max(0, (META.wishingStones || 0) - wellStaged()); }
   function wellCatIcon(cat) {
@@ -3942,6 +4123,7 @@
   }
   function buildWell() {
     wellStage = {};
+    wellArcOffsets = {};   // entering the screen, let each ring fill in from empty
     const stones = $('well-stone-count');
     if (stones) stones.textContent = META.wishingStones || 0;
     const cats = wellCatalog();
@@ -3976,12 +4158,18 @@
     if (!host) return;
     const cats = wellCatalog();
     const C = 2 * Math.PI * 66;   // circumference of the radial meter ring
+    const prevArc = wellArcOffsets;   // where each ring sat on the last render
+    const nextArc = {};
     host.innerHTML = cats.map(cat => {
       const p = wellCatPending(cat);
       const done = p.st.lockedRemaining === 0;
       // the ring fills toward the next unlock; a completed cycle reads as a full ring
       const frac = done ? 1 : (p.cycles > 0 && p.within === 0 ? 1 : p.within / WELL_PER_UNLOCK);
-      const offset = (1 - frac) * C;
+      const targetOff = (1 - frac) * C;
+      nextArc[cat.id] = targetOff;
+      // start the arc where it last was (or empty on first paint) and transition
+      // to the target on the next frame so the fill animates smoothly
+      const startOff = (cat.id in prevArc) ? prevArc[cat.id] : C;
       const xbadge = '<span class="wd-x' + (p.cycles > 0 ? ' on' : '') + '">+' + (p.cycles > 0 ? p.cycles : '') + '</span>';
       return '<div class="well-meter-cell' + (done ? ' done' : '') + (p.cycles > 0 ? ' charged' : '') +
             (p.staged > 0 ? ' staged' : '') + '" data-cat="' + cat.id + '" style="--acc:' + cat.accent + '">' +
@@ -3990,8 +4178,8 @@
           '<div class="wd-disc">' +
             '<svg class="wd-ring" viewBox="0 0 160 160" aria-hidden="true">' +
               '<circle class="wd-track" cx="80" cy="80" r="66"></circle>' +
-              '<circle class="wd-arc' + (frac >= 1 ? ' full' : '') + '" cx="80" cy="80" r="66" ' +
-                'style="stroke-dasharray:' + C + ';stroke-dashoffset:' + offset + '"></circle>' +
+              '<circle class="wd-arc' + (frac >= 1 ? ' full' : '') + '" cx="80" cy="80" r="66" data-arc="' + targetOff + '" ' +
+                'style="stroke-dasharray:' + C + ';stroke-dashoffset:' + startOff + '"></circle>' +
             '</svg>' +
             '<div class="wd-gear"></div>' +
             '<div class="wd-rune"></div>' +
@@ -4011,6 +4199,15 @@
           '</div>') +
       '</div>';
     }).join('');
+    wellArcOffsets = nextArc;
+    // next frame: ease every ring from its start offset to its real target, so
+    // adding/removing stones visibly fills/drains the gauge instead of snapping
+    requestAnimationFrame(() => {
+      host.querySelectorAll('.wd-arc').forEach(a => {
+        const t = a.getAttribute('data-arc');
+        if (t != null) a.style.strokeDashoffset = t;
+      });
+    });
     // balance + pending summary
     const avail = wellAvailable();
     const staged = wellStaged();
@@ -4079,11 +4276,15 @@
   function flyStonesToWell(staged, done) {
     const screen = $('screen-well');
     const pool = screen && screen.querySelector('.well-pool');
-    if (!screen || !pool) { if (done) done(); return; }
-    const sr = screen.getBoundingClientRect();
+    const Scale = root.CG.Scale;
+    const stageEl = document.getElementById('stage');
+    // the stones live inside the CSS-scaled #stage, so positions must be in
+    // STAGE-LOCAL space (via Scale.toStage) — using raw client deltas would be
+    // off by the scale factor and drift up-and-left (worse the smaller the stage)
+    if (!screen || !pool || !Scale || !stageEl) { if (done) done(); return; }
     const pr = pool.getBoundingClientRect();
-    const tx = pr.left + pr.width / 2 - sr.left;
-    const ty = pr.top + pr.height / 2 - sr.top;
+    const target = Scale.toStage(pr.left + pr.width / 2, pr.top + pr.height / 2);
+    const tx = target.x, ty = target.y;
     // gather a flight plan: one source disc per staged category (capped for perf)
     const flights = [];
     Object.keys(staged || {}).forEach(catId => {
@@ -4093,16 +4294,13 @@
       const disc = cell && (cell.querySelector('.wd-portrait') || cell.querySelector('.wd-disc'));
       if (!disc) return;
       const dr = disc.getBoundingClientRect();
+      const sp = Scale.toStage(dr.left + dr.width / 2, dr.top + dr.height / 2);
       const cat = WELL_CATS.find(c => c.id === catId);
       const color = resolveColor(cat ? cat.accent : '#c9a6ff');
       const per = Math.max(1, Math.min(want, 8));
       cell.classList.add('pouring');
       for (let i = 0; i < per; i++) {
-        flights.push({
-          sx: dr.left + dr.width / 2 - sr.left,
-          sy: dr.top + dr.height / 2 - sr.top,
-          color, cell
-        });
+        flights.push({ sx: sp.x, sy: sp.y, color, cell });
       }
     });
     if (!flights.length) { if (done) done(); return; }
@@ -4129,7 +4327,7 @@
       s.style.top = f.sy + 'px';
       s.style.color = f.color;
       s.style.textShadow = '0 0 12px ' + f.color + ', 0 0 26px ' + f.color;
-      screen.appendChild(s);
+      stageEl.appendChild(s);
       const arcX = dx * 0.5 + (Math.random() * 70 - 35);
       const arcY = dy * 0.5 - (120 + Math.random() * 80);   // lob upward first
       const dur = 560 + Math.random() * 200;
@@ -4218,14 +4416,36 @@
         const prev = ov.querySelector('.well-car-nav.prev');
         const next = ov.querySelector('.well-car-nav.next');
         const maxScroll = track.scrollWidth - track.clientWidth - 2;
-        if (prev) prev.classList.toggle('hide', track.scrollLeft <= 2);
-        if (next) next.classList.toggle('hide', track.scrollLeft >= maxScroll);
+        const atStart = track.scrollLeft <= 2;
+        const atEnd = track.scrollLeft >= maxScroll;
+        if (prev) prev.classList.toggle('hide', atStart);
+        if (next) next.classList.toggle('hide', atEnd);
+        // only fade an edge when there's hidden content beyond it, so the first
+        // and last cards are never permanently clipped by the fade mask
+        track.classList.toggle('at-start', atStart);
+        track.classList.toggle('at-end', atEnd);
       };
       const prev = ov.querySelector('.well-car-nav.prev');
       const next = ov.querySelector('.well-car-nav.next');
       if (prev) prev.addEventListener('click', () => { SFX.click(); track.scrollBy({ left: -colW() * 2, behavior: 'smooth' }); });
       if (next) next.addEventListener('click', () => { SFX.click(); track.scrollBy({ left: colW() * 2, behavior: 'smooth' }); });
       track.addEventListener('scroll', syncNav, { passive: true });
+      // a vertical wheel / trackpad swipe drives the horizontal track directly,
+      // so it tracks the finger 1:1 instead of relying on the browser's flaky
+      // wheel-to-sideways translation (which stalls and stutters)
+      track.addEventListener('wheel', (e) => {
+        const maxScroll = track.scrollWidth - track.clientWidth;
+        if (maxScroll <= 1) return;   // nothing to scroll — let the page have it
+        let d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        if (!d) return;
+        if (e.deltaMode === 1) d *= 16;                  // lines → px (mouse wheels)
+        else if (e.deltaMode === 2) d *= track.clientWidth;   // pages → px
+        const before = track.scrollLeft;
+        track.scrollLeft = Math.max(0, Math.min(maxScroll, before + d));
+        // only swallow the gesture if we actually consumed some of it, so an
+        // over-scroll at either end can still bubble normally
+        if (track.scrollLeft !== before) e.preventDefault();
+      }, { passive: false });
       requestAnimationFrame(syncNav);
     }
     // escalating chime: one reward ping per unlock, a victory flourish for a big haul
@@ -4461,6 +4681,40 @@
   function statTile(label, val) {
     return '<div class="gm-stat"><div class="gm-stat-val">' + val + '</div><div class="gm-stat-label">' + label + '</div></div>';
   }
+  // a "cool data display" of total time played, split into dd : hh : mm : ss
+  function gmPlaytimeBanner(ms) {
+    let sec = Math.max(0, Math.floor((ms || 0) / 1000));
+    const d = Math.floor(sec / 86400); sec -= d * 86400;
+    const h = Math.floor(sec / 3600); sec -= h * 3600;
+    const m = Math.floor(sec / 60); sec -= m * 60;
+    const pad = n => (n < 10 ? '0' + n : '' + n);
+    const seg = (v, lab) => '<div class="gm-clock-seg"><span class="gm-clock-num">' + pad(v) + '</span><span class="gm-clock-lab">' + lab + '</span></div>';
+    return '<div class="gm-clock" aria-label="Total time played">' +
+      '<div class="gm-clock-title">Time in the Spire</div>' +
+      '<div class="gm-clock-digits">' +
+        seg(d, 'Days') + '<span class="gm-clock-sep">:</span>' +
+        seg(h, 'Hrs') + '<span class="gm-clock-sep">:</span>' +
+        seg(m, 'Min') + '<span class="gm-clock-sep">:</span>' +
+        seg(sec, 'Sec') +
+      '</div>' +
+    '</div>';
+  }
+  // a compact stat strip for each remembered run
+  function gmRunStatStrip(snap) {
+    const rs = snap.runStats || {};
+    const kills = (rs.killsNormal || 0) + (rs.killsElite || 0) + (rs.killsBoss || 0);
+    const chip = (lab, val) => '<span class="gm-rs"><b>' + val + '</b> ' + lab + '</span>';
+    const bits = [];
+    if (snap.durationMs != null) bits.push(chip('time', formatDuration(snap.durationMs)));
+    bits.push(chip('slain', kills));
+    if (rs.killsElite) bits.push(chip('elites', rs.killsElite));
+    if (rs.killsBoss) bits.push(chip('bosses', rs.killsBoss));
+    if (rs.bestCombo) bits.push(chip('combo', rs.bestCombo));
+    if (rs.bestHit) bits.push(chip('big hit', rs.bestHit));
+    if (rs.bestTurnDmg) bits.push(chip('best turn', rs.bestTurnDmg));
+    if (rs.soulsGained) bits.push(chip('souls', rs.soulsGained));
+    return '<div class="gm-section"><div class="gm-sec-label">This Run</div><div class="gm-rs-row">' + bits.join('') + '</div></div>';
+  }
   function gmDeckChips(deck) {
     const counts = {};
     (deck || []).forEach(id => { const b = baseOf(id); counts[b] = (counts[b] || 0) + 1; });
@@ -4516,6 +4770,7 @@
           '<div class="gm-date">' + date + '</div>' +
         '</div>' +
       '</div>' +
+      gmRunStatStrip(snap) +
       '<div class="gm-section"><div class="gm-sec-label">Deck</div><div class="gm-chips">' + gmDeckChips(snap.deck) + '</div></div>' +
       '<div class="gm-section"><div class="gm-sec-label">Blessings</div><div class="gm-chips">' + gmBlessChips(snap.blessings) + '</div></div>' +
       '<div class="gm-section"><div class="gm-sec-label">Items</div><div class="gm-chips">' + gmItemChips(snap.items) + '</div></div>' +
@@ -4528,6 +4783,7 @@
     const stats =
       '<div class="gm-stats-panel">' +
         '<h3 class="gm-panel-title">Lifetime Deeds</h3>' +
+        gmPlaytimeBanner(s.playTimeMs || 0) +
         '<div class="gm-stats-grid">' +
           statTile('Runs', s.runs || 0) +
           statTile('Wins', s.wins || 0) +
@@ -4535,6 +4791,11 @@
           statTile('Descents Won', s.descensionWins || 0) +
           statTile('Deepest Descent', (META.descension && META.descension.cleared) || 0) +
           statTile('Best Floor', s.bestAct || 0) +
+          statTile('Enemies Slain', s.kills || 0) +
+          statTile('Souls Gathered', s.soulsGained || 0) +
+          statTile('Highest Combo', s.bestCombo || 0) +
+          statTile('Biggest Hit', s.bestHit || 0) +
+          statTile('Best Turn', s.bestTurnDmg || 0) +
           statTile('Wishing Stones', '✦ ' + (META.wishingStones || 0)) +
         '</div>' +
       '</div>';
@@ -4897,6 +5158,7 @@
   const SAVE_KEY = 'cg_save_v1';
   function saveGame() {
     if (!State) return;
+    bankRunTime();   // checkpoint active run-time before persisting
     try { localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, state: State })); }
     catch (e) { /* storage may be unavailable (private mode / quota) */ }
   }
@@ -4937,6 +5199,10 @@
       if (State.soulstones == null) State.soulstones = 0;  // back-compat for pre-soulstone saves
       if (State.soulhunterKills == null) State.soulhunterKills = 0;
       if (!State.unlocks) State.unlocks = {};
+      State.stats = Object.assign(freshRunStats(), State.stats || {});  // back-compat for pre-stats saves
+      if (!State.startedAt) State.startedAt = Date.now();
+      if (State.playMs == null) State.playMs = 0;
+      State.runClock = Date.now();   // resume the run-clock now; offline time isn't counted
       root.CG.State = State;
       renderMap();
       show('screen-map');
@@ -5178,6 +5444,7 @@
     buildStart();
     loadSettings();
     loadMeta();
+    startPlayClock();
     wireOptions();
     wireConfirm();
     wireBlessModal();
@@ -5425,6 +5692,7 @@
     grantRandomBlessing, consumeRevive, addItem, canAddItem,
     gainSouls, grantRandomGlyph, permEmpowerBase,
     recordBestiarySeen, recordBestiaryDefeated,
+    recordKill, recordSingleHit, recordTurnDamage, recordCombo,
     debugGold, debugToggleAnyNode, debugSecretShop, debugWishStones,
     get state() { return State; }
   };
