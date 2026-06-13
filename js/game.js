@@ -92,7 +92,7 @@
   // unique final-FINAL boss.
   const MAX_DESCENSION = 13;
   const FLOOR_BOSSES = {
-    1: ['voidIdol', 'hollowChoir', 'mawMother'],
+    1: ['starveling'],
     2: ['gravetideColossus', 'cinderQueen', 'hollowShepherd'],
     3: ['chaosIncarnate']
   };
@@ -105,7 +105,8 @@
     cinderQueen: ['cinderling', 'cinderling'],
     hollowShepherd: ['gravewarden'],
     chaosIncarnate: ['maledict', 'hexweaver'],
-    theUnmaking: ['maledict', 'hexweaver']
+    starveling: [],   // the floor-1 boss fights alone — its three phases ARE the fight
+    theUnmaking: []   // the Ultimate Form fights alone — only the Doom Clock matters
   };
   function pickFloorBoss(act) {
     // Descension's deepest level replaces the final-floor boss with the
@@ -697,8 +698,14 @@
     // breather to mend and prepare before every floor boss
     floors[PREBOSS].forEach(n => { n.type = 'rest'; });
 
-    // --- Soulhunter: the shadow elite, exactly one per floor (act) ---
-    placeInRange(2, LAST - 2, 'shadow', { freshFloor: true });
+    // --- Soulhunter: the shadow elite, exactly one per floor (act). Sits in the
+    // back half of the climb (middle/final third), never the opening rows — the
+    // player must deliberately path toward the hunt. Falls back wider if the
+    // narrower band can't host it.
+    const shadowLo = Math.max(2, Math.floor(LAST / 3));
+    if (placeInRange(shadowLo, LAST - 2, 'shadow', { freshFloor: true }) === -1) {
+      placeInRange(2, LAST - 2, 'shadow', { freshFloor: true });
+    }
 
     // --- Elites: 3-5 distinct rows, anywhere (Descension "Swarm" adds more) ---
     const dz = descensionEffects();
@@ -940,21 +947,50 @@
     }
 
     if (node.type === 'elite') {
+      // The three elites fight SOLO — their own mechanics (summons, drum, gorge)
+      // ARE the encounter. (The Starveling is a boss node, not an elite.)
+      const soloLeads = [ E.bonepiper, E.warchanter, E.clogfiend ];
+      if ((State.act || 1) === 1) return [ rng(soloLeads) ];
       const lead = f >= 4 ? rng([ E.warchanter, E.clogfiend, E.bonepiper ])
                  : f >= 2 ? rng([ E.bonepiper, E.gloommaw ])
                           : E.gloommaw;
+      if (soloLeads.indexOf(lead) !== -1) return [ lead ];
       // Gloommaw (floor boss) hits plenty hard on its own — keep its escort lighter.
       if (lead === E.gloommaw) return [ lead, rng([ E.cinderling, E.thornback ]) ];
-      // other elites get a depth-scaled escort; nastier support shows up deeper in
+      // other leads get a depth-scaled escort; nastier support shows up deeper in
       const escort = f >= 3 ? rng([ E.thornback, E.maledict, E.sapfiend, E.gravewarden ])
                    : f >= 1 ? rng([ E.thornback, E.hexweaver, E.cinderling ])
                             : rng([ E.cinderling, E.thornback ]);
       return [ lead, escort ];
     }
 
+    // ---- FLOOR 1 (act 1): seven hand-authored encounters that teach the new
+    // mechanics one at a time. Cloned defs let the same foe carry encounter-
+    // specific HP / intent rotations without bloating the ENEMIES table.
+    if ((State.act || 1) === 1) {
+      const clone = (base, ov) => Object.assign({}, base, ov);
+      const A5 = { type: 'attack', value: 5 };
+      const STR1 = { type: 'buffStat', stat: 'strength', value: 1 };
+      const RES1 = { type: 'buffStat', stat: 'resilience', value: 1 };
+      const A2x3 = { type: 'attack', value: 3, hits: 2 };
+      const cindBuild = [ A5, STR1, A2x3 ];        // enc 3 L/R, enc 5
+      const cindBuildOff = [ STR1, A2x3, A5 ];     // enc 3 center (staggered rotation)
+      const cindIntro = [ A5, RES1, STR1 ];        // enc 1
+      const cind = (hp, intents) => clone(E.cinderling, { maxHp: hp, intents: intents });
+      const ENCOUNTERS = [
+        [ cind(20, cindIntro), clone(E.thornback, { maxHp: 30 }) ],                       // 1: thorns timing
+        [ clone(E.maledict, { maxHp: 45 }) ],                                             // 2: curse clock (Malice)
+        [ cind(20, cindBuild), cind(20, cindBuildOff), cind(20, cindBuild) ],             // 3: focus-fire snowball
+        [ clone(E.gravewarden, { maxHp: 40 }) ],                                          // 4: bury + telegraphed Crushing Blow
+        [ cind(20, cindBuild), clone(E.hexweaver, { maxHp: 30 }), cind(20, cindBuild) ],  // 5: kill-order puzzle
+        [ clone(E.sapfiend, { maxHp: 60 }) ],                                             // 6: brood + sap drain
+        [ clone(E.hexwitch, { maxHp: 45 }) ]                                              // 7: combo-hex
+      ];
+      return rng(ENCOUNTERS).slice();
+    }
+
     // ---- normal battles: pick a hand-designed group available at this depth ----
-    // (gimmicks now ride on existing foes: Thornback=Thorns, Gravewarden=Ward,
-    //  Maledict=Siphon; new gimmick enemies are saved for future floors.)
+    // (Floors 2-3 reuse the reworked foes above under depth/Descension scaling.)
     const groups = [
       // floor 0-1 — spicy intros
       { min: 0, max: 1, members: [ E.cinderling, E.thornback ] },     // thorns: pick your hits
@@ -988,47 +1024,30 @@
     const form = soulhunterForm();
     const act = State.act || 1;
     const actMul = 1 + (act - 1) * 0.55;          // the floor's own difficulty rides on top
+    // The Hunt: Soulbrand morphs your special sockets into Soul sockets that feed
+    // Quarry; when Quarry crosses the threshold the Hunter unleashes Soul Reap.
     const FORMS = {
-      A: { hp: 124, enrage: 0, intents: [
-        { type: 'attack', value: 12 },
-        [ { type: 'debuff', stat: 'weak', value: 2 }, { type: 'attack', value: 8 } ],
-        { type: 'attack', value: 9, hits: 2 },
-        { type: 'attack', value: 24, big: true }
-      ] },
-      B: { hp: 210, enrage: 2, intents: [
-        [ { type: 'curse', value: 2 }, { type: 'attack', value: 12 } ],
-        { type: 'attack', value: 12, hits: 2 },
-        [ { type: 'sunder', value: 2 }, { type: 'debuff', stat: 'frail', value: 2 } ],
-        { type: 'attack', value: 15, hits: 2 },
-        { type: 'attack', value: 36, big: true },
-        { type: 'regen', value: 18 }
-      ] },
-      C: { hp: 340, enrage: 3, intents: [
-        [ { type: 'curse', value: 3 }, { type: 'sunder', value: 2 } ],
-        { type: 'attack', value: 13, hits: 3 },
-        [ { type: 'siphon', stat: 'strength', value: 2 }, { type: 'debuff', stat: 'weak', value: 3 } ],
-        [ { type: 'defend', value: 26 }, { type: 'buff', value: 6, turns: 2 } ],
-        { type: 'attack', value: 19, hits: 3 },
-        { type: 'attack', value: 54, big: true },
-        [ { type: 'regen', value: 28 }, { type: 'debuff', stat: 'frail', value: 3 } ]
-      ] }
+      A: { hp: 130, soulForm: 1, startQuarry: 1, reapAt: 4, mark: 1, markHit: 6, scare: 2, stalkHit: 5 },
+      B: { hp: 170, soulForm: 2, startQuarry: 2, reapAt: 6, mark: 2, markHit: 8, scare: 3, stalkHit: 6 },
+      C: { hp: 210, soulForm: 3, startQuarry: 3, reapAt: 8, mark: 3, markHit: 10, scare: 4, stalkHit: 7 }
     };
     const spec = FORMS[form];
-    const scaleSub = it => {
-      const o = Object.assign({}, it);
-      if (o.type === 'attack' || o.type === 'defend' || o.type === 'regen') o.value = Math.round(it.value * actMul);
-      return o;
-    };
-    const intents = spec.intents.map(e => Array.isArray(e) ? e.map(scaleSub) : scaleSub(e));
+    const atk = v => Math.round(v * actMul);
+    const intents = [
+      [ { type: 'quarry', value: spec.mark }, { type: 'attack', value: atk(spec.markHit) } ],   // Mark
+      [ { type: 'scare', value: spec.scare }, { type: 'attack', value: atk(spec.stalkHit) } ],   // Stalk
+      { type: 'thinking' },
+      { type: 'soulReap', big: true }   // conditional — the brain fires it when Quarry >= reapAt
+    ];
     const FORM_IMG = { A: 'assets/Soulhunter I.png', B: 'assets/Soulhunter II.png', C: 'assets/Soulhunter III.png' };
     const def = {
-      id: 'soulhunter', name: 'Soulhunter \u2014 Form ' + form, emoji: '\u2620\uFE0F',
+      id: 'soulhunter', name: 'Soul Hunter \u2014 Form ' + form, emoji: '\u2620\uFE0F',
       img: FORM_IMG[form] || null,
       maxHp: Math.round(spec.hp * actMul),
-      boss: true, shadow: true, form: form,
+      boss: true, shadow: true, form: form, ranged: true,
+      brain: 'soulhunter', reapAt: spec.reapAt, soulForm: spec.soulForm, startQuarry: spec.startQuarry,
       intents: intents
     };
-    if (spec.enrage) def.enrage = spec.enrage;
     return [ def ];
   }
 
@@ -2806,6 +2825,22 @@
       bad: !!opts.bad
     };
   }
+  // reveal-card specs for the other reward kinds, so event blessings/items get the
+  // same "it appears, claim it" beat the reward screen and dice events already use
+  function blessRevealCard(b, opts) {
+    opts = opts || {};
+    return {
+      kind: opts.kind || 'Charm', name: b.name, color: 'var(--purple)',
+      art: blessArtHTML(b), desc: b.desc
+    };
+  }
+  function itemRevealCard(it, opts) {
+    opts = opts || {};
+    return {
+      kind: opts.kind || 'Item', name: it.name, color: 'var(--gold)',
+      art: itemArtHTML(it), desc: it.desc
+    };
+  }
 
   function nonJunkPool() {
     const seen = {}; const ids = [];
@@ -3197,8 +3232,12 @@
           resolve: () => {
             const lost = loseRandomItem();
             grantEventBlessing('fearbraid');
-            return (lost ? 'You surrender your <b>' + lost + '</b>. ' : 'You carry nothing he wants, so he settles for a pact. ') +
-              'He braids a charm of dread into your mane — <b>Fear Braid</b>.';
+            return {
+              text: (lost ? 'You surrender your <b>' + lost + '</b>. ' : 'You carry nothing he wants, so he settles for a pact. ') +
+                'He braids a charm of dread into your mane — <b>Fear Braid</b>.',
+              reveal: { title: 'A Dark Pact', sub: 'He braids a charm of dread into your mane…',
+                cards: [ blessRevealCard(EVENT_BLESSINGS.fearbraid) ] }
+            };
           }
         }
       ]
@@ -3215,7 +3254,11 @@
         resolve: () => {
           const dmg = harmActivePct(0.20);
           grantEventBlessing('shimmer');
-          return 'They peel something luminous from your soul and seal it in a glass orb. It costs you <b>' + dmg + ' HP</b> — but the orb is yours.';
+          return {
+            text: 'They peel something luminous from your soul and seal it in a glass orb. It costs you <b>' + dmg + ' HP</b> — but the orb is yours.',
+            reveal: { title: 'The Shimmering Orb', sub: 'They seal something luminous from your soul in glass…',
+              cards: [ blessRevealCard(EVENT_BLESSINGS.shimmer) ] }
+          };
         }
       }]
     });
@@ -3229,12 +3272,22 @@
         {
           tag: 'Gift', icon: '🪶', name: 'Black Feather', color: 'var(--blue)',
           desc: 'A permanent <b>+3 Resilience</b> at the start of every battle.',
-          resolve: () => { grantEventBlessing('blackfeather'); return 'You take the black feather. It sinks into your hide — you feel far harder to break.'; }
+          resolve: () => {
+            grantEventBlessing('blackfeather');
+            return { text: 'You take the black feather. It sinks into your hide — you feel far harder to break.',
+              reveal: { title: 'Black Feather', sub: 'It sinks into your hide…',
+                cards: [ blessRevealCard(EVENT_BLESSINGS.blackfeather) ] } };
+          }
         },
         {
           tag: 'Gift', icon: '💪', name: 'Raw Muscle Fiber', color: 'var(--red)',
           desc: 'A permanent <b>+3 Strength</b> at the start of every battle.',
-          resolve: () => { grantEventBlessing('rawmuscle'); return 'You swallow the raw fiber. Strength coils hot through your limbs.'; }
+          resolve: () => {
+            grantEventBlessing('rawmuscle');
+            return { text: 'You swallow the raw fiber. Strength coils hot through your limbs.',
+              reveal: { title: 'Raw Muscle Fiber', sub: 'Strength coils hot through your limbs…',
+                cards: [ blessRevealCard(EVENT_BLESSINGS.rawmuscle) ] } };
+          }
         },
         {
           tag: 'Gift', icon: '🤍', name: 'Touch Her Hand', color: 'var(--green)',
@@ -5112,8 +5165,25 @@
       case 'regen': return 'Regen ' + it.value;
       case 'rally': return 'Rally ' + it.value;
       case 'summon': return 'Summon';
+      case 'birthBrood': return it.label || 'Birth Brood';
+      case 'dirge': return 'Dirge';
+      case 'warcry': return 'Rally +' + (it.value || 4);
+      case 'frustration': return 'Frustration';
+      case 'gorge': return 'Gorge ×junk';
+      case 'quarry': return 'Quarry +' + (it.value || 1);
+      case 'soulReap': return 'Soul Reap';
+      case 'doom': return '999';
       case 'clog': return 'Dead Weight';
-      case 'trash': return 'Rubble';
+      case 'trash': return 'Bury Rubble';
+      case 'thinking': return 'Thinking';
+      case 'thornsAll': return 'Thorns ' + (it.value || 3) + ' (all)';
+      case 'blockAll': return 'Guard ' + (it.value || 5) + ' (all)';
+      case 'buffStat': return (it.stat === 'resilience' ? 'Resilience +' : 'Strength +') + (it.value || 1) + (it.scope === 'self' ? '' : ' (all)');
+      case 'banish': return 'Banish socket';
+      case 'scare': return 'Scare ' + (it.value || 2);
+      case 'sap': return 'Sap ' + (it.value || 4);
+      case 'mature': return 'Mature';
+      case 'hex': return 'Hex';
       default: return it.type;
     }
   }
@@ -5133,8 +5203,25 @@
       case 'regen': return 'Regenerates ' + n + ' HP.';
       case 'rally': return 'Rallies its allies, granting +' + n + ' Strength.';
       case 'summon': return 'Summons reinforcements into the fight.';
-      case 'clog': return 'Jams your deck with a Dead Weight card.';
-      case 'trash': return 'Clutters your deck with useless Rubble.';
+      case 'birthBrood': return it.who === 'skeleton' ? 'Pipes Skeletons into the fray; won\'t summon more until they fall.' : 'Tears Wormlings from itself, losing HP that never returns.';
+      case 'dirge': return 'Drums every living Skeleton\'s strike multiplier up by 1.';
+      case 'warcry': return 'War Drum: gains Strength and Resilience, and the next Rally beats louder.';
+      case 'frustration': return 'Stews — every 10 damage you deal it this turn jams a Rubble into your hand.';
+      case 'gorge': return 'Attacks once per junk glyph left in your hand when it resolves.';
+      case 'quarry': return 'Marks you with Quarry. At its threshold he unleashes Soul Reap.';
+      case 'soulReap': return 'Strikes 5 once per Quarry stack, then resets your Quarry to zero.';
+      case 'doom': return 'The Doom Clock struck zero — 999 unconditional damage.';
+      case 'clog': return 'Jams a 2-socket Dead Weight into your hand (10 damage if you let it discard).';
+      case 'trash': return 'Buries useless Rubble in your hand to choke your draws.';
+      case 'thinking': return 'Gathers itself — no action this turn (often a wind-up).';
+      case 'thornsAll': return 'Grants Thorns to itself and allies for the rest of combat.';
+      case 'blockAll': return 'Raises Block on itself and every ally.';
+      case 'buffStat': return 'Grants +' + (n || 1) + ' ' + (it.stat === 'resilience' ? 'Resilience' : 'Strength') + (it.scope === 'self' ? ' to itself' : ' to itself and allies') + ' for the rest of combat.';
+      case 'banish': return 'Banishes a socket shut while it lives — kill it to reopen.';
+      case 'scare': return 'Scares you: each enemy hit deals +' + (n || 2) + ' for a couple of turns.';
+      case 'sap': return 'Latches on, bleeding you ' + (n || 4) + ' HP at the start of each of your turns while it lives.';
+      case 'mature': return 'Grows stronger — its Sap and bite worsen for the rest of combat.';
+      case 'hex': return 'Hexes you: while it lives, your combo bonus recoils onto you as damage.';
       default: return '';
     }
   }
@@ -5796,6 +5883,125 @@
     if ($('screen-well') && $('screen-well').classList.contains('is-active')) buildWell();
     const lw = $('lw-stones'); if (lw) lw.textContent = META.wishingStones || 0;
   }
+  // bump the highest-cleared Descension by one (unlocks the next depth), capped
+  // at MAX_DESCENSION. Returns the new cleared value for the debug button label.
+  function debugDescent() {
+    META.descension.cleared = Math.min(MAX_DESCENSION, (META.descension.cleared || 0) + 1);
+    META.stats.bestDescension = Math.max(META.stats.bestDescension || 0, META.descension.cleared);
+    saveMeta();
+    if ($('screen-mode') && $('screen-mode').classList.contains('is-active')) buildModeSelect();
+    return META.descension.cleared;
+  }
+
+  // ---- Debug: instant-battle picker (map screen of a run only) ----
+  function debugBattleAvailable() {
+    return !!(State && $('screen-map') && $('screen-map').classList.contains('is-active'));
+  }
+  // every defined foe, plus the synthetic Soul Hunter, grouped by tier
+  function debugEncounterList() {
+    const order = { final: 0, boss: 1, floorboss: 2, elite: 3, normal: 4, token: 5 };
+    const list = [];
+    Object.keys(ENEMIES).forEach(id => {
+      const e = ENEMIES[id];
+      if (!e || !e.name) return;
+      let kind = 'normal';
+      if (e.finalFinal) kind = 'final';
+      else if (e.boss) kind = 'boss';
+      else if (e.floorBoss) kind = 'floorboss';
+      else if (e.elite) kind = 'elite';
+      else if (e.token) kind = 'token';
+      list.push({ id: id, name: e.name, emoji: e.emoji || '👾', img: e.img || '', kind: kind });
+    });
+    // the recurring shadow rival is built per current form — offer it explicitly
+    list.push({ id: '__soulhunter', name: 'Soul Hunter (current form)', emoji: '\u2620\uFE0F', img: 'assets/Soulhunter I.png', kind: 'boss' });
+    list.sort((a, b) => (order[a.kind] - order[b.kind]) || a.name.localeCompare(b.name));
+    return list;
+  }
+  function debugStartBattle(id) {
+    if (!debugBattleAvailable()) return false;
+    let enemies, isBoss = false, shadow = false, music = 'battle';
+    if (id === '__soulhunter') {
+      enemies = soulhunterFormation();
+      isBoss = true; shadow = true; music = 'elite';
+    } else {
+      const e = ENEMIES[id];
+      if (!e) return false;
+      enemies = [ e ];
+      if (e.boss) {
+        enemies = enemies.concat((BOSS_ESCORTS[id] || []).map(x => ENEMIES[x]).filter(Boolean));
+        isBoss = true; music = 'boss';
+      } else if (e.elite) {
+        music = 'elite';
+      }
+    }
+    // a debug fight shouldn't wreck the run — snapshot every beast's HP/alive and
+    // restore it once the test battle ends (win OR lose), then bounce to the map
+    const snap = (State.monsters || []).map(m => ({ hp: m.hp, alive: m.alive }));
+    const restore = () => {
+      (State.monsters || []).forEach((m, i) => { if (snap[i]) { m.hp = snap[i].hp; m.alive = snap[i].alive; } });
+      State.activeIndex = firstAlive();
+      renderMap();
+      show('screen-map');
+    };
+    const node = State.pos || {};
+    const depth = ((State.act || 1) - 1) * 10 + (node.floor || 0);
+    root.CG.Battle.start({
+      enemies: enemies,
+      isBoss: isBoss,
+      shadow: shadow,
+      depth: depth,
+      descension: descensionEffects(),
+      onWin: restore,
+      onLose: restore
+    });
+    if (root.CG.Audio && root.CG.Audio.Music) root.CG.Audio.Music.to(music);
+    return true;
+  }
+  // build + show the clickable encounter list (or a "go to the map" notice)
+  function debugBattlePicker() {
+    const host = ($('debug-modal') && $('debug-modal').parentNode) || document.body;
+    const overlay = el('div', 'debug-modal debug-battle-modal');
+    const close = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+    if (!debugBattleAvailable()) {
+      overlay.innerHTML =
+        '<div class="debug-panel">' +
+          '<h2 class="debug-title">⚔ Pick a Battle</h2>' +
+          '<p class="debug-sub">This only works from the <b>map screen</b> of an active run.</p>' +
+          '<button class="btn btn-ghost dbe-close">Close</button>' +
+        '</div>';
+    } else {
+      const kindLabel = { final: 'Final', boss: 'Boss', floorboss: 'Floor Boss', elite: 'Elite', normal: 'Normal', token: 'Token' };
+      const cards = debugEncounterList().map(enc => {
+        const art = enc.img
+          ? '<img src="' + enc.img + '" alt="" draggable="false">'
+          : '<span class="dbe-emoji">' + enc.emoji + '</span>';
+        return '<button class="dbe-card dbe-' + enc.kind + '" data-enc="' + enc.id + '">' +
+          '<span class="dbe-art">' + art + '</span>' +
+          '<span class="dbe-name">' + enc.name + '</span>' +
+          '<span class="dbe-kind">' + (kindLabel[enc.kind] || '') + '</span>' +
+        '</button>';
+      }).join('');
+      overlay.innerHTML =
+        '<div class="debug-panel debug-battle-panel">' +
+          '<h2 class="debug-title">⚔ Pick a Battle</h2>' +
+          '<p class="debug-sub">Drops you straight into the fight. Your party\'s HP is restored afterward.</p>' +
+          '<div class="dbe-grid">' + cards + '</div>' +
+          '<button class="btn btn-ghost dbe-close">Close</button>' +
+        '</div>';
+    }
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    const cb = overlay.querySelector('.dbe-close');
+    if (cb) cb.addEventListener('click', close);
+    overlay.querySelectorAll('[data-enc]').forEach(b => {
+      b.addEventListener('click', () => {
+        const id = b.dataset.enc;
+        close();
+        debugStartBattle(id);
+      });
+    });
+    host.appendChild(overlay);
+    return true;
+  }
 
   root.CG.Game = {
     init, show, renderMap, gameOver, activeMonster, firstAlive, updateTopbar,
@@ -5803,7 +6009,8 @@
     gainSouls, grantRandomGlyph, permEmpowerBase,
     recordBestiarySeen, recordBestiaryDefeated,
     recordKill, recordSingleHit, recordTurnDamage, recordCombo,
-    debugGold, debugToggleAnyNode, debugSecretShop, debugWishStones,
+    debugGold, debugToggleAnyNode, debugSecretShop, debugWishStones, debugDescent,
+    debugBattlePicker,
     get state() { return State; }
   };
 

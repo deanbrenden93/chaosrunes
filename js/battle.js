@@ -39,7 +39,8 @@
     clone:    { icon: '⧉', label: 'Clone', tip: 'Copies the glyph into your <b>next hand</b>, empowered <b>+1</b>. The copy is one-shot.' },
     empower:  { icon: '⊕', label: 'Empower', tip: 'Bolsters the glyphs resolved <b>immediately before and after</b> it by <b>+1</b>.' },
     upgrade:  { icon: '⬆', label: 'Upgrade', tip: 'Every glyph resolved here gains <b>+1 empower</b> for the rest of the battle — and it keeps stacking with each play.' },
-    combo:    { icon: '⛓', label: 'Combo', tip: 'The glyph placed here sets your combo to <b>double</b> the running combo so far (a fresh chain starts at <b>2</b>), then the chain keeps climbing from there.' }
+    combo:    { icon: '⛓', label: 'Combo', tip: 'The glyph placed here sets your combo to <b>double</b> the running combo so far (a fresh chain starts at <b>2</b>), then the chain keeps climbing from there.' },
+    soul:     { icon: '✶', label: 'Soul', tip: 'Branded by the Soul Hunter. Glyphs played here are <b>bolstered</b> — but each feeds the Hunter\'s <b>Quarry</b> by the same amount. The deeper you chain through it, the more it gives and the more it costs.' }
   };
   // ---- hybrid sockets ----
   // a socket's slotTypes entry may be a plain string ('normal'/'devil'/'repeat'…)
@@ -120,6 +121,10 @@
         maxHp: e.maxHp, hp: e.maxHp, shield: 0,
         weak: 0, burn: 0, leech: 0, scare: 0, scareTurns: 0, empower: 0,
         strength: 0, strengthTurns: 0,
+        thornsBonus: 0,    // Thorns granted mid-combat (e.g. Thornback's thornsAll), atop base.thorns
+        resilience: 0,     // grantable resilience: adds to this foe's block gains
+        sapAura: 0,        // Wormling-style drain: bleeds the player each of their turns while alive
+        mind: {},          // brain scratchpad (malice counter, phase latch, etc.)
         feastPool: root.CG.DATA.feastPoolFor(e),   // Ghoul Feast: predefined bonuses to sap
         intentIndex: 0, intent: null, alive: true,
         dom: null
@@ -132,12 +137,16 @@
       draw: [],           // the draw pile (shuffled snapshot of the run deck)
       discard: [],        // cards spent/dropped this battle; reshuffles into draw when empty
       drawnThisTurn: [],  // real deck cards in hand this turn -> routed to discard at end
-      stuck: [],          // sticky glyph ids that cling to your hand (Dead Weight)
+      stuck: [],          // sticky glyph ids that cling to your hand (legacy; unused now)
+      junkHeld: 0,        // junk you left in hand last turn (feeds Clogfiend's Gorge)
       injected: [],       // junk forced into your NEXT hand (cleared once drawn)
       playerWeak: 0,      // turns: your damage is reduced
       playerFrail: 0,     // turns: your shield gains are reduced
+      playerScared: 0,    // magnitude: each enemy hit deals +this; lasts playerScaredTurns
+      playerScaredTurns: 0,
       playerBurn: 0,      // Burn DoT on you (e.g. a burn glyph played into a cursed slot)
       playerThorns: 0,    // item-granted Thorns: reflect damage to melee attackers this combat
+      quarry: 0,          // Soulhunter: stacks that feed Soul Reap (Phase 3)
       recallUsed: false,
       comboCarry: 0,       // Lingering Cadence: combo number carried into next turn
       comboNow: 0,         // running combo during the active chain (Smoldering Tails)
@@ -157,11 +166,18 @@
     };
     // Monster Book: every foe in this arena is now "seen"
     if (G.recordBestiarySeen) G.recordBestiarySeen(B.enemies.map(e => e.base && e.base.id).filter(Boolean));
-    B.slotFx = Array.from({ length: monster.sockets }, () => ({ disabled: 0, cursed: 0, caster: null }));
+    B.slotFx = Array.from({ length: monster.sockets }, () => ({ disabled: 0, cursed: 0, caster: null, banished: false, banishedBy: null }));
     B.slotTypes = Array.from({ length: monster.sockets }, (_, i) => (monster.slotTypes && monster.slotTypes[i]) || 'normal');
+    B.soulForm = 0; B.quarry = 0; B.soulCount = 0;
+    // Soulbrand: a Soul Hunter corrupts your special sockets into Soul sockets for
+    // this fight only (B.slotTypes is rebuilt fresh every battle, so it's transient).
+    const soulDef = scaledEnemies.find(e => e && e.soulForm);
+    if (soulDef) setupSoulbrand(soulDef);
+    B.doomActive = false;
+    if (scaledEnemies.some(e => e && e.doomClock)) setupDoom();
     B.draw = shuffle(root.CG.Game.state.pool.slice());   // the run deck, shuffled into a draw pile
     B.discard = [];
-    B.enemies.forEach(en => { en.intent = prepareIntent(en); });
+    B.enemies.forEach((en, i) => { brainHook(en, 'onSpawn'); en.mind.spawnIndex = i; en.intent = prepareIntent(en); });
 
     // Skinwalker: permanent trophies from slain elites/bosses re-apply each combat
     applySkinTrophies();
@@ -582,14 +598,31 @@
       case 'defend': return { cls: 'defend', icon: '🛡', txt: 'Guard ' + intent.value };
       case 'buff':   return { cls: 'buff', icon: '✦', txt: intent.turns ? 'Strength +' + (intent.value || 3) : 'Empower' };
       case 'rally':  return { cls: 'buff', icon: '🚩', txt: 'Rally +' + (intent.value || 4) };
-      case 'curse':  return { cls: 'hex', icon: '☠', txt: 'Curse Slot ' + (clampSlot(intent.slot) + 1) };
+      case 'curse':  return { cls: 'hex', icon: '☠', txt: (intent.count > 1 ? 'Curse ×' + intent.count : 'Curse Slot ' + (clampSlot(intent.slot) + 1)) };
       case 'sunder': return { cls: 'hex', icon: '⛔', txt: 'Seal Slot ' + (clampSlot(intent.slot) + 1) };
+      case 'banish': return { cls: 'hex', icon: '⛔', txt: 'Banish Slot ' + (clampSlot(intent.slot) + 1) };
       case 'trash':  return { cls: 'hex', icon: '◼', txt: 'Bury ' + (intent.count || 1) };
       case 'clog':   return { cls: 'hex', icon: '⛓', txt: 'Dead Weight' };
       case 'debuff': return { cls: 'hex', icon: '👁', txt: intent.stat === 'frail' ? 'Frail' : 'Weaken' };
+      case 'scare':  return { cls: 'hex', icon: '☠', txt: 'Scare ' + (intent.value || 2) };
       case 'summon': return { cls: 'buff', icon: '💀', txt: 'Summon' };
+      case 'birthBrood': return { cls: 'buff', icon: '🥚', txt: intent.label || 'Birth Brood' };
+      case 'dirge':  return { cls: 'buff', icon: '🎵', txt: 'Dirge' };
+      case 'warcry': return { cls: 'buff', icon: '🥁', txt: 'Rally +' + (intent.value || 4) };
+      case 'frustration': return { cls: 'hex', icon: '💢', txt: 'Frustration' };
+      case 'gorge':  return { cls: 'attack', icon: '⚔', txt: 'Gorge ×junk' };
+      case 'quarry': return { cls: 'hex', icon: '✶', txt: 'Quarry +' + (intent.value || 1) };
+      case 'soulReap': return { cls: 'attack', icon: '☠', txt: 'Soul Reap ×' + (B.quarry || 0) + (intent.big ? '  ⚠' : '') };
+      case 'doom':   return { cls: 'attack', icon: '☠', txt: '999  ⚠' };
       case 'regen':  return { cls: 'mend', icon: '✚', txt: 'Mend ' + (intent.value || 6) };
       case 'siphon': return { cls: 'hex', icon: '🩸', txt: intent.stat === 'strength' ? 'Siphon Might' : 'Siphon Block' };
+      case 'thinking':  return { cls: 'buff', icon: '💭', txt: 'Thinking' };
+      case 'thornsAll': return { cls: 'defend', icon: '🜂', txt: 'Thorns ' + (intent.value || 3) };
+      case 'blockAll':  return { cls: 'defend', icon: '🛡', txt: 'Guard ' + (intent.value || 5) + ' all' };
+      case 'buffStat':  return { cls: 'buff', icon: (intent.stat === 'resilience' ? '🛡' : '⚔'), txt: (intent.stat === 'resilience' ? 'Resil +' : 'Might +') + (intent.value || 1) + (intent.scope === 'self' ? '' : ' all') };
+      case 'sap':       return { cls: 'hex', icon: '🩸', txt: 'Sap ' + (intent.value || 4) };
+      case 'mature':    return { cls: 'buff', icon: '🐛', txt: 'Mature' };
+      case 'hex':       return { cls: 'hex', icon: '🕸', txt: 'Hex' };
       default:       return { cls: 'buff', icon: '✦', txt: '?' };
     }
   }
@@ -624,16 +657,38 @@
         ? 'Steels itself: <b>+' + (intent.value || 3) + '</b> Strength for <b>' + intent.turns + '</b> turns — every attack hits harder.'
         : 'Empowers itself — its next attack hits harder.';
       case 'rally':  return 'Empowers <b>all</b> allies by <b>+' + (intent.value || 4) + '</b> damage.';
-      case 'curse':  return 'Curses socket <b>' + (clampSlot(intent.slot) + 1) + '</b> for <b>' + (intent.value || 2) + '</b> turns: that slot\'s effect still lands normally, but is <b>also mirrored</b> — your shields & heals also feed the caster, and its damage & burns also recoil onto you.';
+      case 'curse':  return (intent.count > 1
+          ? 'Curses <b>' + intent.count + '</b> sockets'
+          : 'Curses socket <b>' + (clampSlot(intent.slot) + 1) + '</b>')
+        + ': that slot\'s effect still lands, but is <b>mirrored</b> — your shields & heals also feed the caster, its damage & burns also recoil onto you. <b>Lifts only when this foe dies.</b>';
       case 'sunder': return 'Seals socket <b>' + (clampSlot(intent.slot) + 1) + '</b> shut for <b>' + (intent.value || 2) + '</b> turns — you forge with one fewer slot.';
+      case 'banish': return 'Banishes socket <b>' + (clampSlot(intent.slot) + 1) + '</b> — locked shut while this foe lives. <b>Kill it to reopen the slot.</b>';
       case 'trash':  return 'Buries <b>' + (intent.count || 1) + '</b> Rubble in your ' + (intent.where || 'deck') + ', clogging future draws until you socket it away.';
       case 'clog':   return 'Jams a 2-socket <b>Dead Weight</b> into your hand. It never discards until you socket it.';
       case 'debuff': return intent.stat === 'frail' ? 'Applies <b>Frail</b> — your shield gains are reduced.' : 'Applies <b>Weak</b> — your damage is reduced.';
+      case 'scare':  return 'Frightens you — <b>Scared ' + (intent.value || 2) + '</b>: each enemy hit deals <b>+' + (intent.value || 2) + '</b> extra damage for a couple of turns.';
       case 'summon': return 'Summons a minion to join the fight.';
+      case 'birthBrood': return intent.hpCost
+        ? 'Tears <b>' + (intent.n || 2) + '</b> Wormlings from itself, losing <b>' + (intent.hpCost) + '</b> HP that never returns. Won\'t spawn more until its brood is gone.'
+        : 'Pipes <b>' + (intent.n || 2) + '</b> ' + (intent.who === 'skeleton' ? 'Skeletons' : 'minions') + ' into the fray. Won\'t summon more until they\'re cleared.';
+      case 'dirge':  return 'A funeral march — every living Skeleton\'s strike multiplier climbs by <b>1</b> (×1 → ×2 → ×3 …). Clear the bones to rewind it, or kill the piper to end it.';
+      case 'warcry': return 'War Drum: gains <b>+' + (intent.value || 4) + ' Strength and Resilience</b> (and the next Rally beats louder still).';
+      case 'frustration': return 'It stews — does nothing, but every <b>10</b> damage you deal it this turn jams a <b>Rubble</b> into your hand. Bursting now feeds its Gorge.';
+      case 'gorge':  return 'Devours your clutter — attacks <b>' + (intent.value || 6) + '</b> once per <b>junk glyph</b> in your hand when it resolves. Purge the junk first to starve it.';
+      case 'quarry': return 'Marks you — <b>Quarry +' + (intent.value || 1) + '</b>. When Quarry reaches his threshold he unleashes Soul Reap.';
+      case 'soulReap': return 'Reaps your Quarry — strikes <b>5</b> once per stack (<b>' + (B.quarry || 0) + '</b> now → <b>' + (5 * (B.quarry || 0)) + '</b> total), then your Quarry resets to zero.';
+      case 'doom':   return 'The Doom Clock struck zero. <b>999</b> damage — unaffected by block, buffs, or debuffs. There is no surviving this.';
       case 'regen':  return 'Knits its wounds, healing <b>' + (intent.value || 6) + '</b> HP. Burst it down before it recovers.';
       case 'siphon': return intent.stat === 'strength'
         ? 'Drains up to <b>' + (intent.value || 2) + '</b> of your <b>Strength</b> and claims it for itself.'
         : 'Drains up to <b>' + (intent.value || 6) + '</b> of your <b>Block</b> and adds it to its own shield.';
+      case 'thinking':  return 'Gathers itself — <b>no action</b> this turn.';
+      case 'thornsAll': return 'Grants <b>Thorns ' + (intent.value || 3) + '</b> to itself and all allies for the rest of combat — every strike on them lashes back at you.';
+      case 'blockAll':  return 'Raises <b>' + (intent.value || 5) + '</b> shield on itself and <b>every ally</b>.';
+      case 'buffStat':  return 'Strengthens ' + (intent.scope === 'self' ? 'itself' : 'itself and all allies') + ': <b>+' + (intent.value || 1) + ' ' + (intent.stat === 'resilience' ? 'Resilience' : 'Strength') + '</b> for the rest of combat.';
+      case 'sap':       return 'Latches on — <b>Sapped ' + (intent.value || 4) + '</b>: you bleed <b>' + (intent.value || 4) + '</b> HP at the start of each of your turns while it lives. <b>Kill it to stop the bleed.</b>';
+      case 'mature':    return 'Grows stronger — its Sap and bite worsen for the rest of combat.';
+      case 'hex':       return 'Lays a <b>Hex</b> — while it lives, your turn\'s combo bonus <b>recoils onto you</b> as damage. <b>Kill it to break the hex.</b>';
       default:       return 'Prepares an unknown action.';
     }
   }
@@ -655,6 +710,9 @@
     resilience: { cls: 'res',   icon: '🛡', img: 'assets/Sheild.png',   name: 'Resilience', desc: 'Adds {n} to every block you gain.' },
     pweak:      { cls: 'weak',  icon: '▼', name: 'Weak',       desc: 'Your attacks deal 40% less damage. {n} turn(s) left.' },
     frail:      { cls: 'leech', icon: '💔', name: 'Frail',      desc: 'You gain 50% less block. {n} turn(s) left.' },
+    pscared:    { cls: 'scare', icon: '☠', name: 'Scared',     desc: 'Each enemy hit deals +{n} extra damage to you while this lasts.' },
+    psapped:    { cls: 'leech', icon: '🩸', name: 'Sapped',     desc: 'You bleed {n} HP at the start of each of your turns while the foes draining you live.' },
+    quarry:     { cls: 'scare', icon: '✶', name: 'Quarry',      desc: 'The Soul Hunter\'s mark on you. At {n} stacks his Soul Reap strikes once per stack, then resets to zero. Soul sockets keep feeding it.' },
     pburn:      { cls: 'burn',  icon: '🔥', name: 'Burn',       desc: 'Take {n} damage at the start of your turn, then it drops by 1.' },
     eweak:      { cls: 'weak',  icon: '▼', name: 'Weak',       desc: 'This enemy\'s attacks deal 45% less damage. {n} turn(s) left.' },
     eburn:      { cls: 'burn',  icon: '🔥', name: 'Burn',       desc: 'Takes {n} damage at the start of its turn, then Burn drops by 1.' },
@@ -662,6 +720,7 @@
     scare:      { cls: 'scare', icon: '☠', name: 'Scared',     desc: 'Takes +{n} damage from each of your attacks.' },
     empower:    { cls: 'str',   icon: '⊕', name: 'Empower',    desc: 'Adds {n} damage to this enemy\'s next attack only.' },
     estrength:  { cls: 'str',   icon: '⚔', img: 'assets/Strength.png', name: 'Strength',   desc: 'Adds {n} damage to its attacks.' },
+    eresilience:{ cls: 'res',   icon: '🛡', img: 'assets/Sheild.png',   name: 'Resilience', desc: 'Adds {n} to every block this foe gains.' },
     ward:       { cls: 'res',   icon: '🛡', img: 'assets/Sheild.png',   name: 'Wardstone',  desc: 'While it lives, its allies take {n} less damage from your hits. Break it first.' },
     warded:     { cls: 'res',   icon: '🜉', img: 'assets/Sheild.png',   name: 'Warded',     desc: 'A Wardstone shields this foe — {n} less damage from your hits. Destroy the Wardstone to end it.' },
     thorns:     { cls: 'scare', icon: '🜂', img: 'assets/Thorns.png',   name: 'Thornmail',  desc: 'Each time you strike it, it lashes {n} damage back at you — avoid wasteful multi-hits.' },
@@ -717,11 +776,12 @@
       if (en.scare > 0) s += statusBadge('scare', en.scare);
       if (en.empower > 0) s += statusBadge('empower', en.empower);
       if (en.strength > 0) s += statusBadge('estrength', en.strength);
+      if (en.resilience > 0) s += statusBadge('eresilience', en.resilience);
       // passive gimmick badges (read off the def, active while it lives)
       if (en.base) {
         if (en.base.ward > 0) s += statusBadge('ward', en.base.ward);
         else if (wardReductionFor(en) > 0) s += statusBadge('warded', wardReductionFor(en));
-        if (en.base.thorns > 0) s += statusBadge('thorns', en.base.thorns);
+        if (enemyThorns(en) > 0) s += statusBadge('thorns', enemyThorns(en));
         if (en.base.enrage > 0) s += statusBadge('enrage', en.base.enrage);
       }
       st.innerHTML = s;
@@ -736,6 +796,10 @@
       if (B.resilience > 0) s += statusBadge('resilience', B.resilience);
       if (B.playerWeak > 0) s += statusBadge('pweak', B.playerWeak);
       if (B.playerFrail > 0) s += statusBadge('frail', B.playerFrail);
+      if (B.playerScared > 0) s += statusBadge('pscared', B.playerScared);
+      if (B.quarry > 0) s += statusBadge('quarry', B.quarry);
+      const sapNow = sapTotal();
+      if (sapNow > 0) s += statusBadge('psapped', sapNow);
       if (B.playerBurn > 0) s += statusBadge('pburn', B.playerBurn);
       ps.innerHTML = s;
     }
@@ -750,6 +814,13 @@
     B.enemyActing = false;   // player's turn — items are usable again
     B.turn++;
     $('turn-counter').textContent = B.turn;
+
+    // Doom Clock descends one socket each of your turns (turn 1 shows the full count)
+    if (B.doomActive && !B.doom999) {
+      if (B.doomStarted) B.doom = B.doom - 1;
+      B.doomStarted = true;
+      B.doomCleared = false;
+    }
 
     // a Devil ignored three turns running takes its tithe before anything else
     ensureDevils();
@@ -791,11 +862,20 @@
       }
     }
 
+    // Sapped: foes draining you (Wormlings) bleed you at the very start of your turn
+    if (sapTotal() > 0 && !B.ended) {
+      const sap = sapTotal();
+      floatText(offset(center(playerArt()), -30, -86), '🩸' + sap, 'dmg');
+      burnTickFx(playerArt());
+      damagePlayer(sap);
+      if (B.ended) return;
+    }
+
     // sockets rebuild — keep slot timers in sync with current socket count
     B.turnStrength = 0;
     B.sockets = new Array(B.monster.sockets).fill(null);
     B.spanHead = new Array(B.monster.sockets).fill(null);
-    while (B.slotFx.length < B.monster.sockets) B.slotFx.push({ disabled: 0, cursed: 0, caster: null });
+    while (B.slotFx.length < B.monster.sockets) B.slotFx.push({ disabled: 0, cursed: 0, caster: null, banished: false, banishedBy: null });
     while (B.slotTypes.length < B.monster.sockets) B.slotTypes.push('normal');
     B.recallUsed = false;
     drawHand();
@@ -840,7 +920,7 @@
     const span = glyph(id).slots || 1;
     return firstFreeRun(span) !== -1;
   }
-  function slotDisabled(i) { return B.slotFx[i] && B.slotFx[i].disabled > 0; }
+  function slotDisabled(i) { return B.slotFx[i] && (B.slotFx[i].disabled > 0 || B.slotFx[i].banished); }
   function slotCursed(i) { return B.slotFx[i] && B.slotFx[i].cursed > 0; }
 
   // ACT becomes SKIP (end turn) when nothing is socketed
@@ -1226,6 +1306,14 @@
           s.classList.add('recallable');
           s.addEventListener('click', () => recallGlyph(i, s));
         }
+      } else if (fx.banished) {
+        s.classList.add('disabled');
+        const who = (fx.banishedBy && fx.banishedBy.name) || 'the foe';
+        const lb = el('div', 'slot-lock fx-badge', '<img class="fx-badge-img" src="assets/Banished.png" alt="" draggable="false"><span class="lock-turns">✕</span>');
+        lb.appendChild(el('div', 'slot-fx-tip',
+          '<b class="st-name">Banished Socket</b>Locked shut by <b>' + who + '</b> — you forge with <b>one fewer slot</b>.' +
+          '<span class="sft-turns">Reopens when ' + who + ' falls</span>'));
+        s.appendChild(lb);
       } else if (fx.disabled > 0) {
         s.classList.add('disabled');
         const lb = el('div', 'slot-lock fx-badge', '<img class="fx-badge-img" src="assets/Banished.png" alt="" draggable="false"><span class="lock-turns">' + fx.disabled + '</span>');
@@ -1239,10 +1327,11 @@
         if (i === firstFree) { s.classList.add('next'); syncPulse(s, 1600); }
       }
       if (fx.cursed > 0) {
-        const cb = el('div', 'slot-curse fx-badge', '<img class="fx-badge-img" src="assets/Cursed.png" alt="" draggable="false"><span class="lock-turns">' + fx.cursed + '</span>');
+        const curseWho = (fx.caster && fx.caster.name) || 'the caster';
+        const cb = el('div', 'slot-curse fx-badge', '<img class="fx-badge-img" src="assets/Cursed.png" alt="" draggable="false"><span class="lock-turns">☠</span>');
         cb.appendChild(el('div', 'slot-fx-tip',
-          '<b class="st-name">Cursed Socket</b>Its effect still resolves, but is <b>mirrored</b>: any block or heal you gain here <b>also feeds the caster</b>, and any damage or burn <b>also recoils onto you</b>.' +
-          '<span class="sft-turns">' + fx.cursed + ' turn(s) remaining</span>'));
+          '<b class="st-name">Cursed Socket</b>Its effect still resolves, but is <b>mirrored</b>: any block or heal you gain here <b>also feeds ' + curseWho + '</b>, and any damage or burn <b>also recoils onto you</b>.' +
+          '<span class="sft-turns">Lifts when ' + curseWho + ' falls</span>'));
         // insert BEFORE the glyph tip so hovering the curse badge suppresses it
         const gt = s.querySelector('.g-tip');
         if (gt) s.insertBefore(cb, gt); else s.appendChild(cb);
@@ -1250,6 +1339,30 @@
       if (slotCountAt(i, 'devil') > 0) decorateDevilSocket(s, i);
       row.appendChild(s);
     });
+    // Doom Clock: a silent, pulsing number that floats over socket #doom and creeps
+    // toward socket 1 each turn. No tooltip — the lesson is learned the hard way.
+    if (B.doomActive && B.doom > 0) {
+      const ti = Math.max(0, Math.min(row.children.length - 1, B.doom - 1));
+      const tgt = row.children[ti];
+      if (tgt) {
+        tgt.classList.add('doom-socket');
+        const dc = el('div', 'doom-clock', String(B.doom));
+        if (B.doom <= 2) dc.classList.add('doom-crit');
+        else if (B.doom <= Math.ceil((B.doomMax || 1) / 2)) dc.classList.add('doom-warn');
+        tgt.appendChild(dc);
+      }
+    }
+    // Soulbrand: the first render after the morph flares the branded sockets loud
+    if (B.soulbrandPending) {
+      B.soulbrandPending = false;
+      Array.from(row.children).forEach((s, i) => {
+        if (slotCountAt(i, 'soul') > 0) {
+          s.classList.add('soul-morph');
+          setTimeout(() => s.classList.remove('soul-morph'), 900);
+        }
+      });
+      if (typeof banner === 'function') banner('Soulbrand — your sockets are marked', 1200);
+    }
     // the runes are THE centerpiece — on the first build of a battle they
     // materialize one by one instead of snapping in
     if (B.socketIntro) { B.socketIntro = false; revealSockets(); }
@@ -1663,6 +1776,13 @@
   function healFx(elm) { if (!elm) return; const p = center(elm); fxSpawn(p, 'fx-heal', '✚', 920); fxRing(p, '#7ee07a', 760, 'fx-ring-soft'); fxMotes(p, 9, '#8ef58a', 'fx-mote-rise', 72); }
   function strengthFx(elm) { if (!elm) return; const p = topOf(elm, -52); fxSpawn(p, 'fx-strength', '⚔', 840); fxMotes(p, 6, '#ff6a4a', 'fx-mote-rise', 48); flashEl(elm, 'fx-strflash', 520); }
   function resilienceFx(elm) { if (!elm) return; const p = topOf(elm, -52); fxSpawn(p, 'fx-resil', '🛡', 840); fxMotes(p, 6, '#7fd0ff', 'fx-mote-rise', 48); }
+  // ---- per-action signature effects (so each new enemy move reads distinctly) ----
+  function hexFx(elm)   { if (!elm) return; const p = topOf(elm); fxSpawn(p, 'fx-hex', '🕸', 900); fxRing(p, '#b35cff', 780); fxMotes(p, 8, '#d18cff', 'fx-mote-spark', 64); flashEl(elm, 'fx-scareflash', 540); }
+  function quarryFx(elm){ if (!elm) return; const p = topOf(elm); fxSpawn(p, 'fx-quarry', '✶', 920); fxRing(p, '#b98cff', 800); fxRing(p, '#8a5cff', 640, 'fx-ring-soft'); fxMotes(p, 8, '#cdaaff', 'fx-mote-rise', 58); }
+  function sapFx(elm)   { if (!elm) return; const p = topOf(elm, -10); fxSpawn(p, 'fx-sap', '🩸', 880); fxRing(p, '#3fbf6a', 740, 'fx-ring-soft'); fxMotes(p, 7, '#8fe0a0', 'fx-mote-spark', 58); }
+  function frustrationFx(elm) { if (!elm) return; const p = topOf(elm, -26); fxSpawn(p, 'fx-frustration', '💢', 840); fxRing(p, '#ff6a3a', 620, 'fx-ring-soft'); fxMotes(p, 9, '#ff9a5a', 'fx-mote-rise', 62); flashEl(elm, 'fx-strflash', 460); }
+  function dirgeFx(elm) { if (!elm) return; const p = topOf(elm, -44); fxSpawn(p, 'fx-dirge', '🎵', 940); fxMotes(p, 8, '#cdd3df', 'fx-mote-rise', 66); }
+  function doomFx(elm)  { if (!elm) return; const p = topOf(elm, -6); fxSpawn(p, 'fx-doom', '☠', 1000); fxRing(p, '#ff2a2a', 860, 'fx-ring-shock'); fxRing(p, '#ff6a3a', 660); fxMotes(p, 12, '#ff5a4a', 'fx-mote-spark', 90); }
 
   // ---- slot effects ----
   function slotCurseFx(socketEl) { if (!socketEl) return; const p = center(socketEl); fxSpawn(p, 'fx-curse', '☠', 920); fxRing(p, '#c45cff', 800); flashEl(socketEl, 'fx-curseflash', 760); }
@@ -2087,6 +2207,7 @@
     let comboCarry = hasPassive('lingeringCadence') ? (B.comboCarry || 0) : 0;
     let comboSeeded = false;
     B.comboNow = 0;
+    B.hexTally = 0;   // Hex Witch: sum of this turn's combo bonuses recoils onto you
     for (let k = 0; k < runSeq.length; k++) {
       const ev = runSeq[k];
       const slot = ev.slot;
@@ -2143,6 +2264,7 @@
       }
       if (comboLen > maxCombo) { maxCombo = comboLen; if (root.CG.Game.recordCombo) root.CG.Game.recordCombo(maxCombo); }
       B.comboNow = comboLen;   // Smoldering Tails / charges read this on every hit
+      if (comboBonus > 0) B.hexTally = (B.hexTally || 0) + comboBonus;   // Hex recoil accrues per step
       if (comboBonus > 0) { comboFlash(sEl, prevComboEl, comboLen, comboBonus); showComboMeter(comboLen, comboBonus); }
       prevComboEl = (lt == null) ? null : sEl;
 
@@ -2178,11 +2300,22 @@
 
       // a multi-socket glyph is fully cursed if ANY socket it covers is cursed
       const cursedSlot = (ev.covered || [slot]).find(ci => slotCursed(ci));
+      // Soul socket (Soulbrand): bolster this glyph AND feed the Hunter's Quarry by
+      // the same amount — Form I/II flat, Form III scales with the combo number.
+      let soulPow = 0;
+      const soulHere = !g.junk && (ev.covered || [slot]).some(ci => slotCountAt(ci, 'soul') > 0);
+      if (soulHere && !ev.replay && !ev.repeat2) {
+        soulPow = soulPowerFor(comboLen);
+        B.quarry = (B.quarry || 0) + soulPow;
+        floatText(offset(center(sEl), 0, -34), 'Quarry +' + soulPow, 'status');
+        fxMotes(center(sEl), 6, '#b98cff', 'fx-mote-rise', 60);
+        if (sEl) { sEl.classList.add('soul-fire'); setTimeout(() => sEl.classList.remove('soul-fire'), 520); }
+      }
       B.tickCount = 0;   // Berserk Frenzy counts only THIS glyph's hits as it resolves
       B._glyphTargets = [];   // foes this glyph strikes (Crawler/Demon precise Feast target)
       await resolveGlyph(ev.id, g, {
         slot, chainPos, prevId, redAfter, totalRed, counts, originEl, originEls,
-        comboBonus: comboBonus + empBonus[k],   // Empower slots fold in as a flat +1 to neighbors
+        comboBonus: comboBonus + empBonus[k] + soulPow,   // Empower + Soul bolster fold in
         cursed: cursedSlot != null, curseCaster: cursedSlot != null ? (B.slotFx[cursedSlot] || {}).caster : null,
         isFirst: chainPos === 0, isLast: k === lastGenuineIdx
       });
@@ -2213,6 +2346,11 @@
         const pi = pool.indexOf('rubble');
         if (pi !== -1) pool.splice(pi, 1);
         removeOne(B.drawnThisTurn, 'rubble');   // gone — don't send it to the discard
+      }
+      // Dead Weight is single-use junk: socketing it consumes it cleanly — no
+      // discard, no 10-damage bite (that only happens if you let it rot in hand).
+      if (ev.id === 'deadweight' && !ev.replay) {
+        removeOne(B.drawnThisTurn, 'deadweight');
       }
 
       // slot side-effects fire once, on the genuine placement (not replays/repeat copies).
@@ -2269,6 +2407,11 @@
       if (alive().length === 0) break; // enemies wiped mid-chain
     }
 
+    // Doom Clock: a chain that ran clean through EVERY socket clears this turn's number
+    if (B.doomActive && B.monster.sockets > 0 && maxCombo >= B.monster.sockets) {
+      B.doomCleared = true;
+      floatText(offset(center(playerArt()), 0, -110), 'Doom held', 'status');
+    }
     // big payoff for a long alphabet chain
     if (maxCombo >= 3) { comboFinale(maxCombo); await wait(260); }
     hideComboMeter();
@@ -2300,6 +2443,17 @@
     // record this turn's total damage (the biggest single turn is a Character stat)
     if (root.CG.Game.recordTurnDamage) root.CG.Game.recordTurnDamage(B.turnDmg || 0);
 
+    // Hex Witch: your own combo recoils onto you while she lives
+    if ((B.hexTally || 0) > 0 && hexActive() && !B.ended) {
+      const hx = B.hexTally;
+      floatText(offset(center(playerArt()), 0, -96), '🕸' + hx, 'dmg');
+      burnTickFx(playerArt());
+      damagePlayer(hx);
+      B.hexTally = 0;
+      if (B.ended) return;
+      await wait(260);
+    }
+
     await wait(250);
     await discardHand();
 
@@ -2318,6 +2472,9 @@
       return;
     }
 
+    // Doom Clock: if the number hit 1 (or 0) unheld, the Hunter's next turn is 999
+    checkDoomArm();
+
     // enemies respond
     await enemyTurn();
     if (B.ended) return;
@@ -2328,9 +2485,21 @@
 
   // unplaced glyphs sweep off into the discard pile, then clear
   function discardHand() {
-    // every real deck card touched this turn (played or not) lands in the discard pile
-    B.discard.push(...B.drawnThisTurn);
+    // Clogfiend's Gorge resolves on the enemy turn AFTER the hand is swept, so
+    // snapshot how much junk you chose to hold (didn't socket) this turn now.
+    B.junkHeld = B.drawnThisTurn.filter(id => glyph(id) && glyph(id).junk).length;
+    // Dead Weight bites for 10 if you let it rot in hand instead of socketing it.
+    // It's spent either way, so it never returns to the discard pile.
+    const dwCount = B.drawnThisTurn.filter(id => id === 'deadweight').length;
+    const keep = B.drawnThisTurn.filter(id => id !== 'deadweight');
+    // every other real deck card touched this turn (played or not) lands in discard
+    B.discard.push(...keep);
     B.drawnThisTurn = [];
+    if (dwCount > 0 && !B.ended) {
+      const dmg = 10 * dwCount;
+      floatText(offset(center(playerArt()), 0, -96), '⛓' + dmg, 'dmg');
+      damagePlayer(dmg);
+    }
     const cards = Array.from($('hand-row').querySelectorAll('.glyph'));
     return animateDiscard(cards).then(() => {
       B.hand = [];
@@ -4144,9 +4313,11 @@
     }
     return w;
   }
+  // total Thornmail on a foe: its innate thorns plus any granted mid-combat
+  function enemyThorns(en) { return (en.base && en.base.thorns || 0) + (en.thornsBonus || 0); }
   // a Thornmail foe lashes a flat bite back when struck
   function thornsRecoil(en) {
-    const n = en.base.thorns;
+    const n = enemyThorns(en);
     floatText(offset(center(en.dom), 0, -68), '🜂 ' + n, 'dmg');
     fxMotes(center(en.dom), 5, '#8fe08f', 'fx-mote-spark', 46);
     damagePlayer(n);
@@ -4184,10 +4355,21 @@
     if (amt >= 9) shake();
     if (en.hp <= 0 && en.alive) {
       killEnemy(en, { dmg: dealt, noFeast: opts.noFeast });   // base Feast fires on the kill
-    } else if (en.alive && en.base && en.base.thorns > 0 && dealt > 0 && !opts.noFloat && !opts.reflect && !B.ended) {
+    } else if (en.alive && enemyThorns(en) > 0 && dealt > 0 && !opts.noFloat && !opts.reflect && !B.ended) {
       // THORNS: a genuine strike (not a burn/leech tick) lashes back, per hit —
       // so dumping multi-hit glyphs into it hurts. Skipped if the blow killed it.
       thornsRecoil(en);
+    }
+    // Clogfiend Frustration: while it's stewing (its telegraph is Frustration),
+    // every 10 damage poured into it this turn jams another Rubble into your hand.
+    if (en.alive && en.mind && en.intent && en.intent.type === 'frustration' && dealt > 0 && !opts.reflect) {
+      if (en.mind.frustTurn !== B.turn) { en.mind.frustTurn = B.turn; en.mind.frustDmg = 0; }
+      en.mind.frustDmg = (en.mind.frustDmg || 0) + dealt;
+      while (en.mind.frustDmg >= 10) {
+        en.mind.frustDmg -= 10;
+        B.injected.push('rubble');
+        floatText(offset(center(en.dom), 0, -84), '+Rubble', 'status');
+      }
     }
     // Smoldering Tails: every genuine hit lays Burn equal to the current combo
     // (per hit — a multi-hit glyph at combo 3 lays 3 Burn each strike).
@@ -4396,10 +4578,21 @@
     if (sk.rampstr) B.feastRamp = (B.feastRamp || 0) + sk.rampstr;
   }
   // central kill: visual + run-log + the base Feast (and Skinwalker hoarding)
+  // a curse/banish is tied to its caster — when that foe falls, lift them all
+  function clearCasterEffects(en) {
+    if (!en || !B.slotFx) return;
+    let changed = false;
+    B.slotFx.forEach(fx => {
+      if (fx.cursed > 0 && fx.caster === en) { fx.cursed = 0; fx.caster = null; changed = true; }
+      if (fx.banished && fx.banishedBy === en) { fx.banished = false; fx.banishedBy = null; changed = true; }
+    });
+    if (changed && B.sockets && B.sockets.length) renderSockets();
+  }
   function killEnemy(en, opts) {
     opts = opts || {};
     if (!en || !en.alive) return;
     en.alive = false;
+    clearCasterEffects(en);   // its curses & banishes lift the moment it dies
     killEnemyVisual(en);
     recordFeastKill(en);
     if (en.base && root.CG.Game.recordBestiaryDefeated) root.CG.Game.recordBestiaryDefeated(en.base.id);
@@ -5170,8 +5363,11 @@
     for (const en of actors) {
       if (!en.alive || B.ended) continue;
       await wait(260);
+      brainHook(en, 'onTurnStart');   // Hunger gains Strength, phase latches, etc.
+      const actedIntent = en.intent;
       await doEnemyAction(en, en.intent);
       if (B.ended) return;
+      brainHook(en, 'afterAction', actedIntent);   // Malice++, Hex/Mature latch
       if (en.weak > 0) en.weak = Math.max(0, en.weak - 1);
       // ENRAGE: works itself into a deeper frenzy every turn — permanent, ramping
       // Strength that turns a drawn-out fight lethal. Bumped before the next intent
@@ -5230,6 +5426,33 @@
     ], { duration: big ? 440 : 380, easing: 'cubic-bezier(.3,.8,.3,1)' });
   }
 
+  // a PHYSICAL melee strike: the foe charges a good chunk of the way to the
+  // player, the blow connects at the apex (onHit fires there), then it recoils.
+  // No projectile — that's reserved for ranged casters (en.base.ranged).
+  function enemyMeleeStrike(en, toPos, big, onHit) {
+    return new Promise(res => {
+      const d = en && en.dom;
+      if (!d || typeof d.animate !== 'function' || B.ended) { if (onHit && !B.ended) onHit(); res(); return; }
+      const from = center(d);
+      const reach = big ? 0.64 : 0.56;            // fraction of the gap it closes
+      const tx = (toPos.x - from.x) * reach, ty = (toPos.y - from.y) * reach;
+      const pop = big ? 1.16 : 1.1;
+      const dur = big ? 450 : 370;
+      d.style.zIndex = '60';                       // ride above the other foes mid-charge
+      d.animate([
+        { transform: 'translate(0,0) scale(1)' },
+        { transform: 'translate(' + (tx * 0.42) + 'px,' + (ty * 0.42) + 'px) scale(' + (pop * 0.97) + ')', offset: 0.26, easing: 'cubic-bezier(.6,0,.95,.4)' },
+        { transform: 'translate(' + tx + 'px,' + ty + 'px) scale(' + pop + ')', offset: 0.46 },
+        { transform: 'translate(' + (tx * 0.34) + 'px,' + (ty * 0.34) + 'px) scale(1.02)', offset: 0.64, easing: 'cubic-bezier(.2,.6,.4,1)' },
+        { transform: 'translate(0,0) scale(1)' }
+      ], { duration: dur, easing: 'ease-out' });
+      let done = false;
+      const fire = () => { if (done) return; done = true; if (onHit && !B.ended) onHit(); res(); };
+      setTimeout(fire, Math.round(dur * 0.46));     // the blow lands at the lunge's apex
+      setTimeout(() => { d.style.zIndex = ''; }, dur + 30);
+    });
+  }
+
   // fire a themed strike from the foe to `toPos`; the effect (onLand) fires the
   // instant the bolt connects — never before. Resolves after impact.
   function enemyBolt(en, toPos, color, kind, onLand) {
@@ -5265,6 +5488,7 @@
       case 'attack': {
         const hits = intent.hits || 1;
         const big = !!intent.big;
+        const ranged = !!(en.base && en.base.ranged);   // casters lob a projectile; everyone else strikes in melee
         const color = big ? '#ff3a2a' : '#ff6a4a';
         // one wind-up reads the incoming strike; multi-hits then rain in beats
         await enemyWindup(en, color, big);
@@ -5272,15 +5496,26 @@
           if (!en.alive || B.ended) break;
           let dmg = intent.value;
           if (en.weak > 0) dmg = Math.max(1, Math.round(dmg * 0.55));
-          enemyLunge(en, big);
-          SFX.enemyHit();
+          if (B.playerScared > 0) dmg += B.playerScared;   // Scared: every hit bites deeper
           const target = targetPlayer(16, -8);
-          // damage lands exactly when the strike connects
-          await enemyBolt(en, target, color, 'k-fire', () => {
-            enemySlashFx(target, color);
-            damagePlayer(dmg);
-            if (big) shake(3);
-          });
+          SFX.enemyHit();
+          if (ranged) {
+            // a thrown/cast strike — the bolt flies and damage lands on impact
+            enemyLunge(en, big);
+            await enemyBolt(en, target, color, 'k-fire', () => {
+              enemySlashFx(target, color);
+              damagePlayer(dmg);
+              if (big) shake(3);
+            });
+          } else {
+            // a physical charge — the foe closes in and the blow lands at contact
+            await enemyMeleeStrike(en, target, big, () => {
+              enemySlashFx(target, color);
+              fxMotes(target, big ? 9 : 6, color, 'fx-mote-spark', big ? 80 : 56);
+              damagePlayer(dmg);
+              shake(big ? 4 : 2);
+            });
+          }
           if (B.ended) return;
           // item-granted Thorns: the attacker bleeds for it (reflect flag stops
           // the foe's own Thornmail from recoiling back at us in turn)
@@ -5293,15 +5528,17 @@
         }
         break;
       }
-      case 'defend':
+      case 'defend': {
+        const gain = intent.value + (en.resilience || 0);
         await enemyWindup(en, '#5ab6ff');
-        en.shield += intent.value;
+        en.shield += gain;
         setShieldPip(en.dom, en.shield);
         enemyGuardFx(en);
-        floatText(offset(center(en.dom), 0, -40), '+' + intent.value + '◆', 'shield');
+        floatText(offset(center(en.dom), 0, -40), '+' + gain + '◆', 'shield');
         SFX.fireBlue(0);
         await wait(280);
         break;
+      }
       case 'buff':
         await enemyWindup(en, '#ff7a55');
         if (intent.turns) {
@@ -5334,16 +5571,29 @@
         break;
       }
       case 'curse': {
-        const slot = clampSlot(intent.slot);
+        // caster-tied curse(s): pick distinct free slots (count>1 for Maledict's
+        // Malice). The curse persists while THIS foe lives — see clearCasterEffects.
+        const count = Math.max(1, intent.count || 1);
+        const slots = [];
+        const first = clampSlot(intent.slot);
+        slots.push(first);
+        for (let k = 1; k < count; k++) {
+          const s = chooseTargetSlot('curse', intent);
+          if (slots.indexOf(s) === -1) slots.push(s);
+        }
         await enemyWindup(en, '#c45cff');
-        const sEl = $('socket-row').children[slot];
-        const to = sEl ? center(sEl) : playerPos();
-        await enemyBolt(en, to, '#c45cff', 'k-shadow', () => {
-          B.slotFx[slot].cursed = intent.value;
-          B.slotFx[slot].caster = en;
+        const to0 = ($('socket-row').children[first] && center($('socket-row').children[first])) || playerPos();
+        await enemyBolt(en, to0, '#c45cff', 'k-shadow', () => {
+          slots.forEach(slot => {
+            B.slotFx[slot].cursed = 1;
+            B.slotFx[slot].caster = en;
+          });
           renderSockets();
-          slotCurseFx($('socket-row').children[slot]);
-          floatText(offset(to, 0, -12), 'Slot ' + (slot + 1) + ' Cursed', 'status');
+          slots.forEach(slot => {
+            const cEl = $('socket-row').children[slot];
+            if (cEl) slotCurseFx(cEl);
+          });
+          floatText(offset(to0, 0, -12), slots.length > 1 ? slots.length + ' Slots Cursed' : 'Slot ' + (first + 1) + ' Cursed', 'status');
         });
         SFX.firePurple(0);
         await wait(320);
@@ -5384,8 +5634,8 @@
         if (B.clogImmune) { B.clogImmune = false; floatText(playerPos(), 'Shrugged off!', 'status'); await wait(200); break; }
         await enemyWindup(en, '#b07bff');
         await enemyBolt(en, playerPos(), '#b07bff', 'k-shadow', () => {
-          if (B.stuck.indexOf('deadweight') === -1) B.stuck.push('deadweight');
-          floatText(playerPos(), 'Dead Weight!', 'status');
+          B.injected.push('deadweight');   // jams a 2-socket Dead Weight into your NEXT hand
+          floatText(playerPos(), '+Dead Weight (hand)', 'status');
         });
         SFX.firePurple(0);
         await wait(240);
@@ -5459,6 +5709,271 @@
         await wait(280);
         break;
       }
+      // ---- new Floor-1 / rival action vocabulary -------------------------
+      case 'thinking':
+        // a telegraphed breather: no action, used for pacing / telegraphs
+        await enemyWindup(en, '#9aa6c0');
+        floatText(offset(center(en.dom), 0, -44), '…', 'status');
+        await wait(300);
+        break;
+      case 'thornsAll': {
+        const v = intent.value || 3;
+        await enemyWindup(en, '#7fe08f');
+        B.enemies.filter(o => o.alive).forEach(o => {
+          o.thornsBonus = (o.thornsBonus || 0) + v;
+          floatText(offset(center(o.dom), 0, -44), 'Thorns +' + v, 'status');
+          fxMotes(center(o.dom), 5, '#8fe08f', 'fx-mote-spark', 46);
+        });
+        SFX.fireBlue(0);
+        refreshAll();
+        await wait(300);
+        break;
+      }
+      case 'blockAll': {
+        const v = intent.value || 5;
+        await enemyWindup(en, '#5ab6ff');
+        B.enemies.filter(o => o.alive).forEach(o => {
+          const gain = v + (o.resilience || 0);
+          o.shield += gain;
+          setShieldPip(o.dom, o.shield);
+          enemyGuardFx(o);
+          floatText(offset(center(o.dom), 0, -44), '+' + gain + '◆', 'shield');
+        });
+        SFX.fireBlue(0);
+        await wait(320);
+        break;
+      }
+      case 'buffStat': {
+        const v = intent.value || 1;
+        const isRes = intent.stat === 'resilience';
+        const targets = intent.scope === 'self' ? [en] : B.enemies.filter(o => o.alive);
+        await enemyWindup(en, isRes ? '#5ab6ff' : '#ff7a55');
+        targets.forEach(o => {
+          if (isRes) o.resilience = (o.resilience || 0) + v;
+          else { o.strength = (o.strength || 0) + v; o.strengthTurns = 9999; }
+          floatText(offset(center(o.dom), 0, -44), (isRes ? 'Resilience +' : 'Strength +') + v, 'status');
+          strengthFx(o.dom);
+        });
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(300);
+        break;
+      }
+      case 'scare': {
+        const v = intent.value || 2;
+        await enemyWindup(en, '#c45cff');
+        await enemyBolt(en, targetPlayer(0, -10), '#c77bff', 'k-shadow', () => {
+          B.playerScared = Math.max(B.playerScared || 0, v);
+          B.playerScaredTurns = Math.max(B.playerScaredTurns || 0, intent.turns || 2);
+          floatText(playerPos(), 'Scared ' + v, 'status');
+          scareFx(playerArt());
+        });
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(260);
+        break;
+      }
+      case 'banish': {
+        const slot = clampSlot(intent.slot);
+        await enemyWindup(en, '#9aa0aa');
+        const sEl = $('socket-row').children[slot];
+        const to = sEl ? center(sEl) : playerPos();
+        await enemyBolt(en, to, '#9aa0aa', 'k-shadow', () => {
+          B.slotFx[slot].banished = true;
+          B.slotFx[slot].banishedBy = en;
+          renderSockets();
+          const bEl = $('socket-row').children[slot];
+          if (bEl) slotBanishFx(bEl);
+          floatText(offset(to, 0, -12), 'Slot ' + (slot + 1) + ' Banished', 'status');
+        });
+        SFX.firePurple(0);
+        await wait(320);
+        break;
+      }
+      case 'sap': {
+        const v = intent.value || 4;
+        await enemyWindup(en, '#8fe08f');
+        await enemyBolt(en, targetPlayer(0, -6), '#8fe08f', 'k-venom', () => {
+          en.sapAura = Math.max(en.sapAura || 0, v);
+          floatText(playerPos(), 'Sapped −' + v + '/turn', 'status');
+          sapFx(playerArt());
+        });
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(260);
+        break;
+      }
+      case 'mature': {
+        await enemyWindup(en, '#b07bff');
+        en.mind.matured = true;
+        floatText(offset(center(en.dom), 0, -44), 'Matured!', 'status');
+        strengthFx(en.dom);
+        if (en.sapAura > 0) en.sapAura = Math.max(en.sapAura, 6);
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(280);
+        break;
+      }
+      case 'birthBrood': {
+        const n = intent.n || 2;
+        await enemyWindup(en, '#b07bff');
+        let born = 0;
+        for (let i = 0; i < n; i++) {
+          if (alive().length < MAX_ENEMIES && root.CG.DATA.ENEMIES[intent.who]) {
+            spawnEnemy(root.CG.DATA.ENEMIES[intent.who]);
+            born++;
+          }
+        }
+        if (born > 0 && intent.hpCost) {
+          en.hp = Math.max(1, en.hp - intent.hpCost);
+          setBar(en.dom, en.hp, en.maxHp);
+          floatText(offset(center(en.dom), 0, -64), '-' + intent.hpCost, 'dmg');
+        }
+        floatText(offset(center(en.dom), 0, -44), 'Birth Brood', 'status');
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(320);
+        break;
+      }
+      case 'hex': {
+        await enemyWindup(en, '#c45cff');
+        await enemyBolt(en, targetPlayer(0, -10), '#c45cff', 'k-shadow', () => {
+          en.mind.hexActive = true;
+          floatText(playerPos(), 'Hexed!', 'status');
+          hexFx(playerArt());
+        });
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(280);
+        break;
+      }
+      // ---- elite vocabulary -------------------------------------------------
+      case 'dirge': {
+        // Bonepiper's funeral march — every living Skeleton's strike multiplier climbs
+        await enemyWindup(en, '#cdd3df');
+        dirgeFx(en.dom);   // the piper's signature music-note flourish
+        const skels = B.enemies.filter(o => o.alive && o.base && o.base.id === 'skeleton');
+        skels.forEach(o => {
+          o.mind.mult = (o.mind.mult || 1) + 1;
+          o.intent = prepareIntent(o);   // re-telegraph its now-bigger swing
+          floatText(offset(center(o.dom), 0, -44), '×' + o.mind.mult, 'status');
+          dirgeFx(o.dom);
+        });
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(300);
+        break;
+      }
+      case 'warcry': {
+        // Warchanter's War Drum: grows Strength AND Resilience on itself
+        const v = intent.value || 4;
+        await enemyWindup(en, '#ffd25a');
+        en.strength = (en.strength || 0) + v; en.strengthTurns = 9999;
+        en.resilience = (en.resilience || 0) + v;
+        floatText(offset(center(en.dom), 0, -44), 'Rally +' + v, 'status');
+        strengthFx(en.dom); resilienceFx(en.dom);   // dual ⚔/🛡 War-Drum signature
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(300);
+        break;
+      }
+      case 'frustration': {
+        // Clogfiend stews — the damage hook in applyDamage spawns Rubble per 10 taken
+        await enemyWindup(en, '#ff7a3a');
+        frustrationFx(en.dom);   // 💢 anger steam signature
+        floatText(offset(center(en.dom), 0, -44), 'Frustration…', 'status');
+        await wait(280);
+        break;
+      }
+      case 'gorge': {
+        // Clogfiend devours your clutter: Attack value × junk you held last turn
+        // (snapshotted in discardHand, since the hand is already swept by now)
+        const junkN = B.junkHeld || 0;
+        if (junkN <= 0) {
+          await enemyWindup(en, '#9aa6c0');
+          floatText(offset(center(en.dom), 0, -44), 'Nothing to gorge', 'status');
+          await wait(200);
+          break;
+        }
+        const val = intent.value || 6;
+        await enemyWindup(en, '#ff3a2a', true);
+        for (let h = 0; h < junkN; h++) {
+          if (!en.alive || B.ended) break;
+          let dmg = val;
+          if (en.weak > 0) dmg = Math.max(1, Math.round(dmg * 0.55));
+          if (B.playerScared > 0) dmg += B.playerScared;
+          SFX.enemyHit();
+          const target = targetPlayer(16, -8);
+          await enemyMeleeStrike(en, target, true, () => {
+            enemySlashFx(target, '#ff3a2a');
+            fxMotes(target, 8, '#ff3a2a', 'fx-mote-spark', 74);
+            damagePlayer(dmg);
+            shake(3);
+          });
+          if (B.ended) return;
+          if (h < junkN - 1) await wait(210);
+        }
+        break;
+      }
+      // ---- Soul Hunter (rival arc) -----------------------------------------
+      case 'quarry': {
+        const v = intent.value || 1;
+        await enemyWindup(en, '#b98cff');
+        await enemyBolt(en, targetPlayer(0, -10), '#b98cff', 'k-shadow', () => {
+          B.quarry = (B.quarry || 0) + v;
+          floatText(playerPos(), 'Quarry +' + v, 'status');
+          quarryFx(playerArt());
+        });
+        SFX.firePurple(0);
+        refreshAll();
+        await wait(240);
+        break;
+      }
+      case 'soulReap': {
+        const q = B.quarry || 0;
+        if (q <= 0) {
+          await enemyWindup(en, '#9aa6c0');
+          floatText(offset(center(en.dom), 0, -44), 'No Quarry to reap', 'status');
+          await wait(180);
+          break;
+        }
+        if (typeof banner === 'function') banner('Soul Reap!', 900);
+        await enemyWindup(en, '#b98cff', true);
+        for (let h = 0; h < q; h++) {
+          if (!en.alive || B.ended) break;
+          let dmg = 5;
+          if (en.weak > 0) dmg = Math.max(1, Math.round(dmg * 0.55));
+          if (B.playerScared > 0) dmg += B.playerScared;
+          enemyLunge(en, true);
+          SFX.enemyHit();
+          const target = targetPlayer(16, -8);
+          await enemyBolt(en, target, '#b98cff', 'k-shadow', () => {
+            enemySlashFx(target, '#b98cff');
+            damagePlayer(dmg);
+            shake(2);
+          });
+          if (B.ended) return;
+          if (h < q - 1) await wait(170);
+        }
+        B.quarry = 0;
+        refreshAll();
+        break;
+      }
+      case 'doom': {
+        // the Doom Clock ran out — 999, unaffected by block, buffs, or debuffs
+        if (typeof banner === 'function') banner('DOOM', 1400);
+        await enemyWindup(en, '#ff2a2a', true);
+        shake(6);
+        await enemyBolt(en, targetPlayer(0, 0), '#ff2a2a', 'k-fire', () => {
+          enemySlashFx(targetPlayer(0, 0), '#ff2a2a');
+          doomFx(playerArt());
+          floatText(offset(center(playerArt()), 0, -70), '-999', 'dmg');
+          B.monster.hp = 0;
+          setBar($('player-monster'), 0, B.monster.maxHp);
+        });
+        if (typeof handlePlayerDeath === 'function') handlePlayerDeath();
+        break;
+      }
     }
   }
 
@@ -5469,23 +5984,274 @@
     return Math.min(i, max);
   }
 
+  // ---- enemy "brains": optional per-id hooks for stateful/conditional foes.
+  // Default behavior stays a round-robin over base.intents; a brain may override
+  // the next index (chooseIndex), tweak the telegraphed intent (modifyIntent),
+  // or react at spawn / before its action / after its action. Keeping these in
+  // battle.js (keyed by id) avoids putting functions in data.js where the
+  // scale/descension transforms would choke on them.
+  const ENEMY_BRAINS = {
+    // Maledict — Malice: +1 each time it curses; drives Malefic Strike + curse count
+    malice: {
+      onSpawn(en) { en.mind.malice = 0; },
+      modifyIntent(en, intent) {
+        const m = en.mind.malice || 0;
+        const tune = a => {
+          if (!a) return;
+          if (a.malefic && a.type === 'attack') a.value = 6 + 3 * m + (en.strength || 0);
+          if (a.maliceCount && a.type === 'curse') a.count = Math.max(1, Math.min(m, B.monster.sockets));
+        };
+        if (intent.type === 'multi') intent.actions.forEach(tune); else tune(intent);
+        return intent;
+      },
+      afterAction(en, intent) {
+        const cursed = intent.type === 'curse' ||
+          (intent.type === 'multi' && intent.actions.some(a => a.type === 'curse'));
+        if (cursed) en.mind.malice = (en.mind.malice || 0) + 1;
+      }
+    },
+    // Sapfiend — Brood-born: only re-births when its brood is gone
+    broodborn: {
+      chooseIndex(en) {
+        const len = en.base.intents.length;
+        let next = (en.intentIndex + 1) % len;
+        const broodAlive = B.enemies.some(o => o.alive && o.base && o.base.id === 'wormling');
+        if (next === 0 && broodAlive) next = 1 % len;   // skip Birth Brood while brood lives
+        return next;
+      }
+    },
+    // Wormling — Mature: Sap/Gnaw grow if it survives to its third action
+    wormling: {
+      modifyIntent(en, intent) {
+        if (en.mind.matured) {
+          const tune = a => {
+            if (a && a.type === 'sap') a.value = 6;
+            if (a && a.type === 'attack' && a.gnaw) a.value = 5 + (en.strength || 0);
+          };
+          if (intent.type === 'multi') intent.actions.forEach(tune); else tune(intent);
+        }
+        return intent;
+      },
+      afterAction(en, intent) {
+        if (intent.type === 'mature' || (intent.type === 'multi' && intent.actions.some(a => a.type === 'mature'))) {
+          en.mind.matured = true;
+        }
+      }
+    },
+    // Hex Witch — Hex: while it lives, your turn's combo bonus recoils onto you.
+    // Once the hex is up, the opening "Hex, then Str+2" beat drops the redundant
+    // hex and just keeps stacking Strength.
+    hex: {
+      modifyIntent(en, intent) {
+        if (en.mind.hexActive && intent.type === 'multi') {
+          const kept = intent.actions.filter(a => a.type !== 'hex');
+          if (kept.length === 1) return kept[0];
+          if (kept.length) { intent.actions = kept; }
+        }
+        return intent;
+      },
+      afterAction(en, intent) {
+        const hexed = intent.type === 'hex' ||
+          (intent.type === 'multi' && intent.actions.some(a => a.type === 'hex'));
+        if (hexed) en.mind.hexActive = true;
+      }
+    },
+    // Skeleton — its strike multiplier is bumped by the Bonepiper's Dirge
+    skeleton: {
+      onSpawn(en) { en.mind.mult = 1; },
+      modifyIntent(en, intent) {
+        const tune = a => { if (a && a.type === 'attack' && a.mult) a.hits = Math.max(1, en.mind.mult || 1); };
+        if (intent.type === 'multi') intent.actions.forEach(tune); else tune(intent);
+        return intent;
+      }
+    },
+    // Bonepiper — only re-pipes when its skeletons are gone (resettable snowball)
+    bonepiper: {
+      chooseIndex(en) {
+        const len = en.base.intents.length;
+        let next = (en.intentIndex + 1) % len;
+        const skels = B.enemies.some(o => o.alive && o.base && o.base.id === 'skeleton');
+        if (next === 0 && skels) next = 1 % len;   // skip Pipe while skeletons live
+        return next;
+      }
+    },
+    // Warchanter — War Drum: each Rally it casts makes the next Rally bigger
+    wardrum: {
+      onSpawn(en) { en.mind.drum = 0; },
+      modifyIntent(en, intent) {
+        const tune = a => { if (a && a.type === 'warcry') a.value = 4 + (en.mind.drum || 0); };
+        if (intent.type === 'multi') intent.actions.forEach(tune); else tune(intent);
+        return intent;
+      },
+      afterAction(en, intent) {
+        const cried = intent.type === 'warcry' ||
+          (intent.type === 'multi' && intent.actions.some(a => a.type === 'warcry'));
+        if (cried) en.mind.drum = (en.mind.drum || 0) + 1;
+      }
+    },
+    // The Starveling — permanent HP-threshold phases + Hunger ramp
+    starveling: {
+      onSpawn(en) { en.mind.phase = 1; en.mind.step = 0; },
+      onTurnStart(en) {
+        starvelingSync(en);
+        const gain = en.mind.phase === 3 ? 2 : (en.mind.phase === 2 ? 1 : 0);   // Hunger
+        if (gain > 0) {
+          en.strength = (en.strength || 0) + gain; en.strengthTurns = 9999;
+          floatText(offset(center(en.dom), 0, -52), 'Hunger +' + gain, 'status');
+          strengthFx(en.dom);
+        }
+      },
+      advance(en) {
+        const before = en.mind.phase;
+        starvelingSync(en);
+        if (en.mind.phase !== before) en.mind.step = 0;   // a new phase restarts at its action 1
+        else en.mind.step = (en.mind.step + 1) % STARVELING_BANKS[en.mind.phase].length;
+      },
+      overrideEntry(en) {
+        starvelingSync(en);
+        const bank = STARVELING_BANKS[en.mind.phase];
+        return scaleBankEntry(bank[en.mind.step % bank.length]);
+      }
+    },
+    // Soul Hunter (Forms I-III) — loops Mark / Stalk / Thinking, but unleashes Soul
+    // Reap the instant Quarry crosses its threshold, then resumes from Mark
+    soulhunter: {
+      chooseIndex(en) {
+        const reapIdx = en.base.intents.length - 1;   // Soul Reap is the last intent
+        if ((B.quarry || 0) >= (en.base.reapAt || 4)) return reapIdx;
+        const cur = en.intentIndex;
+        if (cur >= reapIdx - 1) return 0;   // after Thinking (or a Reap), restart at Mark
+        return cur + 1;
+      }
+    },
+    // Soul Hunter Ultimate — no Quarry/socket play, just the Doom Clock. When the
+    // clock arms, every telegraph becomes the unconditional 999.
+    doomhunter: {
+      overrideEntry(en) { return B.doom999 ? { type: 'doom' } : null; }
+    }
+  };
+  // the Starveling's banks live here (not in its def), so apply the same depth +
+  // Descension damage scaling the def transforms would otherwise have applied
+  function scaleBankEntry(entry) {
+    const depth = B.depthScale || 0;
+    const dz = B.descension;
+    let mul = 1 + depth * 0.04;
+    if (dz) mul *= (dz.enemyDmgMul || 1) * (dz.eliteBossDmgMul || 1);
+    if (mul === 1) return entry;
+    const sub = a => (a && a.type === 'attack')
+      ? Object.assign({}, a, { value: Math.max(1, Math.round(a.value * mul)) })
+      : a;
+    return Array.isArray(entry) ? entry.map(sub) : sub(entry);
+  }
+  // The Starveling's three permanent phases — each loops its own short rotation
+  const STARVELING_BANKS = {
+    1: [ { type: 'thinking' }, { type: 'attack', value: 5 }, { type: 'attack', value: 8 } ],
+    2: [ [ { type: 'attack', value: 6 }, { type: 'attack', value: 6 } ],
+         [ { type: 'regen', value: 12 }, { type: 'attack', value: 4 } ],
+         { type: 'attack', value: 10 } ],
+    3: [ { type: 'thinking' }, { type: 'attack', value: 22 }, { type: 'attack', value: 4, hits: 3 } ]
+  };
+  // recompute the Starveling's phase from HP — phases only ever DEEPEN (never revert,
+  // even if it heals back up), and crossing a threshold fires one-time entry effects
+  function starvelingSync(en) {
+    const m = en.mind;
+    if (m.phase == null) { m.phase = 1; m.step = 0; }
+    const hpPh = en.hp > en.maxHp * 0.66 ? 1 : (en.hp > en.maxHp * 0.33 ? 2 : 3);
+    const np = Math.max(m.phase, hpPh);
+    if (np <= m.phase) return;
+    if (np >= 2 && !m.awoke) {
+      m.awoke = true;
+      if (en.dom) floatText(offset(center(en.dom), 0, -64), 'It wakes — Hunger stirs', 'status');
+      if (typeof banner === 'function') banner('The Starveling wakes', 1000);
+    }
+    if (np >= 3 && !m.frenzied) {
+      m.frenzied = true;
+      en.thornsBonus = (en.thornsBonus || 0) + 3;   // Frenzy: thorns punish the finishing combos
+      if (en.dom) floatText(offset(center(en.dom), 0, -64), 'FRENZY! Thorns +3', 'status');
+      if (typeof banner === 'function') banner('The Starveling frenzies', 1100);
+    }
+    m.phase = np;
+  }
+  function brain(en) { return en && en.base && en.base.brain && ENEMY_BRAINS[en.base.brain]; }
+  function brainHook(en, name, intent) {
+    const b = brain(en);
+    if (b && b[name]) return b[name](en, intent, B);
+    return undefined;
+  }
+  // any living foe is "hexing" you while its mind flagged hexActive
+  function hexActive() { return B.enemies.some(e => e.alive && e.mind && e.mind.hexActive); }
+  // total Sap drain from all living foes that have entered their drain state
+  function sapTotal() { return B.enemies.reduce((s, e) => s + (e.alive ? (e.sapAura || 0) : 0), 0); }
+  // Soulbrand: morph every special (non-normal) socket into a fight-only Soul socket
+  function setupSoulbrand(def) {
+    B.soulForm = def.soulForm || 1;
+    let n = 0;
+    B.slotTypes = B.slotTypes.map(t => {
+      const types = Array.isArray(t) ? t : (t && t !== 'normal' ? [t] : []);
+      if (types.length > 0) { n++; return 'soul'; }
+      return 'normal';
+    });
+    B.soulCount = n;
+    B.quarry = def.startQuarry || 0;
+    B.soulbrandPending = true;   // first socket render plays the loud morph
+  }
+  // the power/Quarry a glyph earns when it resolves through a Soul socket this step
+  function soulPowerFor(comboLen) {
+    if (!B.soulForm) return 0;
+    return B.soulForm >= 3 ? Math.max(1, comboLen) : B.soulForm;   // III scales with the combo number
+  }
+  // ---- Doom Clock (Soul Hunter Ultimate Form) ----
+  // A silent timer = your socket count. It descends one each of your turns. Clear
+  // a turn by chaining clean through every socket; reach 1 (or 0) without clearing
+  // and the Hunter's next turn is an unconditional 999. No tooltip — by design.
+  function setupDoom() {
+    B.doomActive = true;
+    B.doomMax = B.monster.sockets;
+    B.doom = B.monster.sockets;
+    B.doomStarted = false;   // first player turn shows the full count without descending
+    B.doomCleared = false;
+    B.doom999 = false;
+  }
+  function checkDoomArm() {
+    if (!B.doomActive || B.doom999) return;
+    const armed = (B.doom <= 1 && !B.doomCleared) || B.doom <= 0;
+    if (!armed) return;
+    B.doom999 = true;
+    const hunter = B.enemies.find(e => e.alive && e.base && e.base.doomClock);
+    if (hunter) hunter.intent = { type: 'doom' };   // its very next turn is the end
+    refreshAll();
+  }
+
   function advanceIntent(en) {
-    en.intentIndex = (en.intentIndex + 1) % en.base.intents.length;
+    const b = brain(en);
+    if (b && b.advance) { b.advance(en, B); en.intent = prepareIntent(en); return; }   // self-driven state machine (Starveling)
+    let next;
+    if (b && b.chooseIndex) next = b.chooseIndex(en, B);
+    if (next == null) {
+      const len = en.base.intents.length;
+      next = en.intentIndex + 1;
+      if (next >= len) next = (en.base.loopStart || 0);   // "action 1 fires once" -> loopStart
+    }
+    en.intentIndex = ((next % en.base.intents.length) + en.base.intents.length) % en.base.intents.length;
     en.intent = prepareIntent(en);
   }
 
   // clone the upcoming intent + bake in target slot / empower so the telegraph is exact.
-  // a base entry may be an ARRAY — that becomes a two-action "multi" telegraph.
+  // a base entry may be an ARRAY — that becomes a two-action "multi" telegraph. A brain
+  // may supply the raw entry itself (overrideEntry) for phase/HP-driven rotations.
   function prepareIntent(en) {
-    const entry = en.base.intents[en.intentIndex];
-    if (Array.isArray(entry)) {
-      return { type: 'multi', actions: entry.map(sub => prepareSubIntent(en, sub)) };
-    }
-    return prepareSubIntent(en, entry);
+    const b = brain(en);
+    let entry = (b && b.overrideEntry) ? b.overrideEntry(en, B) : null;
+    if (entry == null) entry = en.base.intents[en.intentIndex];
+    let intent = Array.isArray(entry)
+      ? { type: 'multi', actions: entry.map(sub => prepareSubIntent(en, sub)) }
+      : prepareSubIntent(en, entry);
+    if (b && b.modifyIntent) intent = b.modifyIntent(en, intent, B) || intent;
+    return intent;
   }
   function prepareSubIntent(en, baseSub) {
     const it = Object.assign({}, baseSub);
-    if (it.type === 'curse' || it.type === 'sunder') it.slot = chooseTargetSlot(it.type);
+    if (it.type === 'curse' || it.type === 'sunder' || it.type === 'banish') it.slot = chooseTargetSlot(it.type, it);
     if (it.type === 'attack') {
       let bonus = en.strength || 0;          // lasting Strength from multi-turn self-buffs
       if ((en.empower || 0) > 0) { bonus += en.empower; it.empowered = true; en.empower = 0; }
@@ -5493,26 +6259,35 @@
     }
     return it;
   }
-  function chooseTargetSlot(kind) {
+  function chooseTargetSlot(kind, opts) {
+    opts = opts || {};
     const n = B.monster.sockets;
-    const prefer = [];
+    const avail = [];
     for (let i = 0; i < n; i++) {
       const fx = B.slotFx[i] || {};
       if (kind === 'sunder' && fx.disabled > 0) continue;
+      if (kind === 'banish' && fx.banished) continue;
       if (kind === 'curse' && fx.cursed > 0) continue;
-      prefer.push(i);
+      avail.push(i);
     }
-    const pool = prefer.length ? prefer : Array.from({ length: n }, (_, i) => i);
+    let pool = avail.length ? avail : Array.from({ length: n }, (_, i) => i);
+    // Maledict favors Loop / Repeat sockets when it curses
+    if (kind === 'curse' && opts.preferLoop) {
+      const loops = pool.filter(i => slotCountAt(i, 'loopback') > 0 || slotCountAt(i, 'repeat') > 0);
+      if (loops.length) pool = loops;
+    }
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
   function tickRoundTimers() {
     B.slotFx.forEach(fx => {
       if (fx.disabled > 0) fx.disabled--;
-      if (fx.cursed > 0) { fx.cursed--; if (fx.cursed <= 0) fx.caster = null; }
+      // cursed + banished are caster-tied now: they persist while the caster
+      // lives and are lifted by clearCasterEffects when it dies — no turn decay.
     });
     if (B.playerWeak > 0) B.playerWeak--;
     if (B.playerFrail > 0) B.playerFrail--;
+    if (B.playerScaredTurns > 0) { B.playerScaredTurns--; if (B.playerScaredTurns <= 0) B.playerScared = 0; }
   }
 
   // Enemies grow a little tougher the deeper you climb — modest, incremental
@@ -5561,9 +6336,11 @@
       maxHp: def.maxHp, hp: def.maxHp, shield: 0,
       weak: 0, burn: 0, leech: 0, scare: 0, scareTurns: 0, empower: 0,
       strength: 0, strengthTurns: 0,
+      thornsBonus: 0, resilience: 0, sapAura: 0, mind: {},
       feastPool: root.CG.DATA.feastPoolFor(def),
       intentIndex: 0, intent: null, alive: true, dom: null
     };
+    brainHook(en, 'onSpawn');
     en.intent = prepareIntent(en);
     const c = el('div', 'combatant enemy summoning');
     c.innerHTML = combatantHTML(en.name, false);
@@ -5676,6 +6453,15 @@
     if (B.ended) return;
     B.ended = true;
     B.resolving = false;
+    // Bestiary safety net: a win means every foe in this arena fell, so stamp
+    // them all "defeated". This catches bosses/specials whose death resolved
+    // through a path that bypassed killEnemy (e.g. simultaneous lethal, debug).
+    if (root.CG.Game && root.CG.Game.recordBestiaryDefeated) {
+      B.enemies.forEach(en => {
+        const id = en && en.base && en.base.id;
+        if (id) root.CG.Game.recordBestiaryDefeated(id);
+      });
+    }
     SFX.victory();
     banner('Victory', 1500);
     setTimeout(() => onWinCb && onWinCb(), 1400);
@@ -5749,7 +6535,9 @@
     gold() { const G = root.CG.Game; if (G && G.debugGold) G.debugGold(); },
     anyNode() { const G = root.CG.Game; return (G && G.debugToggleAnyNode) ? G.debugToggleAnyNode() : false; },
     secretShop() { const G = root.CG.Game; if (G && G.debugSecretShop) G.debugSecretShop(); },
-    wishStones() { const G = root.CG.Game; if (G && G.debugWishStones) G.debugWishStones(); }
+    wishStones() { const G = root.CG.Game; if (G && G.debugWishStones) G.debugWishStones(); },
+    descent() { const G = root.CG.Game; return (G && G.debugDescent) ? G.debugDescent() : 0; },
+    battle() { const G = root.CG.Game; if (G && G.debugBattlePicker) G.debugBattlePicker(); }
   };
 
   // ============================================================
@@ -5778,8 +6566,11 @@
             b.classList.toggle('debug-on', !!res);
             b.textContent = res ? '🧭 Any Node: ON' : '🧭 Any Node: OFF';
           }
+          if (key === 'descent') {
+            b.textContent = '⮟ +1 Completed Descent (now ' + (res || 0) + ')';
+          }
           // navigation cheats leave the menu
-          if (key === 'killAll' || key === 'secretShop') close();
+          if (key === 'killAll' || key === 'secretShop' || key === 'battle') close();
         });
       });
     }

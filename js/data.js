@@ -482,8 +482,8 @@
     },
     deadweight: {
       id: 'deadweight', name: 'Dead Weight', color: 'gray', rune: '⛓',
-      character: null, junk: true, sticky: true, slots: 2,
-      desc: 'A cursed anchor. Takes <b>2</b> hand spaces and never discards. Socket it to finally drop it.'
+      character: null, junk: true, slots: 2, discardDmg: 10,
+      desc: 'A cursed anchor taking <b>2</b> sockets. Socket and Act to be rid of it for good — or it bites for <b>10</b> when you let it discard unplayed.'
     },
 
     /* ---------------- COLORLESS — the white Soul-glyphs ----------------
@@ -887,43 +887,96 @@
   const ENEMIES = {
     /* ---- Tier 1: simple, readable (floors 1-2) ---- */
     cinderling: {
-      id: 'cinderling', name: 'Cinderling', emoji: '👺', img: 'assets/Cinderling.png', maxHp: 20,
-      intents: [ { type: 'attack', value: 6 } ],
-      desc: 'A basic attacker.'
+      id: 'cinderling', name: 'Cinderling', emoji: '👺', img: 'assets/Cinderling.png', maxHp: 20, ranged: true,
+      // an ember-imp pack-buffer: its Strength bumps feed every ally, so a swarm snowballs
+      intents: [
+        { type: 'attack', value: 5 },
+        { type: 'buffStat', stat: 'strength', value: 1 },
+        { type: 'attack', value: 3, hits: 2 }
+      ],
+      desc: 'An ember-imp that whips itself and its kin into a frenzy — its Strength buff feeds every ally, so a pack of them snowballs fast. Focus them down before the swarm spikes.'
     },
     thornback: {
-      id: 'thornback', name: 'Thornback', emoji: '🦔', img: 'assets/Thornback.png', maxHp: 28, thorns: 1,
-      // THORNS gimmick: every strike you land draws blood back — punishes flailing
-      intents: [ { type: 'defend', value: 6 }, { type: 'attack', value: 9 } ],
-      desc: 'A bristling hide — guards, then gores. Every blow you land pricks you back, so pick your hits and don\'t flail with multi-strikes.'
+      id: 'thornback', name: 'Thornback', emoji: '🦔', img: 'assets/Thornback.png', maxHp: 30,
+      // THORNS gimmick: armors the whole pack in thorns (once), then turtles + jabs
+      loopStart: 1,
+      intents: [
+        { type: 'thornsAll', value: 3 },
+        { type: 'blockAll', value: 10 },
+        { type: 'attack', value: 5 }
+      ],
+      desc: 'A bristling hide that armors the whole pack in thorns, then turtles up. Every blow you land on a thorned foe pricks you back — pick your hits and don\'t flail with multi-strikes.'
     },
 
     /* ---- Tier 2: one disruptive trick each (floors 2-3) ---- */
     hexweaver: {
-      id: 'hexweaver', name: 'Hexweaver', emoji: '🪬', img: 'assets/Hexweaver.png', maxHp: 24,
-      // marks a socket; that slot's effects reverse onto you for 2 turns
-      intents: [ { type: 'curse', value: 2 }, { type: 'attack', value: 5 } ],
-      desc: 'Curses a glyph slot — its boons feed the weaver, its harm feeds you.'
+      id: 'hexweaver', name: 'Hexweaver', emoji: '🪬', img: 'assets/Hexweaver.png', maxHp: 30, ranged: true,
+      // weaves Frail/Weak between jabs — softens you so scaling allies hit harder
+      intents: [
+        [ { type: 'debuff', stat: 'frail', value: 2 }, { type: 'attack', value: 4 } ],
+        [ { type: 'debuff', stat: 'weak', value: 2 }, { type: 'attack', value: 4 } ],
+        { type: 'thinking' }
+      ],
+      desc: 'Weaves frailty and weakness into you between jabs — most dangerous beside foes whose damage scales, since your softened defenses let their blows land harder.'
     },
     gravewarden: {
-      id: 'gravewarden', name: 'Gravewarden', emoji: '⚰️', img: 'assets/Gravewarden.png', maxHp: 34, ward: 2,
-      // WARD gimmick: while it stands, its allies shrug off your blows — break it first
-      intents: [ { type: 'trash', count: 1, where: 'deck' }, { type: 'attack', value: 6 } ],
-      desc: 'A warden of the dead. While it stands its kin take less damage, and it buries Rubble in your deck to choke your draws. Break the warden first.'
+      id: 'gravewarden', name: 'Gravewarden', emoji: '⚰️', img: 'assets/Gravewarden.png', maxHp: 40,
+      // buries Rubble in your hand, then telegraphs a Crushing Blow with a Thinking beat
+      loopStart: 1,
+      intents: [
+        [ { type: 'trash', count: 1, where: 'hand' }, { type: 'attack', value: 6 } ],
+        { type: 'thinking' },
+        { type: 'attack', value: 16 },
+        [ { type: 'trash', count: 1, where: 'hand' }, { type: 'attack', value: 6 } ]
+      ],
+      desc: 'A keeper of the dead that buries Rubble in your hand to choke your draws, then winds up a Crushing Blow. The breath it takes is your cue to brace.'
     },
 
     /* ---- Tier 3: nastier control (floors 3-4) ---- */
     maledict: {
-      id: 'maledict', name: 'Maledict', emoji: '👁️', img: 'assets/Maledict.png', maxHp: 26,
-      // SIPHON gimmick: drains the Strength you hoard and wields it against you
-      intents: [ { type: 'debuff', stat: 'weak', value: 2 }, { type: 'siphon', stat: 'strength', value: 2 }, { type: 'attack', value: 7 } ],
-      desc: 'The unblinking eye. It saps your might — first weakening you, then draining the Strength you stockpile to fuel its own strikes.'
+      id: 'maledict', name: 'Maledict', emoji: '👁️', img: 'assets/Maledict.png', maxHp: 45, ranged: true,
+      // MALICE passive (brain): +1 each curse — drives both its strike and curse count
+      brain: 'malice', loopStart: 1,
+      intents: [
+        { type: 'curse', preferLoop: true },
+        { type: 'thinking' },
+        { type: 'attack', value: 6, malefic: true },
+        { type: 'curse', preferLoop: true, maliceCount: true }
+      ],
+      desc: 'The unblinking eye. Its Malice swells with every curse it lays — fueling both how hard it strikes and how many sockets it corrupts at once. A beatable clock: cut it down before the curses cascade.'
+    },
+    wormling: {
+      id: 'wormling', name: 'Wormling', emoji: '🐛', img: 'assets/Wormling.png', maxHp: 15,
+      // torn from a Sapfiend; saps you each turn, and matures into a real threat if ignored
+      brain: 'wormling',
+      intents: [
+        { type: 'sap', value: 4 },
+        { type: 'attack', value: 3, gnaw: true },
+        { type: 'mature' }
+      ],
+      desc: 'A torn-off larva that latches on and drains you each turn while it lives. Kill it to stop the bleed — but if you let it linger it matures, biting far harder.'
     },
     sapfiend: {
-      id: 'sapfiend', name: 'Sapfiend', emoji: '🕷️', img: 'assets/Sapfiend.png', maxHp: 32,
-      // seals a socket shut, steels itself, then strikes
-      intents: [ { type: 'sunder', value: 2 }, { type: 'buff', value: 2, turns: 3 }, { type: 'attack', value: 5 } ],
-      desc: 'Webs a socket shut, then swells with venom before it strikes.'
+      id: 'sapfiend', name: 'Sapfiend', emoji: '🕷️', img: 'assets/Sapfiend.png', maxHp: 60,
+      // BROOD-BORN (brain): births Wormlings at 10 HP each (no healing), banishes sockets
+      brain: 'broodborn',
+      intents: [
+        { type: 'birthBrood', who: 'wormling', n: 2, hpCost: 10 },
+        [ { type: 'banish' }, { type: 'attack', value: 6 } ],
+        { type: 'blockAll', value: 5 }
+      ],
+      desc: 'A brood-mother that tears Wormlings from its own flesh — every birth costs it 10 HP that never returns. It cannot heal, so culling its brood forces it to bleed itself raw.'
+    },
+    hexwitch: {
+      id: 'hexwitch', name: 'Hex Witch', emoji: '🕸️', img: 'assets/Hex Witch.png', maxHp: 45, ranged: true,
+      // HEX (brain): while she lives, your turn's combo bonus recoils onto you
+      brain: 'hex',
+      intents: [
+        [ { type: 'hex' }, { type: 'buffStat', stat: 'strength', scope: 'self', value: 2 } ],
+        { type: 'attack', value: 6 },
+        { type: 'thinking' }
+      ],
+      desc: 'She lays a Hex that turns your own combos against you — the longer your chain, the harder it recoils. Kill her to break it, or keep your chains short.'
     },
 
     /* ---- Summon token ---- */
@@ -965,6 +1018,27 @@
     },
 
     /* ---- Elites ---- */
+    starveling: {
+      id: 'starveling', name: 'The Starveling', emoji: '🐺', img: 'assets/Berserk Colossus.png', maxHp: 140, floorBoss: true,
+      // a cornered grave-beast: three PERMANENT HP-threshold phases driven by its
+      // brain (see STARVELING_BANKS / starvelingSync) + a Hunger Strength ramp.
+      // The single dummy intent below is replaced by the brain's phase rotation.
+      brain: 'starveling',
+      // NOTE: combat uses the brain's phase banks (STARVELING_BANKS in battle.js),
+      // which always override these. This list exists purely so the Monster Book
+      // shows a representative spread of its three-phase vocabulary.
+      intents: [
+        { type: 'thinking' },
+        { type: 'attack', value: 8 },
+        [ { type: 'attack', value: 6 }, { type: 'attack', value: 6 } ],
+        [ { type: 'regen', value: 12 }, { type: 'attack', value: 4 } ],
+        { type: 'attack', value: 10 },
+        { type: 'thornsAll', value: 3 },
+        { type: 'attack', value: 22 },
+        { type: 'attack', value: 4, hits: 3 }
+      ],
+      desc: 'A cornered grave-beast that only ever grows hungrier. It stalks docile, then wakes and feeds, then frenzies behind a wall of thorns — and each phase is permanent. Burst it down before its Hunger outscales you.'
+    },
     gloommaw: {
       id: 'gloommaw', name: 'Gloommaw', emoji: '👹', img: 'assets/Gaping Maw.png', maxHp: 64, floorBoss: true,
       intents: [
@@ -975,35 +1049,50 @@
       ],
       desc: 'Rakes, seals a socket, knits its wounds, then builds toward a devastating maw-strike. Punch through its mend window or the fight only drags on.'
     },
+    skeleton: {
+      id: 'skeleton', name: 'Skeleton', emoji: '🦴', img: 'assets/Undead.png', maxHp: 10, token: true,
+      // its strike multiplier climbs with each Bonepiper Dirge (hits = multiplier × 4)
+      brain: 'skeleton',
+      intents: [ { type: 'attack', value: 4, mult: true } ],
+      desc: 'A piped-up conscript. Its swing grows each time the Bonepiper drums — clear it to rewind the multiplier.'
+    },
     bonepiper: {
-      id: 'bonepiper', name: 'Bonepiper', emoji: '💀', img: 'assets/Bonepiper.png', maxHp: 54, elite: true,
-      // raises up to 2 Bonelets over the fight
-      intents: [ { type: 'summon', who: 'bonelet', max: 2 }, { type: 'attack', value: 6 }, { type: 'summon', who: 'bonelet', max: 2 } ],
-      desc: 'Pipes the dead into the fray. Cut him down before the horde swells.'
+      id: 'bonepiper', name: 'Bonepiper', emoji: '💀', img: 'assets/Bonepiper.png', maxHp: 60, elite: true,
+      // PIPE: raises 2 Skeletons (only when none stand); DIRGE: bumps their multiplier
+      brain: 'bonepiper',
+      intents: [
+        { type: 'birthBrood', who: 'skeleton', n: 2, label: 'Pipe' },
+        [ { type: 'dirge' }, { type: 'attack', value: 8 } ],
+        { type: 'thinking' }
+      ],
+      desc: 'Pipes the dead into the fray and drums them into a swelling march — each Dirge makes every Skeleton hit harder. Clear the bones to rewind the snowball, or cut down the conductor to end it.'
     },
     warchanter: {
-      id: 'warchanter', name: 'Warchanter', emoji: '🥁', img: 'assets/Warchanter.png', maxHp: 58, elite: true, enrage: 2,
-      // ENRAGE gimmick: swells with war-fury every turn (ramping Strength); also rallies allies
+      id: 'warchanter', name: 'Warchanter', emoji: '🥁', img: 'assets/Warchanter.png', maxHp: 50, elite: true,
+      // WAR DRUM: each Rally swells Strength + Resilience, and the next Rally beats louder
+      brain: 'wardrum',
       intents: [
-        { type: 'rally', value: 4 },
-        [ { type: 'defend', value: 6 }, { type: 'attack', value: 9 } ]
+        [ { type: 'warcry', value: 4 }, { type: 'attack', value: 6 } ],
+        [ { type: 'defend', value: 10 }, { type: 'attack', value: 8 } ],
+        { type: 'thinking' }
       ],
-      desc: 'Beats the war-drum into an ever-deeper frenzy — its blows grow turn after turn — and drives its allies wild too. Drop the drummer fast.'
+      desc: 'Beats a war-drum that swells its might and guard turn after turn — and each Rally makes the next one louder. An unresettable ramp: a pure race you must out-damage.'
     },
     clogfiend: {
-      id: 'clogfiend', name: 'Clogfiend', emoji: '🫠', img: 'assets/Clogfiend.png', maxHp: 50, elite: true,
-      // jams Dead Weight, then strikes while burying junk, then flurries
+      id: 'clogfiend', name: 'Clogfiend', emoji: '🫠', img: 'assets/Clogfiend.png', maxHp: 60, elite: true,
+      // stuffs your hand with junk, then GORGES once per junk glyph you let pile up
       intents: [
-        { type: 'clog' },
-        [ { type: 'attack', value: 6 }, { type: 'trash', count: 1, where: 'hand' } ],
-        { type: 'attack', value: 7, hits: 2 }
+        [ { type: 'clog' }, { type: 'attack', value: 6 } ],
+        { type: 'trash', count: 1, where: 'hand' },
+        { type: 'frustration' },
+        { type: 'gorge', value: 6 }
       ],
-      desc: 'Crams Dead Weight into your grip and gums up your draws.'
+      desc: 'Crams Dead Weight and Rubble into your grip, then Gorges — striking once for every junk glyph left in your hand. Purge the clutter on the quiet turns or the feast turns lethal.'
     },
 
     /* ---- Floor 1 bosses (one of three guards the first ascent) ---- */
     voidIdol: {
-      id: 'voidIdol', name: 'The Chaos Idol', emoji: '🗿', img: 'assets/Chaos Idol.png', maxHp: 160, boss: true, enrage: 1,
+      id: 'voidIdol', name: 'The Chaos Idol', emoji: '🗿', img: 'assets/Chaos Idol.png', maxHp: 160, boss: true, enrage: 1, ranged: true,
       // harder than before: opens with disruption, stacks frailty into a buffed
       // double-strike, and its war-fury ramps every turn (enrage)
       intents: [
@@ -1017,7 +1106,7 @@
       desc: 'The heart of the first ascent. It curses, conscripts, seals your sockets — and its fury only grows.'
     },
     hollowChoir: {
-      id: 'hollowChoir', name: 'The Hollow Choir', emoji: '🎭', maxHp: 150, boss: true,
+      id: 'hollowChoir', name: 'The Hollow Choir', emoji: '🎭', maxHp: 150, boss: true, ranged: true,
       // a swelling congregation: raises the dead, weakens you in waves, and
       // crescendos into a massed hymn-strike
       intents: [
@@ -1058,7 +1147,7 @@
       desc: 'A drowned titan of grave-silt. It walls itself in, seals your sockets, and falls on you like a collapsing tomb.'
     },
     cinderQueen: {
-      id: 'cinderQueen', name: 'The Cinder Queen', emoji: '👑', img: 'assets/Cinderling.png', maxHp: 240, boss: true, enrage: 2,
+      id: 'cinderQueen', name: 'The Cinder Queen', emoji: '👑', img: 'assets/Cinderling.png', maxHp: 240, boss: true, enrage: 2, ranged: true,
       // pure escalation: her court rallies, her fury ramps fast, and her
       // flurries multiply — race her or burn
       intents: [
@@ -1071,7 +1160,7 @@
       desc: 'Empress of the ember court. Her fury ramps with every passing turn and her flurries multiply — this fight is a race you must win.'
     },
     hollowShepherd: {
-      id: 'hollowShepherd', name: 'The Hollow Shepherd', emoji: '🐏', img: 'assets/Maledict.png', maxHp: 260, boss: true,
+      id: 'hollowShepherd', name: 'The Hollow Shepherd', emoji: '🐏', img: 'assets/Maledict.png', maxHp: 260, boss: true, ranged: true,
       // the control boss: drains your strength, curses and seals, and herds
       // an endless flock between you and it
       intents: [
@@ -1086,7 +1175,7 @@
 
     /* ---- Floor 3: the final boss of the Spire ---- */
     chaosIncarnate: {
-      id: 'chaosIncarnate', name: 'Chaos Incarnate', emoji: '🌌', img: 'assets/Chaos Idol.png', maxHp: 420, boss: true, enrage: 2,
+      id: 'chaosIncarnate', name: 'Chaos Incarnate', emoji: '🌌', img: 'assets/Chaos Idol.png', maxHp: 420, boss: true, enrage: 2, ranged: true,
       // the end of the climb: every trick in the Spire, stitched into one
       // escalating storm
       intents: [
@@ -1104,17 +1193,20 @@
     // TODO: real design + art. For now it's a meaner Chaos Incarnate that only
     // appears on the 13th Descension's final floor (see FLOOR_BOSSES swap).
     theUnmaking: {
-      id: 'theUnmaking', name: 'The Unmaking', emoji: '🕳️', img: 'assets/Chaos Idol.png', maxHp: 900, boss: true, finalFinal: true, enrage: 3,
+      id: 'theUnmaking', name: 'Soul Hunter \u2014 Ultimate Form', emoji: '☠️', img: 'assets/Soulhunter III.png',
+      maxHp: 260, boss: true, finalFinal: true, doomClock: true, brain: 'doomhunter', ranged: true,
+      // No socket corruption this form — you face him with your full, intact build.
+      // The threat is the Doom Clock (engine-side: setupDoom / checkDoomArm / the
+      // descending number rendered over your sockets). Steady pressure races it.
+      // maxHp is the key tuning knob: aim killable on a ~5-socket run via near-
+      // perfect play (roughly socket-count clean chains of output).
       intents: [
-        [ { type: 'curse', value: 3 }, { type: 'sunder', value: 3 } ],
-        [ { type: 'summon', who: 'bonelet', max: 4 }, { type: 'attack', value: 18 } ],
-        { type: 'attack', value: 16, hits: 3 },
-        [ { type: 'siphon', stat: 'strength', value: 3 }, { type: 'debuff', stat: 'weak', value: 3 } ],
-        [ { type: 'defend', value: 32 }, { type: 'buff', value: 9, turns: 2 } ],
-        { type: 'attack', value: 64, big: true },
-        [ { type: 'regen', value: 30 }, { type: 'debuff', stat: 'frail', value: 3 } ]
+        { type: 'attack', value: 14 },
+        [ { type: 'scare', value: 3 }, { type: 'attack', value: 10 } ],
+        { type: 'attack', value: 9, hits: 2 },
+        { type: 'thinking' }
       ],
-      desc: 'There is a thing beneath the Spire that the Spire was built to keep sleeping. Thirteen descents have worn the seal to nothing.'
+      desc: 'The hunt\'s end. He takes nothing from your build this time — he simply starts the clock. Every socket is a heartbeat: chain clean through all of them each turn to buy another, and put him down before the count strikes one.'
     }
   };
 

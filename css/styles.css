@@ -240,6 +240,35 @@ html, body {
   border-color: rgba(255,120,110,0.5); color: #ffd0cc;
 }
 
+/* ---- Debug: instant-battle picker ---- */
+.debug-battle-panel { width: 900px; max-width: 94vw; }
+.dbe-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  max-height: 58vh; overflow-y: auto; padding: 4px 8px 4px 2px; margin-bottom: 22px;
+}
+.dbe-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 8px 10px; border-radius: 14px; cursor: pointer;
+  background: rgba(40,30,60,0.7); border: 1px solid rgba(180,150,255,0.28);
+  color: var(--text); font: inherit;
+  transition: transform .12s ease, background .15s ease, border-color .15s ease;
+}
+.dbe-card:hover { transform: translateY(-3px); background: rgba(64,48,96,0.92); border-color: rgba(210,180,255,0.6); }
+.dbe-art { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; }
+.dbe-art img { max-width: 100%; max-height: 100%; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5)); }
+.dbe-emoji { font-size: 40px; line-height: 1; }
+.dbe-name { font-size: 15px; font-weight: 600; text-align: center; line-height: 1.15; }
+.dbe-kind { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-dim); }
+.dbe-card.dbe-final { border-color: rgba(255,90,90,0.6); }
+.dbe-card.dbe-final .dbe-kind { color: #ff8a8a; }
+.dbe-card.dbe-boss { border-color: rgba(255,150,90,0.5); }
+.dbe-card.dbe-boss .dbe-kind { color: #ffb37a; }
+.dbe-card.dbe-floorboss { border-color: rgba(255,200,100,0.5); }
+.dbe-card.dbe-floorboss .dbe-kind { color: #ffd36b; }
+.dbe-card.dbe-elite { border-color: rgba(190,140,255,0.5); }
+.dbe-card.dbe-elite .dbe-kind { color: #cba6ff; }
+.dbe-card.dbe-token { opacity: 0.8; }
+
 /* ============================================================
    GAME TITLE (home + game over)
    ============================================================ */
@@ -1272,6 +1301,12 @@ html, body {
   box-shadow: 0 0 38px rgba(245,201,105,0.85);
   border-color: var(--gold);
 }
+/* Art medallion nodes are transparent with a square (border-radius:0) box, so a
+   box-shadow would trace that square. Use a drop-shadow that hugs the art alpha. */
+#map-nodes.locked .mapnode.has-art.current {
+  box-shadow: none;
+  filter: drop-shadow(0 6px 11px rgba(0,0,0,0.75)) drop-shadow(0 0 22px rgba(245,201,105,0.95));
+}
 
 /* ============================================================
    BATTLE SCREEN
@@ -2242,6 +2277,40 @@ html, body {
 .socket.slot-repeat .slot-type-name   { color: #d7bdff; }
 .socket.slot-combo .slot-type-name    { color: #ffce8a; }
 
+/* ---------- Soul socket (Soulbrand) ---------- */
+.socket.slot-soul:not(.filled) .slot-img { filter: drop-shadow(0 0 9px #b98cff) brightness(1.05) sepia(0.5) saturate(3.2) hue-rotate(225deg); }
+.socket.slot-soul .slot-type-name { color: #d4b8ff; }
+.socket.slot-soul .slot-badge { color: #cdaaff; text-shadow: 0 0 8px #8a5cff; }
+.socket.slot-soul { box-shadow: inset 0 0 22px rgba(138, 92, 255, 0.28); border-radius: 14px; }
+.socket.soul-fire { animation: soul-fire 0.5s ease-out; }
+@keyframes soul-fire {
+  0%   { filter: brightness(1); }
+  35%  { filter: brightness(1.8) drop-shadow(0 0 26px #b98cff); }
+  100% { filter: brightness(1); }
+}
+.socket.soul-morph { animation: soul-morph 0.9s ease-out; z-index: 6; }
+@keyframes soul-morph {
+  0%   { transform: scale(1); filter: brightness(1); }
+  18%  { transform: scale(1.22) rotate(-3deg); filter: brightness(2.2) drop-shadow(0 0 34px #b98cff); }
+  55%  { transform: scale(0.96) rotate(2deg); filter: brightness(1.4) drop-shadow(0 0 20px #8a5cff); }
+  100% { transform: scale(1) rotate(0); filter: brightness(1); }
+}
+
+/* ---------- Doom Clock (Soul Hunter Ultimate) ---------- */
+.socket.doom-socket { box-shadow: inset 0 0 26px rgba(255, 60, 50, 0.35); }
+.doom-clock {
+  position: absolute; top: -34px; left: 50%; transform: translateX(-50%);
+  font-family: 'Cinzel', serif; font-weight: 900; font-size: 40px; line-height: 1;
+  color: #ffd3cc; text-shadow: 0 0 14px #ff3a2a, 0 0 4px #000; pointer-events: none;
+  z-index: 8; animation: doom-pulse 1.6s ease-in-out infinite;
+}
+.doom-clock.doom-warn { color: #ffb199; text-shadow: 0 0 18px #ff5a2a, 0 0 5px #000; animation-duration: 1.1s; }
+.doom-clock.doom-crit { color: #fff; font-size: 50px; text-shadow: 0 0 26px #ff1f1f, 0 0 8px #000; animation-duration: 0.6s; }
+@keyframes doom-pulse {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.92; }
+  50%      { transform: translateX(-50%) scale(1.18); opacity: 1; }
+}
+
 /* ---------- hybrid sockets: one slot, up to 3 stacked special types ---------- */
 .slot-badge .sb-ic { display: inline-flex; align-items: center; }
 .slot-badge .sb-ic i { font-style: normal; font-size: calc(10px * var(--sock-scale, 1)); margin-left: 1px; opacity: .95; }
@@ -2715,7 +2784,8 @@ html, body {
 
 /* shared icon pop (most status applications) */
 .fx-burn, .fx-weak, .fx-scare, .fx-leech, .fx-heal,
-.fx-strength, .fx-resil, .fx-curse, .fx-banish {
+.fx-strength, .fx-resil, .fx-curse, .fx-banish,
+.fx-hex, .fx-quarry, .fx-sap, .fx-frustration, .fx-dirge, .fx-doom {
   font-size: 46px; font-weight: 900; line-height: 1;
   text-shadow: 0 2px 10px #000;
   animation: fx-pop .82s cubic-bezier(.2,.8,.3,1) forwards;
@@ -2734,6 +2804,13 @@ html, body {
 .fx-resil    { color: #aee1ff; filter: drop-shadow(0 0 14px #5ab6ff); }
 .fx-curse    { color: #d49bff; font-size: 56px; filter: drop-shadow(0 0 20px #c45cff); animation-duration: .92s; }
 .fx-banish   { color: #c9ccd4; filter: drop-shadow(0 0 14px #8b8f99) grayscale(1); }
+/* new-action signatures */
+.fx-hex      { color: #d18cff; font-size: 50px; filter: drop-shadow(0 0 18px #a23cff); }
+.fx-quarry   { color: #cdaaff; font-size: 52px; filter: drop-shadow(0 0 18px #8a5cff); }
+.fx-sap      { color: #9ff0b0; filter: drop-shadow(0 0 14px #3fbf6a); }
+.fx-frustration { color: #ff9a5a; filter: drop-shadow(0 0 14px #ff5a2a); }
+.fx-dirge    { color: #e6ecf5; filter: drop-shadow(0 0 14px #9fb0cf); }
+.fx-doom     { color: #ff6a5a; font-size: 66px; filter: drop-shadow(0 0 26px #ff1f1f); animation-duration: .96s; }
 
 /* Weak droops downward as the foe sags */
 .fx-weak { color: #aedd76; filter: drop-shadow(0 0 12px #74b53a); animation: fx-weak .84s ease-out forwards; }
