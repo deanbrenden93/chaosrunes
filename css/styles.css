@@ -938,6 +938,24 @@ html, body {
 }
 .opt-exit-btn.opt-exit-danger:hover:not(:disabled) { box-shadow: 0 10px 28px rgba(220,60,60,0.35); }
 
+/* destructive "erase save data" sits apart, beneath a divider, so it can't be
+   fat-fingered alongside the routine exits */
+.options-danger {
+  margin: 4px 0 18px; padding-top: 16px;
+  border-top: 1px solid rgba(180,80,90,0.22);
+  display: flex; justify-content: center;
+}
+.opt-erase-btn {
+  font-size: 15px; letter-spacing: .03em; padding: 10px 22px;
+  background: linear-gradient(180deg, rgba(60,28,34,0.6), rgba(38,16,22,0.7));
+  border: 1px solid rgba(220,90,90,0.4); color: #f0b6b0;
+}
+.opt-erase-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(150,42,52,0.8), rgba(96,22,32,0.9));
+  border-color: rgba(255,120,110,0.7); color: #ffe0dc;
+  box-shadow: 0 10px 26px rgba(220,60,60,0.3);
+}
+
 /* confirm dialog */
 .confirm-panel { width: 540px; }
 .confirm-text { font-size: 19px; line-height: 1.5; color: var(--text-dim); margin-bottom: 28px; }
@@ -5556,31 +5574,6 @@ html, body {
 }
 .lw-poi-soon.lw-poi-hasart .lw-poi-art { filter: grayscale(.45) brightness(.78) drop-shadow(0 14px 18px rgba(0,0,0,0.7)); }
 .lw-poi-soon.lw-poi-hasart:hover .lw-poi-art { transform: none; }
-/* a soft magical aura that breathes beneath each landmark so the structures feel
-   enchanted & alive — colour is per-POI, blur-free so it's smooth on mobile, and
-   each one is delayed so the clearing pulses out of sync rather than in lockstep */
-.lw-poi-hasart::before {
-  content: ''; position: absolute; left: 50%; bottom: 12%; z-index: 0; pointer-events: none;
-  width: calc(var(--poi-w, 240px) * 0.82); height: calc(var(--poi-w, 240px) * 0.5);
-  transform: translateX(-50%);
-  background: radial-gradient(50% 50% at 50% 50%, var(--poi-glow, rgba(140,185,255,0.5)), transparent 70%);
-  opacity: .35; animation: lwAura 5s ease-in-out infinite;
-}
-@keyframes lwAura {
-  0%, 100% { opacity: .26; transform: translateX(-50%) scale(.92); }
-  50%      { opacity: .54; transform: translateX(-50%) scale(1.08); }
-}
-.lw-poi-stonetable  { --poi-glow: rgba(120,175,255,0.62); }
-.lw-poi-monsterbook { --poi-glow: rgba(150,205,255,0.5); }
-.lw-poi-well        { --poi-glow: rgba(182,116,255,0.62); }
-.lw-poi-gravemarker { --poi-glow: rgba(150,182,216,0.46); }
-.lw-poi-tablets     { --poi-glow: rgba(132,206,182,0.5); }
-.lw-poi-monsterbook.lw-poi-hasart::before { animation-delay: -1.3s; }
-.lw-poi-well.lw-poi-hasart::before        { animation-delay: -2.6s; }
-.lw-poi-gravemarker.lw-poi-hasart::before { animation-delay: -3.4s; }
-.lw-poi-tablets.lw-poi-hasart::before     { animation-delay: -4.1s; }
-/* sealed landmarks glow only faintly */
-.lw-poi-soon.lw-poi-hasart::before { opacity: .14; animation-duration: 7.5s; }
 .lw-poi-name {
   font-family: 'Cinzel'; font-size: 25px; font-weight: 700; color: #eef7e6;
   text-shadow: 0 2px 10px rgba(0,0,0,0.85), 0 0 16px rgba(110,170,110,0.4);
@@ -6141,3 +6134,300 @@ html, body {
 .btn-options-gear.gear-corner { right: 44px; top: 36px; left: auto; }
 /* combat: same horizontal spot as the corner, but lowered to the map's height */
 .btn-options-gear.gear-combat { right: 44px; top: 89px; left: auto; }
+
+/* ============================================================
+   THE ENCHANTED WELL — cast wishing stones to unlock content
+   ============================================================ */
+#screen-well .map-bg { display: none; }
+#screen-well .bg-runes {
+  inset: 0; filter: none; z-index: 0; animation: none;
+  background:
+    radial-gradient(60% 48% at 50% 8%, rgba(150,92,224,0.20), transparent 70%),
+    radial-gradient(90% 80% at 50% 108%, rgba(64,40,118,0.40), transparent 72%),
+    radial-gradient(1.6px 1.6px at 30px 60px, rgba(214,200,255,0.55), transparent),
+    radial-gradient(1.3px 1.3px at 180px 140px, rgba(190,170,255,0.45), transparent),
+    radial-gradient(1.5px 1.5px at 320px 80px, rgba(255,240,200,0.4), transparent),
+    linear-gradient(180deg, #0b0718, #050310 72%);
+  background-repeat: no-repeat, no-repeat, repeat, repeat, repeat, no-repeat;
+  background-size: cover, cover, 360px 300px, 300px 260px, 420px 340px, cover;
+}
+.well-balance { display: inline-flex; align-items: center; gap: 8px; font-family: 'Cinzel'; font-size: 18px; color: #e7dcff; }
+.well-balance b { font-size: 22px; color: #fff; }
+.well-balance-gem { color: #c9a6ff; font-size: 20px; text-shadow: 0 0 12px rgba(180,120,255,0.8); }
+
+.well-body { padding: 8px 28px 110px; }
+.well-wrap { display: flex; gap: 30px; align-items: flex-start; max-width: 1500px; margin: 0 auto; }
+
+/* ---- the wishing-stone bank: big, gilded, anchored bottom-center ---- */
+.well-bank {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 14; display: flex; align-items: center; gap: 14px;
+  padding: 11px 30px 11px 24px; border-radius: 999px; pointer-events: none;
+  background:
+    radial-gradient(120% 160% at 50% -40%, rgba(150,96,228,0.28), transparent 70%),
+    linear-gradient(180deg, rgba(40,27,66,0.94), rgba(15,10,28,0.96));
+  border: 1px solid rgba(196,156,255,0.5);
+  box-shadow:
+    0 0 30px rgba(150,90,222,0.4), inset 0 0 24px rgba(126,84,206,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.12), 0 14px 34px rgba(0,0,0,0.55);
+}
+.well-bank::before, .well-bank::after {
+  content: ''; position: absolute; top: 50%; width: 7px; height: 7px;
+  transform: translateY(-50%) rotate(45deg); border-radius: 1px;
+  background: linear-gradient(135deg, #f0dcff, #b07bff);
+  box-shadow: 0 0 10px rgba(190,130,255,0.8);
+}
+.well-bank::before { left: -3px; }
+.well-bank::after { right: -3px; }
+.well-bank-gem {
+  font-size: 30px; line-height: 1; color: #dcbcff;
+  text-shadow: 0 0 16px rgba(190,130,255,0.95), 0 0 30px rgba(150,90,220,0.6);
+  animation: wellGemPulse 2.8s ease-in-out infinite;
+}
+@keyframes wellGemPulse { 0%,100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.12); filter: brightness(1.25); } }
+.well-bank-count {
+  font-family: 'Cinzel'; font-weight: 900; font-size: 36px; line-height: 1; color: #fff;
+  text-shadow: 0 0 16px rgba(196,140,255,0.7), 0 2px 6px rgba(0,0,0,0.7); min-width: 1ch; text-align: center;
+}
+.well-bank-label {
+  font-family: 'Cinzel'; font-weight: 700; font-size: 14px; letter-spacing: .16em;
+  text-transform: uppercase; color: #c6b6e8;
+}
+.well-bank.pouring { animation: wellBankPour .5s ease; }
+@keyframes wellBankPour { 0%,100% { transform: translateX(-50%) scale(1); } 40% { transform: translateX(-50%) scale(1.06); box-shadow: 0 0 44px rgba(180,120,255,0.6), 0 14px 34px rgba(0,0,0,0.55); } }
+
+/* a single stone in flight from the bank to the well */
+.well-fly-stone {
+  position: absolute; z-index: 20; pointer-events: none;
+  font-family: 'Cinzel'; font-size: 24px; color: #ecd7ff; will-change: transform, opacity;
+  text-shadow: 0 0 12px rgba(196,140,255,0.95), 0 0 24px rgba(150,90,220,0.7);
+}
+/* the pool flashes as each stone lands */
+.well-pool.splash { animation: wellPoolSplash .42s ease-out; }
+@keyframes wellPoolSplash {
+  0% { box-shadow: 0 0 40px rgba(170,110,255,0.7); }
+  35% { box-shadow: 0 0 72px rgba(214,176,255,0.95); transform: translate(-50%,-50%) scale(1.35); }
+  100% { box-shadow: 0 0 40px rgba(170,110,255,0.7); transform: translate(-50%,-50%) scale(1); }
+}
+
+/* ---- the living well ---- */
+.well-stage {
+  position: relative; flex: 0 0 38%; min-width: 300px; align-self: stretch;
+  min-height: 420px;
+  display: flex; align-items: center; justify-content: center;
+}
+.well-aura {
+  position: absolute; left: 50%; top: 50%; width: 116%; height: 88%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(50% 50% at 50% 50%, rgba(150,92,224,0.42), rgba(96,52,168,0.16) 46%, transparent 70%);
+  filter: blur(6px); animation: wellAura 5.5s ease-in-out infinite;
+}
+@keyframes wellAura { 0%,100% { opacity: .55; transform: translate(-50%,-50%) scale(.94); } 50% { opacity: .9; transform: translate(-50%,-50%) scale(1.06); } }
+.well-art {
+  position: relative; z-index: 2; width: min(86%, 460px); height: auto;
+  filter: drop-shadow(0 24px 34px rgba(0,0,0,0.7)) drop-shadow(0 0 26px rgba(150,90,220,0.35));
+  animation: wellBob 6s ease-in-out infinite;
+}
+@keyframes wellBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.well-pool {
+  position: absolute; z-index: 3; left: 50%; top: 47%; width: 38%; height: 16%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(214,180,255,0.9), rgba(150,92,224,0.5) 45%, transparent 72%);
+  filter: blur(2px); box-shadow: 0 0 40px rgba(170,110,255,0.7);
+  animation: wellGlow 3.4s ease-in-out infinite;
+}
+@keyframes wellGlow { 0%,100% { opacity: .8; } 50% { opacity: 1; } }
+.well-ripple {
+  position: absolute; left: 50%; top: 50%; width: 60%; height: 60%;
+  transform: translate(-50%, -50%) scale(.3);
+  border: 2px solid rgba(206,176,255,0.6); border-radius: 50%;
+  opacity: 0; animation: wellRipple 3.6s ease-out infinite;
+}
+.well-ripple:nth-child(2) { animation-delay: 1.2s; }
+.well-ripple:nth-child(3) { animation-delay: 2.4s; }
+@keyframes wellRipple { 0% { opacity: .7; transform: translate(-50%,-50%) scale(.25); } 80% { opacity: 0; transform: translate(-50%,-50%) scale(1.4); } 100% { opacity: 0; } }
+/* casting surge: the well flares brighter for a beat */
+.well-stage.surge .well-aura { animation: wellSurge 1.2s ease-out; }
+.well-stage.surge .well-pool { animation: wellPoolSurge 1.2s ease-out; }
+@keyframes wellSurge { 0% { opacity: 1; transform: translate(-50%,-50%) scale(1.25); } 100% { opacity: .55; transform: translate(-50%,-50%) scale(1); } }
+@keyframes wellPoolSurge { 0% { opacity: 1; box-shadow: 0 0 90px rgba(200,150,255,0.95); transform: translate(-50%,-50%) scale(1.5); } 100% { opacity: .8; transform: translate(-50%,-50%) scale(1); } }
+
+/* ---- casting panel ---- */
+.well-cast { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+.well-intro {
+  font-family: 'Spectral'; font-size: 17px; line-height: 1.5; color: #c8bce0;
+  margin: 4px 0 14px; max-width: 760px;
+}
+.well-intro b { color: #e9ddff; }
+.well-cats {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
+  align-content: start;
+}
+.well-cat {
+  position: relative; border-radius: 14px; padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(26,20,40,0.92), rgba(12,9,22,0.95));
+  border: 1px solid color-mix(in srgb, var(--acc) 38%, rgba(120,100,160,0.3));
+  box-shadow: inset 0 0 26px rgba(120,80,200,0.06), 0 10px 24px rgba(0,0,0,0.4);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.well-cat.charged {
+  border-color: color-mix(in srgb, var(--acc) 80%, #fff 10%);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--acc) 45%, transparent), inset 0 0 30px color-mix(in srgb, var(--acc) 14%, transparent);
+}
+.well-cat.done { opacity: .62; filter: saturate(.7); }
+.well-cat-top { display: flex; align-items: center; gap: 12px; }
+.well-cat-icon { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.well-cat-img { width: 46px; height: 46px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); }
+.well-cat-emoji { font-size: 34px; }
+.well-cat-titles { flex: 1 1 auto; min-width: 0; }
+.well-cat-name { font-family: 'Cinzel'; font-size: 18px; font-weight: 700; color: #f1ebff; }
+.well-cat-prog { font-family: 'Spectral'; font-size: 13px; color: color-mix(in srgb, var(--acc) 70%, #cfc4e6); }
+.well-cat-prog b { color: #fff; }
+.well-cat-browse {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+  background: rgba(255,255,255,0.06); border: 1px solid color-mix(in srgb, var(--acc) 50%, transparent);
+  color: color-mix(in srgb, var(--acc) 80%, #fff); font-size: 16px; line-height: 1;
+  transition: background .15s ease, transform .15s ease;
+}
+.well-cat-browse:hover { background: color-mix(in srgb, var(--acc) 30%, transparent); transform: scale(1.1); }
+/* fixed min-height + a permanently-reserved badge slot so the card never
+   changes size when the +X appears — no layout pop */
+.well-meter { display: flex; align-items: center; gap: 6px; margin: 12px 0; position: relative; min-height: 26px; }
+.well-pip {
+  flex: 1 1 auto; height: 11px; border-radius: 6px;
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.08);
+  transition: background .25s ease, box-shadow .25s ease;
+}
+.well-pip.lit {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 90%, #fff 18%), var(--acc));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--acc) 70%, transparent);
+}
+.well-meter-x {
+  flex: 0 0 auto; margin-left: 6px; min-width: 36px; text-align: center;
+  font-family: 'Cinzel'; font-weight: 800; font-size: 16px; line-height: 22px;
+  color: #fff; padding: 0 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--acc) 60%, rgba(0,0,0,0.4));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--acc) 60%, transparent);
+  visibility: hidden; opacity: 0; transform: scale(.55);
+  transition: opacity .22s ease, transform .22s cubic-bezier(.2,1.4,.4,1);
+}
+.well-meter-x.on { visibility: visible; opacity: 1; transform: scale(1); }
+.well-cat-ctrls { display: flex; align-items: center; gap: 8px; }
+.well-step, .well-max {
+  cursor: pointer; border-radius: 9px; font-family: 'Cinzel'; font-weight: 700;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); color: #e8e0f7;
+  transition: background .15s ease, border-color .15s ease, transform .1s ease;
+}
+.well-step { width: 38px; height: 34px; font-size: 18px; }
+.well-step-5 { width: 44px; font-size: 14px; }
+.well-max { height: 34px; padding: 0 14px; font-size: 13px; letter-spacing: .04em; margin-left: auto;
+  background: color-mix(in srgb, var(--acc) 24%, rgba(0,0,0,0.3)); border-color: color-mix(in srgb, var(--acc) 50%, transparent); }
+.well-step:hover, .well-max:hover { background: color-mix(in srgb, var(--acc) 34%, transparent); border-color: var(--acc); }
+.well-step:active, .well-max:active { transform: translateY(1px); }
+.well-cat-staged { min-width: 38px; text-align: center; font-family: 'Cinzel'; font-weight: 800; font-size: 16px; color: #fff; }
+.well-cat-done { font-family: 'Cinzel'; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: color-mix(in srgb, var(--acc) 80%, #fff); text-align: center; padding: 6px 0 2px; }
+
+.well-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(150,120,210,0.2);
+}
+.well-pending { font-family: 'Spectral'; font-size: 16px; color: #c4b8de; }
+.well-pending b { color: #fff; }
+.well-pend-x { color: #d8b6ff; }
+.well-foot-btns { display: flex; gap: 12px; }
+.well-clear-btn { background: rgba(255,255,255,0.06); }
+.well-cast-btn {
+  font-family: 'Cinzel'; font-weight: 800; letter-spacing: .04em; padding: 12px 28px;
+  background: linear-gradient(180deg, #7a46c8, #4f2da0);
+  border: 1px solid rgba(200,160,255,0.5); color: #fff;
+  box-shadow: 0 10px 26px rgba(80,40,150,0.5);
+}
+.well-cast-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
+.well-cast-btn.ready { animation: wellCastReady 1.8s ease-in-out infinite; }
+@keyframes wellCastReady { 0%,100% { box-shadow: 0 10px 26px rgba(80,40,150,0.5), 0 0 0 rgba(190,140,255,0); } 50% { box-shadow: 0 10px 30px rgba(80,40,150,0.6), 0 0 26px rgba(190,140,255,0.6); } }
+
+/* ---- the climactic reveal ---- */
+.well-reveal { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .3s ease; }
+.well-reveal.hidden { display: none; }
+.well-reveal.show { opacity: 1; }
+.well-reveal-veil { position: absolute; inset: 0; background: radial-gradient(60% 60% at 50% 42%, rgba(40,20,80,0.7), rgba(4,2,10,0.92)); backdrop-filter: blur(4px); }
+.well-reveal-inner { position: relative; z-index: 1; text-align: center; max-width: min(1200px, 92%); padding: 10px; transform: translateY(10px); animation: wellRevealIn .4s ease both; }
+@keyframes wellRevealIn { from { opacity: 0; transform: translateY(28px) scale(.96); } to { opacity: 1; transform: none; } }
+.well-reveal-burst { position: absolute; left: 50%; top: 36%; width: 6px; height: 6px; transform: translate(-50%,-50%); border-radius: 50%; box-shadow: 0 0 60px 30px rgba(190,140,255,0.5); animation: wellBurst 1s ease-out; }
+.well-rv-lvl-2 .well-reveal-burst { box-shadow: 0 0 90px 50px rgba(200,150,255,0.6); }
+.well-rv-lvl-3 .well-reveal-burst { box-shadow: 0 0 130px 80px rgba(220,170,255,0.7); }
+@keyframes wellBurst { 0% { opacity: 1; } 100% { opacity: 0; } }
+.well-reveal-title {
+  font-family: 'Cinzel'; font-weight: 900; font-size: 38px; letter-spacing: .04em; margin: 0 0 22px;
+  background: linear-gradient(180deg, #f3e6ff, #c79bff 60%, #9a6be0);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
+  filter: drop-shadow(0 2px 10px rgba(0,0,0,0.6)) drop-shadow(0 0 22px rgba(170,110,255,0.45));
+}
+.well-rv-lvl-3 .well-reveal-title { font-size: 46px; }
+.well-reveal-grid { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; }
+.well-reveal-grid.many { gap: 12px; }
+.well-rv-card {
+  position: relative; width: 220px; padding: 16px 16px 18px; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(26,20,42,0.96), rgba(12,8,22,0.97));
+  border: 1px solid var(--acc); box-shadow: 0 0 28px color-mix(in srgb, var(--acc) 40%, transparent), 0 16px 36px rgba(0,0,0,0.6);
+  opacity: 0; transform: translateY(24px) scale(.9); animation: wellRvCard .5s cubic-bezier(.2,1.3,.4,1) both;
+}
+.well-reveal-grid.many .well-rv-card { width: 176px; padding: 12px; }
+@keyframes wellRvCard { to { opacity: 1; transform: none; } }
+.well-rv-new {
+  position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+  font-family: 'Cinzel'; font-weight: 800; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: #fff; padding: 3px 12px; border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 85%, #fff 12%), var(--acc));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--acc) 60%, transparent);
+}
+.well-rv-kind { font-family: 'Cinzel'; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: color-mix(in srgb, var(--acc) 75%, #d8cdee); margin: 6px 0 8px; }
+.well-rv-art, .well-ent-art { display: flex; align-items: center; justify-content: center; height: 92px; margin: 2px 0 8px; }
+.well-ent-art .bless-art-img, .well-ent-art .item-art-img { width: 76px; height: 76px; object-fit: contain; }
+/* glyph plates render smaller than image art so the carved rune isn't oversized */
+.well-ent-art .g-img, .well-ent-art .g-hex { width: 58px; height: 58px; }
+.well-ent-art .g-hex .g-rune { font-size: 34px; }
+.well-reveal-grid.many .well-rv-art { height: 74px; }
+.well-rv-name { font-family: 'Cinzel'; font-weight: 700; font-size: 18px; color: #f3eeff; margin-bottom: 6px; }
+.well-rv-desc { font-family: 'Spectral'; font-size: 13.5px; line-height: 1.4; color: #cabfe2; }
+.well-rv-desc b { color: #fff; }
+.well-rv-none { font-family: 'Spectral'; font-size: 20px; line-height: 1.5; color: #d3c8ec; max-width: 560px; }
+.well-rv-none b { color: #fff; }
+.well-reveal-close {
+  display: block; margin: 26px auto 0; font-family: 'Cinzel'; font-weight: 800; letter-spacing: .04em;
+  padding: 12px 30px; background: linear-gradient(180deg, #7a46c8, #4f2da0);
+  border: 1px solid rgba(200,160,255,0.5); color: #fff; box-shadow: 0 10px 26px rgba(80,40,150,0.5);
+}
+
+/* ---- browse modal (inside the shared lw-modal) ---- */
+.well-browse { --acc: var(--purple); }
+.well-browse-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid rgba(150,120,210,0.25); }
+.well-browse-head h3 { font-family: 'Cinzel'; font-weight: 800; font-size: 26px; color: #f2ecff; margin: 0; }
+.well-browse-prog { font-family: 'Cinzel'; font-size: 16px; color: color-mix(in srgb, var(--acc) 75%, #cfc4e6); }
+.well-browse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+.well-br-card {
+  position: relative; border-radius: 14px; padding: 14px; text-align: center;
+  background: linear-gradient(180deg, rgba(24,18,38,0.94), rgba(12,8,20,0.96));
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, rgba(120,100,160,0.3));
+}
+.well-br-card.locked { filter: saturate(.5); border-style: dashed; border-color: rgba(150,130,190,0.4); }
+.well-br-new { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-family: 'Cinzel'; font-weight: 800; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #fff; padding: 2px 10px; border-radius: 999px; background: color-mix(in srgb, var(--acc) 75%, #000); }
+.well-br-art { height: 86px; }
+.well-br-q { font-family: 'Cinzel'; font-size: 52px; font-weight: 900; color: rgba(190,170,230,0.55); text-shadow: 0 0 20px rgba(150,110,220,0.5); }
+.well-br-name { font-family: 'Cinzel'; font-weight: 700; font-size: 16px; color: #efe9ff; margin-bottom: 6px; }
+.well-br-desc { font-family: 'Spectral'; font-size: 13px; line-height: 1.4; color: #c4b9de; }
+.well-br-desc b, .well-br-name b { color: #fff; }
+
+/* tablet / phone: stack the well above the casting panel */
+@media (max-width: 900px), (pointer: coarse) {
+  .well-wrap { flex-direction: column; gap: 12px; }
+  .well-stage { flex: 0 0 auto; min-width: 0; min-height: 220px; align-self: center; width: 100%; }
+  .well-art { width: min(46%, 260px); }
+  .well-cats { grid-template-columns: 1fr; }
+  .well-reveal-veil { backdrop-filter: none; }
+  .well-bank { gap: 10px; padding: 9px 22px; bottom: 12px; }
+  .well-bank-gem { font-size: 24px; }
+  .well-bank-count { font-size: 28px; }
+  .well-bank-label { font-size: 12px; letter-spacing: .12em; }
+}

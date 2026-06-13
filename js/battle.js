@@ -5637,7 +5637,8 @@
     // ---- run/meta cheats (handled by the Game module) ----
     gold() { const G = root.CG.Game; if (G && G.debugGold) G.debugGold(); },
     anyNode() { const G = root.CG.Game; return (G && G.debugToggleAnyNode) ? G.debugToggleAnyNode() : false; },
-    secretShop() { const G = root.CG.Game; if (G && G.debugSecretShop) G.debugSecretShop(); }
+    secretShop() { const G = root.CG.Game; if (G && G.debugSecretShop) G.debugSecretShop(); },
+    wishStones() { const G = root.CG.Game; if (G && G.debugWishStones) G.debugWishStones(); }
   };
 
   // ============================================================

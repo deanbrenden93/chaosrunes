@@ -636,6 +636,7 @@
     },
     overload: {
       id: 'overload', name: 'Overload', icon: '🜳', img: 'assets/Overload Crown.png', scope: 'run',
+      unlock: 'bless_overload',
       desc: 'Draw 6 glyphs each turn instead of 5.'
     },
     aegis: {
@@ -652,6 +653,7 @@
     },
     greed: {
       id: 'greed', name: 'Greed', icon: '🪙', img: 'assets/Greed Coin.png', scope: 'run',
+      unlock: 'bless_greed',
       desc: 'Gain 50% more souls from every source.'
     },
     stoneblood: {
@@ -668,6 +670,7 @@
     },
     bastionheart: {
       id: 'bastionheart', name: 'Bastion Core', icon: '🏰', img: 'assets/Bastion Core.png', scope: 'run',
+      unlock: 'bless_bastion',
       desc: 'Gain 5 shield at the start of every turn.'
     }
   };
@@ -1131,15 +1134,15 @@
                        desc: 'Strip the shields off <b>all</b> enemies and apply <b>Weak 3</b>.', effect: { kind: 'acid', weak: 3 } },
     throwing_knife:  { id: 'throwing_knife', name: 'Dagger', icon: '🔪', img: 'assets/Dagger.png', rarity: 'common', price: 34, combatOnly: true,
                        desc: 'Deal <b>10</b> damage to all enemies.', effect: { kind: 'damageAll', value: 10 } },
-    explosive_knife: { id: 'explosive_knife', name: 'Exploding Dagger', icon: '💣', img: 'assets/Exploding Dagger.png', rarity: 'uncommon', price: 58, combatOnly: true,
+    explosive_knife: { id: 'explosive_knife', name: 'Exploding Dagger', icon: '💣', img: 'assets/Exploding Dagger.png', rarity: 'uncommon', price: 58, combatOnly: true, unlock: 'item_exploding',
                        desc: 'Deal <b>30</b> damage to all enemies.', effect: { kind: 'damageAll', value: 30 } },
-    soul_jar:        { id: 'soul_jar', name: 'Soul Jar', icon: '⚱️', img: 'assets/Soul Jar.png', rarity: 'rare', price: 96, combatOnly: false, passive: true,
+    soul_jar:        { id: 'soul_jar', name: 'Soul Jar', icon: '⚱️', img: 'assets/Soul Jar.png', rarity: 'rare', price: 96, combatOnly: false, passive: true, unlock: 'item_souljar',
                        desc: 'Use to <b>fully heal</b> your active beast. While carried, it shatters to <b>revive</b> a fallen beast at <b>30%</b> HP — then it\'s spent.', effect: { kind: 'soulHeal' } },
     emergency_phial: { id: 'emergency_phial', name: 'Emergency Phial', icon: '🧫', img: 'assets/Emergency Phial.png', rarity: 'uncommon', price: 44, combatOnly: true,
                        desc: 'Pull a <b>chosen glyph</b> from your deck straight into your hand this turn.', effect: { kind: 'tutor' } },
     ember_tome:      { id: 'ember_tome', name: 'Archaic Tome', icon: '📜', img: 'assets/Archaic Tome.png', rarity: 'uncommon', price: 60, combatOnly: false,
                        desc: 'Gain a random <b>common</b> blessing.', effect: { kind: 'blessing', rarity: 'common' } },
-    astral_tome:     { id: 'astral_tome', name: 'Astral Tome', icon: '📖', img: 'assets/Astral Tome.png', rarity: 'rare', price: 110, combatOnly: false,
+    astral_tome:     { id: 'astral_tome', name: 'Astral Tome', icon: '📖', img: 'assets/Astral Tome.png', rarity: 'rare', price: 110, combatOnly: false, unlock: 'item_astraltome',
                        desc: 'Gain a random <b>rare</b> blessing.', effect: { kind: 'blessing', rarity: 'rare' } },
     bramble_draught: { id: 'bramble_draught', name: 'Bramble Gauntlets', icon: '🌵', img: 'assets/Bramble Gauntlets.png', rarity: 'common', price: 34, combatOnly: true,
                        desc: 'Gain <b>5 Thorns</b> this combat — attackers take 5 damage back.', effect: { kind: 'thorns', value: 5 } },

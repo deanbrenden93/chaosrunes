@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=20260613l" />
+  <link rel="stylesheet" href="css/styles.css?v=20260613q" />
 </head>
 <body>
   <!-- ============ BOOT LOADING SCREEN (covers everything until assets are warm) ============ -->
@@ -346,6 +346,9 @@
             <button id="btn-exit-menu" class="btn opt-exit-btn">Exit to Menu</button>
             <button id="btn-exit-game" class="btn opt-exit-btn opt-exit-danger">Exit Game</button>
           </div>
+          <div class="options-danger">
+            <button id="btn-erase-save" class="btn opt-erase-btn">⚠ Erase Save Data</button>
+          </div>
           <button id="btn-options-close" class="btn btn-primary">Close</button>
         </div>
       </div>
@@ -387,6 +390,7 @@
             <button class="btn debug-btn" data-debug="addSlot">◈ +1 Socket</button>
             <button class="btn debug-btn" data-debug="maxSlots">◇ Max Slots (9)</button>
             <button class="btn debug-btn" data-debug="gold">🪙 9999 Gold</button>
+            <button class="btn debug-btn" data-debug="wishStones">✦ +25 Wishing Stones</button>
             <button class="btn debug-btn" data-debug="anyNode">🧭 Any Node: OFF</button>
             <button class="btn debug-btn debug-wide" data-debug="secretShop">🛒 Secret Shop</button>
             <button class="btn debug-btn debug-danger" data-debug="killAll">☠ Kill All Enemies</button>
@@ -527,6 +531,47 @@
         </div>
       </section>
 
+      <!-- ============ ENCHANTED WELL ============ -->
+      <section id="screen-well" class="screen">
+        <div class="map-bg" aria-hidden="true"></div>
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="lw-screen">
+          <header class="lw-screen-head">
+            <button class="btn btn-back lw-sub-back" aria-label="Back">Back</button>
+            <h2 class="lw-screen-title">The Enchanted Well</h2>
+            <span class="lw-head-spacer" aria-hidden="true"></span>
+          </header>
+          <div class="lw-body well-body">
+            <div class="well-wrap">
+              <div id="well-stage" class="well-stage" aria-hidden="true">
+                <div class="well-aura"></div>
+                <img class="well-art" src="assets/Enchanted Well.png" alt="" draggable="false">
+                <div class="well-pool">
+                  <span class="well-ripple"></span><span class="well-ripple"></span><span class="well-ripple"></span>
+                </div>
+              </div>
+              <div class="well-cast">
+                <p class="well-intro">Drop wishing stones into the dark. Every <b>5</b> deepens the well's favor toward a kind of fortune — and when it brims, it surfaces something new to seek on the runs to come.</p>
+                <div id="well-cats" class="well-cats"></div>
+                <div class="well-foot">
+                  <div id="well-pending" class="well-pending"></div>
+                  <div class="well-foot-btns">
+                    <button id="well-clear-btn" class="btn well-clear-btn">Clear</button>
+                    <button id="well-cast-btn" class="btn well-cast-btn" disabled>Cast into the Well</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="well-bank" class="well-bank" aria-label="Wishing Stones">
+          <span class="well-bank-gem" aria-hidden="true">✦</span>
+          <span class="well-bank-count" id="well-stone-count">0</span>
+          <span class="well-bank-label">Wishing Stones</span>
+        </div>
+        <div id="well-reveal" class="well-reveal hidden" aria-live="polite"></div>
+      </section>
+
       <!-- ============ LOST WOODS DETAIL MODAL (shared) ============ -->
       <div id="lw-modal" class="options-modal hidden">
         <div class="lw-modal-panel">
@@ -542,11 +587,11 @@
   <!-- floating layers rendered into stage by JS -->
   <div id="fx-layer" class="fx-layer"></div>
 
-  <script src="js/data.js?v=20260613l"></script>
-  <script src="js/audio.js?v=20260613l"></script>
-  <script src="js/scaling.js?v=20260613l"></script>
-  <script src="js/game.js?v=20260613l"></script>
-  <script src="js/battle.js?v=20260613l"></script>
-  <script src="js/main.js?v=20260613l"></script>
+  <script src="js/data.js?v=20260613q"></script>
+  <script src="js/audio.js?v=20260613q"></script>
+  <script src="js/scaling.js?v=20260613q"></script>
+  <script src="js/game.js?v=20260613q"></script>
+  <script src="js/battle.js?v=20260613q"></script>
+  <script src="js/main.js?v=20260613q"></script>
 </body>
 </html>

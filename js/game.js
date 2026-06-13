@@ -152,7 +152,8 @@
     'screen-lostwoods': 'node',
     'screen-gravemarker': 'node',
     'screen-stonetable': 'node',
-    'screen-monsterbook': 'node'
+    'screen-monsterbook': 'node',
+    'screen-well': 'node'
   };
   // fight themes by node type (null = no dedicated track yet)
   function battleMusic(node) {
@@ -1049,6 +1050,12 @@
     }
     return out;
   }
+  // meta-unlock gate: blessings/items tagged with an `unlock` key stay out of run
+  // pools until that key is granted at the Enchanted Well. Untagged = always in.
+  function contentUnlocked(entry) {
+    return !entry || !entry.unlock || !!(State && State.unlocks && State.unlocks[entry.unlock]);
+  }
+  function unlockedItems() { return Object.values(ITEMS).filter(contentUnlocked); }
 
   // ---- helpers the combat engine borrows (e.g. Devil socket boons) ----
   // add souls straight to the purse (no reward animation; used mid-combat)
@@ -1227,7 +1234,7 @@
 
     // --- Item drop (non-boss tiers, when there's room to carry one) ---
     if (tier !== 'boss' && !itemsFull() && Math.random() < 0.5) {
-      const it = rng(Object.values(ITEMS));
+      const it = rng(unlockedItems());
       if (it) claims.appendChild(claimCard(itemArtHTML(it), 'Item',
         '<b>' + it.name + '</b> — ' + it.desc, 'var(--gold)', () => addItem(it.id)));
     }
@@ -1494,12 +1501,12 @@
 
   function pickBlessing(tier) {
     if (tier === 'boss') {
-      const power = Object.values(POWER_BLESSINGS).filter(b => !(b.scope === 'run' && State.blessings[b.id]));
+      const power = Object.values(POWER_BLESSINGS).filter(b => contentUnlocked(b) && !(b.scope === 'run' && State.blessings[b.id]));
       if (power.length) return rng(power);
       // power pool exhausted (multi-floor runs) — fall back to the standard pool
     }
-    const choices = Object.values(BLESSINGS).filter(b => b.scope === 'run' ? !State.blessings[b.id] : true);
-    return rng(choices.length ? choices : Object.values(BLESSINGS));
+    const choices = Object.values(BLESSINGS).filter(b => contentUnlocked(b) && (b.scope === 'run' ? !State.blessings[b.id] : true));
+    return rng(choices.length ? choices : Object.values(BLESSINGS).filter(contentUnlocked));
   }
 
   function applyBlessing(bless) {
@@ -1977,11 +1984,11 @@
   function grantRandomBlessing(rarity) {
     let bless;
     if (rarity === 'rare') {
-      const pool = Object.values(POWER_BLESSINGS).filter(b => !(b.scope === 'run' && State.blessings[b.id]));
-      bless = rng(pool.length ? pool : Object.values(POWER_BLESSINGS));
+      const pool = Object.values(POWER_BLESSINGS).filter(b => contentUnlocked(b) && !(b.scope === 'run' && State.blessings[b.id]));
+      bless = rng(pool.length ? pool : Object.values(POWER_BLESSINGS).filter(contentUnlocked));
     } else {
-      const pool = Object.values(BLESSINGS).filter(b => b.scope === 'run' ? !State.blessings[b.id] : true);
-      bless = rng(pool.length ? pool : Object.values(BLESSINGS));
+      const pool = Object.values(BLESSINGS).filter(b => contentUnlocked(b) && (b.scope === 'run' ? !State.blessings[b.id] : true));
+      bless = rng(pool.length ? pool : Object.values(BLESSINGS).filter(contentUnlocked));
     }
     if (bless) { applyBlessing(bless); updateTopbar(); }
     return bless;
@@ -2815,6 +2822,7 @@
     // Extra-socket blessings are barred from the opening draft — a free starting
     // socket warps early balance (esp. Ghoul's ramp). They still appear at elites/shops.
     const pool = Object.values(BLESSINGS).filter(b =>
+      contentUnlocked(b) &&
       b.effect !== 'socket' && b.effect !== 'twinsocket' &&
       !(b.scope === 'run' && State.blessings[b.id]));
     const picks = [];
@@ -3261,7 +3269,7 @@
 
     // --- a consumable item for sale (only when there's room to carry it) ---
     if (!itemsFull()) {
-      const offered = rng(Object.values(ITEMS));
+      const offered = rng(unlockedItems());
       if (offered) {
         grid.appendChild(shopCard({
           kind: 'Item', icon: offered.icon, name: offered.name, color: 'var(--gold)',
@@ -3790,7 +3798,8 @@
     return {
       v: 1,
       wishingStones: 0,
-      unlocks: {},                  // meta-granted unlock keys (granting UI lands in Pass 2)
+      unlocks: {},                  // meta-granted unlock keys (set by the Enchanted Well)
+      wishMeters: {},               // per-category banked meter progress (Enchanted Well)
       descension: { cleared: 0 },   // highest Descension level fully cleared (0..MAX_DESCENSION)
       stats: { runs: 0, wins: 0, classicWins: 0, descensionWins: 0, bestDescension: 0, bestAct: 0 },
       runHistory: [],               // last 5 end-of-run build snapshots (Gravemarker reads these)
@@ -3807,6 +3816,7 @@
         if (m && typeof m === 'object') {
           if (typeof m.wishingStones === 'number') META.wishingStones = m.wishingStones;
           if (m.unlocks && typeof m.unlocks === 'object') META.unlocks = m.unlocks;
+          if (m.wishMeters && typeof m.wishMeters === 'object') META.wishMeters = m.wishMeters;
           if (m.descension && typeof m.descension.cleared === 'number') META.descension.cleared = m.descension.cleared;
           if (m.stats && typeof m.stats === 'object') Object.assign(META.stats, m.stats);
           if (Array.isArray(m.runHistory)) META.runHistory = m.runHistory.slice(0, 5);
@@ -3852,6 +3862,317 @@
     if (!META.evolved[formId]) { META.evolved[formId] = true; saveMeta(); }
   }
   function metaEvolved(formId) { return !!(META.evolved && META.evolved[formId]); }
+
+  // ============================================================
+  // ENCHANTED WELL — cast wishing stones to permanently unlock locked
+  // content (rare glyphs / blessings / items) into the run pools. Each
+  // category banks its own meter; every full meter = one random unlock.
+  // ============================================================
+  const WELL_PER_UNLOCK = 5;   // wishing stones to fill one unlock meter
+  const WELL_CATS = [
+    { id: 'glyph_kitsune', label: 'Kitsune Glyphs', kind: 'glyph', accent: 'var(--red)',    icon: (MONSTERS.kitsune || {}).img, match: g => g.character === 'kitsune' },
+    { id: 'blessing',      label: 'Blessings',      kind: 'blessing', accent: 'var(--blue)', icon: '✦' },
+    { id: 'glyph_ghoul',   label: 'Ghoul Glyphs',   kind: 'glyph', accent: 'var(--purple)', icon: (MONSTERS.ghoul || {}).img,   match: g => g.character === 'ghoul' },
+    { id: 'glyph_soul',    label: 'Soul Glyphs',    kind: 'glyph', accent: '#cdd6ff',       icon: 'assets/Soulstone Stone.png', match: g => g.colorless },
+    { id: 'glyph_troll',   label: 'Goblin Glyphs',  kind: 'glyph', accent: 'var(--green)',  icon: (MONSTERS.troll || {}).img,   match: g => g.character === 'troll' },
+    { id: 'item',          label: 'Relics & Items', kind: 'item',  accent: 'var(--gold)',   icon: 'assets/Soul Jar.png' }
+  ];
+  // colorize the glyph plate to its element so locked-glyph reveals read like the
+  // real reward cards instead of a flat grey hex
+  function wellEntryFromGlyph(g) { return { key: g.unlock, name: g.name, kind: 'glyph', art: '<div class="well-ent-art" style="--g-color:var(--' + g.color + ')">' + glyphArtHTML(g) + '</div>', desc: DATA.formatDesc(g) }; }
+  function wellEntryFromBless(b) { return { key: b.unlock, name: b.name, kind: 'blessing', art: '<div class="well-ent-art has-img">' + blessArtHTML(b) + '</div>', desc: b.desc }; }
+  function wellEntryFromItem(it) { return { key: it.unlock, name: it.name, kind: 'item', art: '<div class="well-ent-art has-img">' + itemArtHTML(it) + '</div>', desc: it.desc }; }
+  function wellCatalog() {
+    const cats = WELL_CATS.map(c => Object.assign({ entries: [] }, c));
+    const byId = {}; cats.forEach(c => byId[c.id] = c);
+    Object.values(GLYPHS).forEach(g => {
+      if (!g.unlock) return;
+      const cat = cats.find(c => c.kind === 'glyph' && c.match(g));
+      if (cat) cat.entries.push(wellEntryFromGlyph(g));
+    });
+    [BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS].forEach(map =>
+      Object.values(map).forEach(b => { if (b.unlock) byId.blessing.entries.push(wellEntryFromBless(b)); }));
+    Object.values(ITEMS).forEach(it => { if (it.unlock) byId.item.entries.push(wellEntryFromItem(it)); });
+    return cats.filter(c => c.entries.length);
+  }
+  function wellCatState(cat) {
+    const total = cat.entries.length;
+    const unlocked = cat.entries.filter(e => META.unlocks[e.key]).length;
+    return { total, unlocked, lockedRemaining: total - unlocked, meter: META.wishMeters[cat.id] || 0 };
+  }
+  // commit a staged offering ({catId: stones}); returns the entries newly unlocked
+  function wellCast(staged) {
+    const cats = wellCatalog();
+    const revealed = [];
+    let spent = 0;
+    cats.forEach(cat => {
+      const add = staged[cat.id] || 0;
+      if (add <= 0) return;
+      spent += add;
+      const st = wellCatState(cat);
+      const total = st.meter + add;
+      const unlocks = Math.min(Math.floor(total / WELL_PER_UNLOCK), st.lockedRemaining);
+      const locked = cat.entries.filter(e => !META.unlocks[e.key]);
+      for (let i = 0; i < unlocks && locked.length; i++) {
+        const e = locked.splice(Math.floor(Math.random() * locked.length), 1)[0];
+        META.unlocks[e.key] = true;
+        revealed.push({ catId: cat.id, accent: cat.accent, label: cat.label, entry: e });
+      }
+      const stillLocked = cat.entries.filter(e => !META.unlocks[e.key]).length;
+      META.wishMeters[cat.id] = stillLocked > 0 ? (total - unlocks * WELL_PER_UNLOCK) : 0;
+    });
+    META.wishingStones = Math.max(0, META.wishingStones - spent);
+    saveMeta();
+    return revealed;
+  }
+
+  // ---- WELL UI ----
+  let wellStage = {};   // transient per-category staged stones (pre-cast)
+  function wellStaged() { return Object.keys(wellStage).reduce((s, k) => s + (wellStage[k] || 0), 0); }
+  function wellAvailable() { return Math.max(0, (META.wishingStones || 0) - wellStaged()); }
+  function wellCatIcon(cat) {
+    if (cat.icon && /\.(png|jpg)$/i.test(cat.icon)) return '<img class="well-cat-img" src="' + cat.icon + '" alt="" draggable="false">';
+    return '<span class="well-cat-emoji">' + (cat.icon || '✦') + '</span>';
+  }
+  function buildWell() {
+    wellStage = {};
+    const stones = $('well-stone-count');
+    if (stones) stones.textContent = META.wishingStones || 0;
+    const cats = wellCatalog();
+    const host = $('well-cats');
+    if (host && !host.dataset.wired) {
+      host.dataset.wired = '1';
+      host.addEventListener('click', onWellCatClick);
+    }
+    renderWell();
+    const castBtn = $('well-cast-btn');
+    if (castBtn && !castBtn.dataset.wired) {
+      castBtn.dataset.wired = '1';
+      castBtn.addEventListener('click', doWellCast);
+    }
+    const clearBtn = $('well-clear-btn');
+    if (clearBtn && !clearBtn.dataset.wired) {
+      clearBtn.dataset.wired = '1';
+      clearBtn.addEventListener('click', () => { SFX.click(); wellStage = {}; renderWell(); });
+    }
+    return cats;
+  }
+  function wellCatPending(cat) {
+    const st = wellCatState(cat);
+    const staged = wellStage[cat.id] || 0;
+    const total = st.meter + staged;
+    const cycles = Math.min(Math.floor(total / WELL_PER_UNLOCK), st.lockedRemaining);
+    const within = (cycles >= st.lockedRemaining) ? 0 : (total - cycles * WELL_PER_UNLOCK);
+    return { st, staged, cycles, within };
+  }
+  function renderWell() {
+    const host = $('well-cats');
+    if (!host) return;
+    const cats = wellCatalog();
+    host.innerHTML = cats.map(cat => {
+      const p = wellCatPending(cat);
+      const done = p.st.lockedRemaining === 0;
+      const pips = Array.from({ length: WELL_PER_UNLOCK }, (_, i) =>
+        '<span class="well-pip' + (i < p.within ? ' lit' : '') + '"></span>').join('');
+      // always present so toggling it never reflows the card (reserves its slot)
+      const xbadge = '<span class="well-meter-x' + (p.cycles > 0 ? ' on' : '') + '">+' + (p.cycles > 0 ? p.cycles : '') + '</span>';
+      return '<div class="well-cat' + (done ? ' done' : '') + (p.cycles > 0 ? ' charged' : '') + '" data-cat="' + cat.id + '" style="--acc:' + cat.accent + '">' +
+        '<div class="well-cat-top">' +
+          '<span class="well-cat-icon">' + wellCatIcon(cat) + '</span>' +
+          '<div class="well-cat-titles"><div class="well-cat-name">' + cat.label + '</div>' +
+            '<div class="well-cat-prog">' + (done ? '<b>Complete</b>' : (p.st.unlocked + ' / ' + p.st.total + ' unlocked')) + '</div></div>' +
+          '<button class="well-cat-browse" data-act="browse" aria-label="Browse">⊙</button>' +
+        '</div>' +
+        '<div class="well-meter">' + pips + xbadge + '</div>' +
+        (done ? '<div class="well-cat-done">Fully discovered</div>' :
+          '<div class="well-cat-ctrls">' +
+            '<button class="well-step" data-act="add" data-d="-1">−</button>' +
+            '<span class="well-cat-staged">' + (p.staged > 0 ? '+' + p.staged : '0') + '</span>' +
+            '<button class="well-step" data-act="add" data-d="1">+</button>' +
+            '<button class="well-step well-step-5" data-act="add" data-d="5">+5</button>' +
+            '<button class="well-max" data-act="max">Max</button>' +
+          '</div>') +
+      '</div>';
+    }).join('');
+    // balance + pending summary
+    const avail = wellAvailable();
+    const staged = wellStaged();
+    let unlocks = 0;
+    cats.forEach(cat => { unlocks += wellCatPending(cat).cycles; });
+    const stones = $('well-stone-count'); if (stones) stones.textContent = avail;
+    const pend = $('well-pending');
+    if (pend) {
+      pend.innerHTML = staged > 0
+        ? 'Offering <b>' + staged + '</b> ✦ → <b class="well-pend-x">' + unlocks + '</b> unlock' + (unlocks === 1 ? '' : 's')
+        : 'Choose where the well\'s favor should fall.';
+    }
+    const castBtn = $('well-cast-btn');
+    if (castBtn) { castBtn.disabled = staged <= 0; castBtn.classList.toggle('ready', staged > 0); }
+  }
+  function onWellCatClick(e) {
+    const card = e.target.closest('.well-cat');
+    if (!card) return;
+    const catId = card.dataset.cat;
+    const act = e.target.closest('[data-act]') && e.target.closest('[data-act]').dataset.act;
+    if (act === 'browse') { SFX.click(); openWellBrowse(catId); return; }
+    const cats = wellCatalog();
+    const cat = cats.find(c => c.id === catId);
+    if (!cat) return;
+    const st = wellCatState(cat);
+    const maxUseful = st.lockedRemaining * WELL_PER_UNLOCK - st.meter;
+    if (maxUseful <= 0) return;
+    const cur = wellStage[catId] || 0;
+    const avail = wellAvailable();
+    let next = cur;
+    if (act === 'max') next = Math.min(maxUseful, cur + avail);
+    else if (act === 'add') {
+      const d = parseInt(e.target.dataset.d, 10) || 0;
+      next = d > 0 ? Math.min(cur + Math.min(d, avail), maxUseful) : Math.max(0, cur + d);
+    } else return;
+    if (next === cur) return;
+    wellStage[catId] = next;
+    if (next > cur) SFX.coinTick(next - cur); else SFX.hover();
+    renderWell();
+  }
+  function doWellCast() {
+    const staged = wellStaged();
+    if (staged <= 0) return;
+    const snapshot = Object.assign({}, wellStage);
+    const castBtn = $('well-cast-btn'), clearBtn = $('well-clear-btn');
+    if (castBtn) castBtn.disabled = true;
+    if (clearBtn) clearBtn.disabled = true;
+    SFX.act();
+    // stones pour from the bank into the well, then it surges and surfaces the prize
+    flyStonesToWell(staged, () => {
+      const revealed = wellCast(snapshot);
+      wellStage = {};
+      const stage = $('well-stage');
+      if (stage) { stage.classList.add('surge'); setTimeout(() => stage.classList.remove('surge'), 1200); }
+      renderWell();
+      if (clearBtn) clearBtn.disabled = false;
+      showWellReveal(revealed, staged);
+    });
+  }
+  // arc the cast stones from the bottom counter into the well's pool
+  function flyStonesToWell(count, done) {
+    const screen = $('screen-well');
+    const bank = $('well-bank');
+    const pool = screen && screen.querySelector('.well-pool');
+    if (!screen || !bank || !pool) { if (done) done(); return; }
+    const sr = screen.getBoundingClientRect();
+    const br = bank.getBoundingClientRect();
+    const pr = pool.getBoundingClientRect();
+    const sx = br.left + br.width / 2 - sr.left;
+    const sy = br.top + br.height / 2 - sr.top;
+    const tx = pr.left + pr.width / 2 - sr.left;
+    const ty = pr.top + pr.height / 2 - sr.top;
+    const dx = tx - sx, dy = ty - sy;
+    const n = Math.max(1, Math.min(count, 16));
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { setTimeout(done, 120); return; }
+    bank.classList.add('pouring');
+    let landed = 0;
+    const finish = () => {
+      if (++landed >= n) {
+        bank.classList.remove('pouring');
+        setTimeout(() => { if (pool) pool.classList.remove('splash'); }, 460);
+        if (done) done();
+      }
+    };
+    for (let i = 0; i < n; i++) {
+      const s = document.createElement('div');
+      s.className = 'well-fly-stone';
+      s.textContent = '✦';
+      s.style.left = sx + 'px';
+      s.style.top = sy + 'px';
+      screen.appendChild(s);
+      const arcX = dx * 0.5 + (Math.random() * 90 - 45);
+      const arcY = dy * 0.5 - (110 + Math.random() * 80);   // lob upward first
+      const dur = 540 + Math.random() * 200;
+      const anim = s.animate([
+        { transform: 'translate(-50%,-50%) scale(.3)', opacity: 0, offset: 0 },
+        { transform: 'translate(calc(-50% + ' + (arcX * 0.4) + 'px), calc(-50% + ' + (arcY * 0.5) + 'px)) scale(1.2)', opacity: 1, offset: 0.18 },
+        { transform: 'translate(calc(-50% + ' + arcX + 'px), calc(-50% + ' + arcY + 'px)) scale(1.05)', opacity: 1, offset: 0.55 },
+        { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(.32)', opacity: 0.6, offset: 1 }
+      ], { duration: dur, delay: i * 60, easing: 'cubic-bezier(.45,0,.55,1)', fill: 'forwards' });
+      const onEnd = () => {
+        s.remove();
+        if (pool) { pool.classList.remove('splash'); void pool.offsetWidth; pool.classList.add('splash'); }
+        finish();
+      };
+      anim.onfinish = onEnd;
+      anim.oncancel = onEnd;
+    }
+  }
+  // ---- the climactic reveal ----
+  function showWellReveal(revealed, stonesSpent) {
+    const ov = $('well-reveal');
+    if (!ov) return;
+    const n = revealed.length;
+    const lvl = n >= 6 ? 3 : n >= 3 ? 2 : (n >= 1 ? 1 : 0);
+    const titles = ['The well drinks your offering…', 'Fate stirs awake', 'The well surges with light', 'A torrent of fate breaks free!'];
+    const title = titles[lvl];
+    const grid = n
+      ? revealed.map((r, i) => {
+          const kindLab = r.label.replace(/s$/, '');
+          return '<div class="well-rv-card" style="--acc:' + r.accent + ';animation-delay:' + (220 + i * 180) + 'ms">' +
+            '<div class="well-rv-new">Unlocked</div>' +
+            '<div class="well-rv-kind">' + kindLab + '</div>' +
+            r.entry.art.replace('well-ent-art', 'well-ent-art well-rv-art') +
+            '<div class="well-rv-name">' + r.entry.name + '</div>' +
+            '<div class="well-rv-desc">' + r.entry.desc + '</div>' +
+          '</div>';
+        }).join('')
+      : '<div class="well-rv-none">The offering of <b>' + stonesSpent + '</b> ✦ sinks into the dark. Its power is <b>banked</b> — return with more to draw it out.</div>';
+    ov.innerHTML =
+      '<div class="well-reveal-veil"></div>' +
+      '<div class="well-reveal-inner well-rv-lvl-' + lvl + '">' +
+        '<div class="well-reveal-burst" aria-hidden="true"></div>' +
+        '<h2 class="well-reveal-title">' + title + '</h2>' +
+        '<div class="well-reveal-grid' + (n > 3 ? ' many' : '') + '">' + grid + '</div>' +
+        '<button class="btn well-reveal-close">' + (n ? 'Claim your fortune' : 'So be it') + '</button>' +
+      '</div>';
+    ov.classList.remove('hidden');
+    requestAnimationFrame(() => ov.classList.add('show'));
+    // escalating chime: one reward ping per unlock, a victory flourish for a big haul
+    if (n) {
+      revealed.forEach((r, i) => setTimeout(() => SFX.reward(), 240 + i * 180));
+      if (n >= 3) setTimeout(() => SFX.victory(), 240 + n * 180);
+    }
+    const close = ov.querySelector('.well-reveal-close');
+    const veil = ov.querySelector('.well-reveal-veil');
+    const doClose = () => {
+      SFX.click();
+      ov.classList.remove('show');
+      setTimeout(() => { ov.classList.add('hidden'); ov.innerHTML = ''; }, 320);
+      buildWell();   // refresh balances + progress
+    };
+    if (close) close.addEventListener('click', doClose);
+    if (veil) veil.addEventListener('click', doClose);
+  }
+  // ---- browse a category's full collection (locked = enticing mystery) ----
+  function openWellBrowse(catId) {
+    const cats = wellCatalog();
+    const cat = cats.find(c => c.id === catId);
+    if (!cat) return;
+    const st = wellCatState(cat);
+    const cards = cat.entries.map(e => {
+      const unlocked = !!META.unlocks[e.key];
+      if (!unlocked) {
+        return '<div class="well-br-card locked"><div class="well-ent-art well-br-art"><span class="well-br-q">?</span></div>' +
+          '<div class="well-br-name">? ? ?</div><div class="well-br-desc">Locked — cast wishing stones to draw it from the well.</div></div>';
+      }
+      return '<div class="well-br-card"><div class="well-br-new">Unlocked</div>' +
+        e.art.replace('well-ent-art', 'well-ent-art well-br-art') +
+        '<div class="well-br-name">' + e.name + '</div>' +
+        '<div class="well-br-desc">' + e.desc + '</div></div>';
+    }).join('');
+    const html = '<div class="well-browse" style="--acc:' + cat.accent + '">' +
+      '<div class="well-browse-head"><h3>' + cat.label + '</h3>' +
+        '<span class="well-browse-prog">' + st.unlocked + ' / ' + st.total + ' unlocked</span></div>' +
+      '<div class="well-browse-grid">' + cards + '</div></div>';
+    openLwModal(html, resolveColor(cat.accent), 'well');
+  }
 
   // ============================================================
   // LOST WOODS  — the between-runs meta hub and its read-only screens
@@ -3915,7 +4236,7 @@
     { id: 'monsterbook', screen: 'screen-monsterbook', icon: '📖', art: 'assets/Monster Library.png', title: 'Monster Library', blurb: 'A bestiary of every foe you have met in the Spire — their intents, their hidden feast boons, and the lore behind them.', x: 58, y: 24, w: 300 },
     { id: 'stonetable',  screen: 'screen-stonetable',  icon: '✶', art: 'assets/Star Charts.png',     title: 'Star Charts',     blurb: 'Trace the constellations of every beast and the branching paths of its evolutions.', x: 37, y: 35, w: 320 },
     { id: 'tablets',     screen: null,                 icon: '📜', art: 'assets/Stone Tablets.png',    title: 'Stone Tablets',   blurb: 'The carved lore and glossary of all things — every keyword, passive, and secret.', x: 75, y: 41, w: 290 },
-    { id: 'well',        screen: null,                 icon: '⛲', art: 'assets/Enchanted Well.png',   title: 'Enchanted Well',  blurb: 'Cast wishing stones into the dark to widen fate and unlock what the Spire may offer.', x: 52, y: 55, w: 240 },
+    { id: 'well',        screen: 'screen-well',        icon: '⛲', art: 'assets/Enchanted Well.png',   title: 'Enchanted Well',  blurb: 'Cast wishing stones into the dark to widen fate and unlock new glyphs, blessings and relics for runs to come.', x: 52, y: 55, w: 240 },
     { id: 'gravemarker', screen: 'screen-gravemarker', icon: '🪦', art: 'assets/Gravemarkers.png',    title: 'Gravemarkers',    blurb: 'Remember the fallen — the builds of past runs and your lifetime deeds in the Spire.', x: 28, y: 61, w: 270 }
   ];
   // the dialogue box is always on: it reads as the hub's intro until a landmark
@@ -3944,6 +4265,7 @@
     if (poi.id === 'gravemarker') buildGravemarker();
     else if (poi.id === 'stonetable') buildStoneTable();
     else if (poi.id === 'monsterbook') buildMonsterBook();
+    else if (poi.id === 'well') buildWell();
     show(poi.screen);
   }
   // hyperreal fireflies: a scatter of soft glowing motes that wander on looping
@@ -4653,6 +4975,30 @@
       SFX.click();
       try { window.close(); } catch (e) { /* ignore in a normal browser tab */ }
     });
+    $('btn-erase-save').addEventListener('click', () => {
+      SFX.click();
+      confirmDialog({
+        title: 'Erase ALL save data?',
+        text: 'This permanently wipes <b>everything</b> — your current run, every wishing stone and unlock, Descension progress, lifetime stats, the bestiary, and run history. <b>This cannot be undone.</b>',
+        okLabel: 'Erase Everything',
+        cancelLabel: 'Keep My Data',
+        danger: true,
+        onConfirm: eraseAllSaveData
+      });
+    });
+  }
+  // wipe every persisted key (all use the cg_ prefix) and hard-reload to a fully
+  // clean slate. Guarded so a locked-down localStorage can't throw mid-wipe.
+  function eraseAllSaveData() {
+    try {
+      const doomed = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('cg_') === 0) doomed.push(k);
+      }
+      doomed.forEach(k => { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } });
+    } catch (e) { /* ignore */ }
+    try { location.reload(); } catch (e) { try { location.href = location.href; } catch (e2) { /* ignore */ } }
   }
 
   // ============================================================
@@ -4967,13 +5313,20 @@
     buildSecretShop();
     show('screen-shop');
   }
+  // grant a pile of wishing stones (for testing the Enchanted Well); refresh the
+  // Well screen if it's open so the new balance shows immediately
+  function debugWishStones() {
+    grantWishingStones(25);
+    if ($('screen-well') && $('screen-well').classList.contains('is-active')) buildWell();
+    const lw = $('lw-stones'); if (lw) lw.textContent = META.wishingStones || 0;
+  }
 
   root.CG.Game = {
     init, show, renderMap, gameOver, activeMonster, firstAlive, updateTopbar,
     grantRandomBlessing, consumeRevive, addItem, canAddItem,
     gainSouls, grantRandomGlyph, permEmpowerBase,
     recordBestiarySeen, recordBestiaryDefeated,
-    debugGold, debugToggleAnyNode, debugSecretShop,
+    debugGold, debugToggleAnyNode, debugSecretShop, debugWishStones,
     get state() { return State; }
   };
 
