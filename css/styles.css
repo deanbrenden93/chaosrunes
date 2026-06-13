@@ -6386,27 +6386,38 @@ html, body {
    ============================================================ */
 .well-body {
   flex: 1; min-height: 0; display: flex; flex-direction: column;
-  gap: 14px; padding: 0 24px 4px;
+  gap: 10px; padding: 0 24px 8px;
 }
 
-/* ---- upper area: the living well + cast bar ---- */
-.well-top {
-  flex: 1 1 auto; min-height: 0; position: relative;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+/* flavor / offering summary sits right under the screen title */
+.well-flavor {
+  flex: 0 0 auto; text-align: center; margin: 2px auto 0; min-height: 26px;
 }
+
+/* ---- middle band: [ stones | well | buttons ], all vertically centered ---- */
+.well-mid {
+  flex: 0 0 auto; height: 392px; position: relative;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.well-side {
+  flex: 0 0 268px; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.well-side-left { justify-content: flex-start; padding-left: 18px; }
+.well-side-right { justify-content: flex-end; padding-right: 18px; }
 .well-stage {
-  position: relative; flex: 1 1 auto; min-height: 0; width: 100%;
+  position: relative; flex: 1 1 auto; min-width: 0; height: 100%;
   display: flex; align-items: center; justify-content: center;
 }
 .well-aura {
-  position: absolute; left: 50%; top: 50%; width: 460px; height: 360px; max-width: 90%;
+  position: absolute; left: 50%; top: 50%; width: 460px; height: 340px; max-width: 90%;
   transform: translate(-50%, -50%);
   background: radial-gradient(50% 50% at 50% 50%, rgba(150,92,224,0.42), rgba(96,52,168,0.16) 46%, transparent 70%);
   filter: blur(6px); animation: wellAura 5.5s ease-in-out infinite;
 }
 @keyframes wellAura { 0%,100% { opacity: .55; transform: translate(-50%,-50%) scale(.94); } 50% { opacity: .9; transform: translate(-50%,-50%) scale(1.06); } }
 .well-art {
-  position: relative; z-index: 2; height: 100%; max-height: 440px; width: auto; max-width: 64%;
+  position: relative; z-index: 2; height: 100%; max-height: 392px; width: auto; max-width: 100%;
   object-fit: contain;
   filter: drop-shadow(0 24px 34px rgba(0,0,0,0.7)) drop-shadow(0 0 26px rgba(150,90,220,0.35));
   animation: wellBob 6s ease-in-out infinite;
@@ -6465,16 +6476,12 @@ html, body {
   100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))); opacity: 0; }
 }
 
-/* ---- the cast bar: stone balance + pending + buttons ---- */
-.well-castbar {
-  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-  gap: 26px; flex-wrap: wrap; padding: 2px 0;
-}
+/* ---- the wishing-stone bank: a vertical plinth on the well's LEFT ---- */
 .well-bank {
-  display: inline-flex; align-items: center; gap: 12px;
-  padding: 9px 24px 9px 20px; border-radius: 999px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 22px 26px; border-radius: 22px; width: 100%; max-width: 244px;
   background:
-    radial-gradient(120% 160% at 50% -40%, rgba(150,96,228,0.28), transparent 70%),
+    radial-gradient(120% 90% at 50% -10%, rgba(150,96,228,0.30), transparent 70%),
     linear-gradient(180deg, rgba(40,27,66,0.94), rgba(15,10,28,0.96));
   border: 1px solid rgba(196,156,255,0.5);
   box-shadow:
@@ -6482,26 +6489,31 @@ html, body {
     inset 0 1px 0 rgba(255,255,255,0.12), 0 10px 26px rgba(0,0,0,0.5);
 }
 .well-bank-gem {
-  font-size: 30px; line-height: 1; color: #dcbcff;
+  font-size: 46px; line-height: 1; color: #dcbcff;
   text-shadow: 0 0 16px rgba(190,130,255,0.95), 0 0 30px rgba(150,90,220,0.6);
   animation: wellGemPulse 2.8s ease-in-out infinite;
 }
 @keyframes wellGemPulse { 0%,100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.12); filter: brightness(1.25); } }
 .well-bank-count {
-  font-family: 'Cinzel'; font-weight: 900; font-size: 34px; line-height: 1; color: #fff;
+  font-family: 'Cinzel'; font-weight: 900; font-size: 56px; line-height: 1; color: #fff;
   text-shadow: 0 0 16px rgba(196,140,255,0.7), 0 2px 6px rgba(0,0,0,0.7); min-width: 1ch; text-align: center;
 }
 .well-bank-label {
   font-family: 'Cinzel'; font-weight: 700; font-size: 15px; letter-spacing: .14em;
-  text-transform: uppercase; color: #c6b6e8;
+  text-transform: uppercase; color: #c6b6e8; text-align: center;
 }
-.well-pending { font-family: 'Spectral'; font-size: 19px; color: #cbbfe6; text-align: center; }
+.well-pending { font-family: 'Spectral'; font-size: 20px; color: #cbbfe6; text-align: center; }
 .well-pending b { color: #fff; }
 .well-pend-x { color: #d8b6ff; }
-.well-castbar-btns { display: flex; gap: 14px; }
-.well-clear-btn { background: rgba(255,255,255,0.07); font-size: 16px; padding: 11px 22px; }
+
+/* ---- cast / clear buttons: a vertical pair on the well's RIGHT ---- */
+.well-castbar-btns { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 244px; }
+.well-clear-btn {
+  background: rgba(255,255,255,0.07); font-size: 17px; padding: 14px 22px; width: 100%;
+  font-family: 'Cinzel'; font-weight: 700; letter-spacing: .03em;
+}
 .well-cast-btn {
-  font-family: 'Cinzel'; font-weight: 800; letter-spacing: .04em; font-size: 17px; padding: 12px 30px;
+  font-family: 'Cinzel'; font-weight: 800; letter-spacing: .04em; font-size: 20px; padding: 18px 26px; width: 100%;
   background: linear-gradient(180deg, #7a46c8, #4f2da0);
   border: 1px solid rgba(200,160,255,0.5); color: #fff;
   box-shadow: 0 10px 26px rgba(80,40,150,0.5);
@@ -6514,15 +6526,40 @@ html, body {
    THE SIX CIRCULAR STONE-METERS (reusing the combat disc look —
    gear frame + rune ring + radial gauge, gauge filled with stones)
    ============================================================ */
-.well-meters-row {
-  flex: 0 0 auto; display: flex; gap: 16px; justify-content: center; align-items: flex-start;
-  padding: 4px 0 2px;
+/* the meters live in their own horizontal carousel, so each can be scaled up
+   big and legible without overlapping or running off the stage */
+.well-meters-wrap {
+  flex: 1 1 auto; min-height: 0; position: relative;
+  display: flex; align-items: stretch;
 }
+.well-meters-row {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; gap: 30px; align-items: center; justify-content: safe center;
+  overflow-x: auto; overflow-y: hidden;
+  padding: 6px 60px 4px; overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.well-meters-row::-webkit-scrollbar { display: none; }
 .well-meter-cell {
-  position: relative; flex: 1 1 0; min-width: 0; max-width: 300px;
-  display: flex; flex-direction: column; align-items: center; text-align: center;
+  position: relative; flex: 0 0 auto; width: 300px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
 }
 .well-meter-cell.done { opacity: .68; filter: saturate(.7); }
+
+/* meter scroll arrows */
+.well-mt-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 6;
+  width: 52px; height: 52px; border-radius: 50%; cursor: pointer;
+  font-family: 'Cinzel'; font-size: 32px; line-height: 1; color: #f0e6ff;
+  background: linear-gradient(180deg, rgba(48,32,76,0.96), rgba(20,12,36,0.96));
+  border: 1px solid rgba(196,156,255,0.55); box-shadow: 0 8px 22px rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity .2s ease, transform .15s ease, background .15s ease;
+}
+.well-mt-nav:hover { background: linear-gradient(180deg, rgba(72,48,116,0.98), rgba(30,18,52,0.98)); transform: translateY(-50%) scale(1.08); }
+.well-mt-nav.prev { left: 2px; }
+.well-mt-nav.next { right: 2px; }
+.well-mt-nav.hide { opacity: 0; pointer-events: none; }
 
 .wd-browse {
   position: absolute; top: 2px; right: 8px; z-index: 5;
@@ -6533,9 +6570,9 @@ html, body {
 }
 .wd-browse:hover { background: color-mix(in srgb, var(--acc) 32%, transparent); transform: scale(1.1); }
 
-/* the disc itself — drawn at 160px and scaled to fit the cell */
+/* the disc itself — drawn at 160px and scaled up to fill the taller meter row */
 .wd-disc-wrap {
-  --wd-s: 0.96;
+  --wd-s: 1.42;
   width: calc(160px * var(--wd-s)); height: calc(160px * var(--wd-s));
   flex: none; display: flex; align-items: center; justify-content: center;
 }
@@ -6619,26 +6656,26 @@ html, body {
 @keyframes wellDiscPour { 40% { transform: scale(calc(var(--wd-s) * 1.05)); } }
 
 .wd-name {
-  font-family: 'Cinzel'; font-weight: 700; font-size: 19px; color: #f1ebff; margin-top: 12px;
+  font-family: 'Cinzel'; font-weight: 700; font-size: 23px; color: #f1ebff; margin-top: 16px;
   text-shadow: 0 2px 8px rgba(0,0,0,0.6); line-height: 1.1;
 }
-.wd-prog { font-family: 'Spectral'; font-size: 16px; color: color-mix(in srgb, var(--acc) 70%, #cfc4e6); margin-top: 2px; }
+.wd-prog { font-family: 'Spectral'; font-size: 18px; color: color-mix(in srgb, var(--acc) 70%, #cfc4e6); margin-top: 3px; }
 .wd-prog b { color: #fff; }
 .wd-done {
-  font-family: 'Cinzel'; font-size: 14px; letter-spacing: .12em; text-transform: uppercase;
-  color: color-mix(in srgb, var(--acc) 80%, #fff); padding: 12px 0 2px;
+  font-family: 'Cinzel'; font-size: 15px; letter-spacing: .12em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--acc) 80%, #fff); padding: 14px 0 2px;
 }
 
 /* per-meter controls: −, +, Max, Clear */
-.wd-ctrls { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.wd-ctrls { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; max-width: 212px; }
 .wd-step, .wd-mini {
   cursor: pointer; font-family: 'Cinzel'; font-weight: 800; color: #ece4f8;
-  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 11px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px;
   transition: background .15s ease, border-color .15s ease, transform .1s ease;
 }
-.wd-step { width: 46px; height: 46px; font-size: 26px; line-height: 1; }
+.wd-step { width: 56px; height: 56px; font-size: 30px; line-height: 1; }
 .wd-mini {
-  height: 40px; padding: 0 16px; font-size: 15px; letter-spacing: .03em;
+  height: 50px; padding: 0 22px; font-size: 17px; letter-spacing: .03em;
   background: color-mix(in srgb, var(--acc) 22%, rgba(0,0,0,0.3));
   border-color: color-mix(in srgb, var(--acc) 48%, transparent);
 }
@@ -6763,7 +6800,6 @@ html, body {
    meter row a touch so all six discs stay on one comfortable line */
 @media (max-width: 900px), (pointer: coarse) {
   .well-reveal-veil { backdrop-filter: none; }
-  .well-meters-row { gap: 10px; }
-  .wd-disc-wrap { --wd-s: 0.86; }
+  /* meters keep their full size and simply scroll, so touch matches desktop */
   .well-carousel { width: 98%; }
 }

@@ -4132,6 +4132,7 @@
       host.dataset.wired = '1';
       host.addEventListener('click', onWellCatClick);
     }
+    wireWellMeters();
     renderWell();
     const castBtn = $('well-cast-btn');
     if (castBtn && !castBtn.dataset.wired) {
@@ -4144,6 +4145,44 @@
       clearBtn.addEventListener('click', () => { SFX.click(); wellStage = {}; renderWell(); });
     }
     return cats;
+  }
+  // the meter row is its own horizontal carousel (the discs are large now), so it
+  // gets the same smooth wheel/arrow scrolling as the reward carousel
+  function wireWellMeters() {
+    const row = $('well-cats');
+    const wrap = row && row.closest('.well-meters-wrap');
+    if (!row || !wrap || row.dataset.scrollWired) return;
+    row.dataset.scrollWired = '1';
+    const prev = wrap.querySelector('.well-mt-nav.prev');
+    const next = wrap.querySelector('.well-mt-nav.next');
+    const cellW = () => {
+      const c = row.querySelector('.well-meter-cell');
+      const w = c ? c.getBoundingClientRect().width : 300;
+      const gap = parseFloat(getComputedStyle(row).columnGap || getComputedStyle(row).gap) || 30;
+      return w + gap;
+    };
+    const sync = () => {
+      const maxScroll = row.scrollWidth - row.clientWidth - 2;
+      const atStart = row.scrollLeft <= 2;
+      const atEnd = row.scrollLeft >= maxScroll;
+      if (prev) prev.classList.toggle('hide', atStart);
+      if (next) next.classList.toggle('hide', atEnd || maxScroll <= 0);
+    };
+    if (prev) prev.addEventListener('click', () => { SFX.click(); row.scrollBy({ left: -cellW() * 2, behavior: 'smooth' }); });
+    if (next) next.addEventListener('click', () => { SFX.click(); row.scrollBy({ left: cellW() * 2, behavior: 'smooth' }); });
+    row.addEventListener('scroll', sync, { passive: true });
+    // vertical wheel / trackpad drives the row sideways 1:1 (matches the reward carousel)
+    row.addEventListener('wheel', (e) => {
+      const maxScroll = row.scrollWidth - row.clientWidth;
+      if (maxScroll <= 1) return;
+      let d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (!d) return;
+      if (e.deltaMode === 1) d *= 16; else if (e.deltaMode === 2) d *= row.clientWidth;
+      const before = row.scrollLeft;
+      row.scrollLeft = Math.max(0, Math.min(maxScroll, before + d));
+      if (row.scrollLeft !== before) e.preventDefault();
+    }, { passive: false });
+    row._syncMeters = sync;
   }
   function wellCatPending(cat) {
     const st = wellCatState(cat);
@@ -4208,6 +4247,8 @@
         if (t != null) a.style.strokeDashoffset = t;
       });
     });
+    // refresh the meter-carousel arrow state for the new content width
+    if (host._syncMeters) requestAnimationFrame(host._syncMeters);
     // balance + pending summary
     const avail = wellAvailable();
     const staged = wellStaged();
