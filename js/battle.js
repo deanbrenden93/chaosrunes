@@ -1997,7 +1997,7 @@
           if ((c.dmg || 0) > 0) applyDamage(e, c.dmg, { strength: false, charge: true });
           if ((c.weak || 0) > 0) { e.weak = (e.weak || 0) + c.weak; weakFx(e.dom); }
           if ((c.scare || 0) > 0) { e.scare = (e.scare || 0) + c.scare; e.scareTurns = Math.max(e.scareTurns || 0, 3); scareFx(e.dom); }
-          if ((c.burn || 0) > 0) addBurn(e, c.burn);
+          if ((c.burn || 0) > 0) addBurn(e, c.burn, { proc: true });
         }
         refreshAll();
         await wait(220);
@@ -2260,7 +2260,7 @@
       // Burn at a random foe (a chain to 5 lobs 2 → 3 → 4 → 5).
       if (comboLen >= 2 && comboLen > maxCombo && hasPassive('cinderfall')) {
         const ct = targetRandom();
-        if (ct[0]) addBurn(ct[0], comboLen);
+        if (ct[0]) addBurn(ct[0], comboLen, { proc: true });
       }
       if (comboLen > maxCombo) { maxCombo = comboLen; if (root.CG.Game.recordCombo) root.CG.Game.recordCombo(maxCombo); }
       B.comboNow = comboLen;   // Smoldering Tails / charges read this on every hit
@@ -2585,7 +2585,46 @@
     const bl = root.CG.Game.state.blessings;
     return (bl.emberstorm ? 1 : 0) + (bl.pyreheart ? 2 : 0);
   }
-  function emberDmg(g) { return g.color === 'red' ? emberBonusAmt() : 0; }
+  function emberDmg(g) {
+    if (g.color !== 'red') return 0;
+    // during a glyph resolution this is the per-hit (already spread) ember; otherwise full
+    return (B && B._curEmber != null) ? B._curEmber : emberBonusAmt();
+  }
+  // How many times a glyph applies its main effect this cast (damage hits or Burn
+  // applications). Flat bonuses are SPREAD across these hits so a multi-hit glyph
+  // never multiplies every flat bonus by its hit count (the old runaway).
+  function effectiveHits(baseId, g, info) {
+    // Only REPEATED strikes/applications spread the flat bonus. AoE that hits each
+    // foe ONCE keeps its full flat bonus per foe (treated as a single application).
+    if (g && g.colorless && Array.isArray(g.fx)) {
+      let n = 0;
+      g.fx.forEach(s => { if (s.op === 'dmg' || s.op === 'burn') n += (s.hits || 1); });
+      return Math.max(1, n);
+    }
+    switch (baseId) {
+      case 'onslaught':      return Math.max(1, info.chainPos);
+      case 'hoarders_flame': return Math.max(1, info.handLeft);
+      case 'aftershock':     return Math.max(1, info.blueCount);   // repeated volleys, NOT enemy count
+      default:               return Math.max(1, (g && g.hits) || 1);
+    }
+  }
+  // Unified additive bonuses for a glyph. Flat parts (Gathering Tails, ember
+  // blessings, empower, clone) are divided across the glyph's hits; combo keeps its
+  // per-hit rate (reduced for multi-hit). Strength is added later in applyDamage.
+  function glyphBonuses(id, g, ctx, info) {
+    const baseId = baseOf(g.cloneOf || id);
+    const hits = effectiveHits(baseId, g, info);
+    const cf = hits > 1 ? 0.33 : 1;
+    const combo = (ctx.comboBonus || 0) * cf;
+    const clemp = (g.cloneEmpower || 0) + empowerOf(id);
+    const ember = (g.color === 'red' ? emberBonusAmt() : 0) / hits;
+    return {
+      hits: hits,
+      gt: combo + (gather(ctx) + clemp) / hits,   // damage: Gathering Tails included
+      gtx: combo + clemp / hits,                  // burn / shield / heal: no Gathering Tails
+      ember: ember
+    };
+  }
   // a small "this copy is forged" line for tooltips
   function upgradeTipSuffix(id) {
     const parts = [];
@@ -2761,6 +2800,7 @@
     if (order.length) e.comboBonus += empowerCountAt(order[order.length - 1]);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
     e.strUp = strUpgradesOf(id);   // run-wide ramp excluded from Strength scaling
+    e.hits = effectiveHits(baseOf(glyph(id).cloneOf || id), glyph(id), { chainPos: sim.pos, handLeft: B.hand.length, aliveCount: Math.max(1, alive().length), blueCount: B.blueThisTurn || 0 });
     e.ramp = rampOf(id);
     e.linked = linked;
     return e;
@@ -2787,6 +2827,7 @@
     e.comboBonus = cb + empowerBonusForSlot(slotIndex);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
     e.strUp = strUpgradesOf(id);   // run-wide ramp excluded from Strength scaling
+    e.hits = effectiveHits(baseOf(glyph(id).cloneOf || id), glyph(id), { chainPos: sim.pos, handLeft: B.hand.length, aliveCount: Math.max(1, alive().length), blueCount: B.blueThisTurn || 0 });
     e.ramp = rampOf(id);
     return e;
   }
@@ -2949,7 +2990,7 @@
           // every foe alive right now is in this strike's pool
           pool.forEach(f => { f.pdmg += amt; });
           // Smoldering Tails: the hit (wherever it lands) also lays combo Burn
-          if (smolderActive && (T._comboNow || 0) > 0) fcBurn('random', T._comboNow);
+          if (smolderActive && (T._comboNow || 0) > 0) fcBurn('random', T._comboNow, { proc: true });
           fcTickEngines(amt, opts);
           return amt;
         }
@@ -2969,7 +3010,7 @@
       if (t.hp <= 0) { if (t.alive) { t.alive = false; fcOnKill(t); } }
       else if (t.ref.base && t.ref.base.thorns > 0 && amt > 0 && !opts.noThorns) fcSelf(t.ref.base.thorns);
       // Smoldering Tails: every genuine hit also lays Burn equal to the current combo
-      if (smolderActive && t.alive && (T._comboNow || 0) > 0) fcBurn(t, T._comboNow);
+      if (smolderActive && t.alive && (T._comboNow || 0) > 0) fcBurn(t, T._comboNow, { proc: true });
       return amt;
     }
     // a predicted kill Feasts the slain foe — deterministic where it produces
@@ -3023,10 +3064,11 @@
       return a;
     }
     function fcHeal(n) { if (n > 0) T.heal += n; }
-    function fcBurn(t, n) {
+    function fcBurn(t, n, opts) {
       if (n <= 0) return;
-      n = Math.ceil(n + curStr() * (T._curStrMul != null ? T._curStrMul : 1));   // Burn scales with Strength
-      if (hasPassive('conflagration')) n *= 2;   // Conflagration: Burn applications doubled
+      if (hasPassive('conflagration')) n *= 2;   // double first so Strength isn't doubled
+      // Strength only on glyph-applied Burn, not passive procs (Smoldering Tails / Cinderfall)
+      if (!(opts && opts.proc) && T._curStrMul != null) n = Math.ceil(n + curStr() * T._curStrMul);
       if (stepCursed && !stepBurnMirrored) { stepBurnMirrored = true; T.playerBurn += n; }
       if (t === 'random') {
         const pool = A();
@@ -3081,13 +3123,13 @@
     function fcResolve(id, ctx) {
       const g = glyph(id);
       const baseG = glyph(baseOf(g.cloneOf || id));
-      const cf = root.CG.DATA.comboFactorOf(baseG);   // multi-hit: combo number at reduced rate
       T._curStrMul = root.CG.DATA.strMulOf(baseG, strUpgradesOf(id));   // per-hit Strength multiplier
-      const gatherN = (B.monster.passive === 'gatheringTails') ? ctx.chainPos : 0;
-      const gt = gatherN + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) * cf + empowerOf(id);
-      const gtx = gt - gatherN;
+      // mirror live: flat bonuses spread across the glyph's hit count
+      const fcInfo = { chainPos: ctx.chainPos, handLeft: handLeft, aliveCount: Math.max(1, A().length), blueCount: ctx.blueCount || 0 };
+      const bonuses = glyphBonuses(id, g, ctx, fcInfo);
+      const gt = bonuses.gt, gtx = bonuses.gtx, E = bonuses.ember;
+      T._curHits = bonuses.hits;
       if (g.color === 'red' && root.CG.Game.state.blessings.emberward) fcShield(2);
-      const E = emberDmg(g);
       // colorless Soul-glyphs: mirror resolveNeutral's data-driven effects
       if (g.colorless && Array.isArray(g.fx)) {
         const fcPick = t => t === 'all' ? tAll() : t === 'random' ? ['random']
@@ -3215,7 +3257,7 @@
         case 'maweaten_scrap': fcVolley(['random'], 5 + gt + E); fcHeal(4 + Math.round(gtx)); break;
         /* -------- KITSUNE -------- */
         case 'flicker': fcVolley(['random'], 2 + gt + E); break;
-        case 'foxfire': fcBurn('random', 2 + gtx); break;
+        case 'foxfire': fcBurn('random', 1 + gtx); break;
         case 'onslaught': { for (let h = 0; h < ctx.chainPos; h++) fcVolley(['random'], 4 + gt + E); break; }
         case 'wildfire': {
           const burnAmt = 1 + gtx;
@@ -3239,7 +3281,7 @@
           break;
         }
         case 'spark': fcVolley(['random'], 4 + (ctx.chainPos === 0 ? 2 : 0) + gt + E); break;
-        case 'smolder': fcBurn(tFirst(), 2 + gtx); break;
+        case 'smolder': fcBurn(tFirst(), 1 + gtx); break;
         case 'wisp': fcVolley(tAll(), 2 + gt + E); break;
         case 'scorch': fcBurn(tHighest(), 3 + gtx); break;
         case 'veil': fcShield(4 + gtx); break;
@@ -3247,7 +3289,7 @@
         case 'lick_wounds': fcHeal(5 + gtx); break;
         case 'everflame': fcVolley(['random'], 4 + gt + E + T.everRamp); T.everRamp++; break;
         case 'conflagration': A().forEach(f => { if (f.burn > 0) fcHit(f, f.burn + gt, { strength: false }); }); break;
-        case 'foxfire_dance': A().forEach(f => fcBurn(f, 2 + gtx)); break;
+        case 'foxfire_dance': A().forEach(f => fcBurn(f, 1 + gtx)); break;
         case 'hoarders_flame': { for (let h = 0; h < ctx.handLeft; h++) fcVolley(['random'], 2 + gt + E); break; }
         case 'nine_tails': {
           const foes0 = A().length;
@@ -3255,7 +3297,7 @@
           fcStr(Math.min(9, foes0));   // ~1 Strength per unique foe (you'll hit each across 9 swings)
           break;
         }
-        case 'immolate': { const t = tFirst(); fcVolley([t], 5 + gt + E); if (t && t.alive) fcBurn(t, 5); break; }
+        case 'immolate': { const t = tFirst(); fcVolley([t], 5 + gt + E); if (t && t.alive) fcBurn(t, 3); break; }
         case 'will_o_wisp': fcVolley([tLowest()], 3 + gt + E); break;
         case 'ember_hoard': fcShield(2 * ctx.handLeft + gtx); break;
         case 'spirit_fire': A().forEach(f => fcBurn(f, ctx.totalRed + gtx)); break;
@@ -3313,7 +3355,7 @@
       pendingCat = [];
       stepCursed = (ev.covered || []).some(ci => slotCursed(ci));
       stepBurnMirrored = false;
-      if (newHeight && hasPassive('cinderfall')) fcBurn('random', comboLen);
+      if (newHeight && hasPassive('cinderfall')) fcBurn('random', comboLen, { proc: true });
       T._hits = 0;   // Berserk Frenzy counts only THIS glyph's hits
       fcResolve(ev.id, {
         chainPos, prevId, redAfter: redSuffix[k + 1], totalRed, counts,
@@ -3729,22 +3771,28 @@
     B.fireOrigins = (ctx.originEls && ctx.originEls.length) ? ctx.originEls.map(center) : [fromPos];
     const R = 'var(--' + g.color + ')';
     const baseG = glyph(baseOf(g.cloneOf || id));
-    // multi-hit / AoE glyphs add the combo NUMBER at a reduced rate so high combos
-    // don't blow up repeated strikes; single hitters take the full combo number
-    const cf = root.CG.DATA.comboFactorOf(baseG);
-    const gt = gather(ctx) + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) * cf + empowerOf(id);
+    // Flat bonuses (Gathering Tails, ember, empower, clone) are SPREAD across the
+    // glyph's hit count so multi-hit glyphs don't re-apply every flat bonus per hit.
+    // Combo keeps its per-hit rate (reduced for multi); Strength is added per hit later.
+    const info = { chainPos: ctx.chainPos, handLeft: B.hand.length, aliveCount: Math.max(1, alive().length), blueCount: B.blueThisTurn || 0 };
+    const bonuses = glyphBonuses(id, g, ctx, info);
+    const gt = bonuses.gt;
     const prevRES = RES;
     RES = { cursed: !!ctx.cursed, caster: ctx.curseCaster || null };
     // Strength is a per-hit bonus scaled by THIS glyph's multiplier (raised by its
     // upgrades); restore on exit so leftover-hand / passive hits keep full Strength.
-    const prevStrMul = B._curStrMul;
+    const prevStrMul = B._curStrMul, prevHits = B._curHits, prevEmber = B._curEmber;
     B._curStrMul = root.CG.DATA.strMulOf(baseG, strUpgradesOf(id));
+    B._curHits = bonuses.hits;
+    B._curEmber = bonuses.ember;
     try {
-      await resolveGlyphInner(id, g, ctx, fromPos, R, gt);
+      await resolveGlyphInner(id, g, ctx, fromPos, R, gt, bonuses.gtx);
     } finally {
       RES = prevRES;
       B.fireOrigins = prevOrigins;
       B._curStrMul = prevStrMul;
+      B._curHits = prevHits;
+      B._curEmber = prevEmber;
     }
   }
 
@@ -3757,10 +3805,10 @@
     });
   }
 
-  async function resolveGlyphInner(id, g, ctx, fromPos, R, gt) {
-    // Gathering Tails empowers DAMAGE only — gtx strips the passive so it does
-    // NOT swell Burn / shield / heal (combo + clone empower still apply).
-    const gtx = gt - gather(ctx);
+  async function resolveGlyphInner(id, g, ctx, fromPos, R, gt, gtx) {
+    // gt (damage) and gtx (Burn / shield / heal) both arrive with their flat parts
+    // already spread across the glyph's hit count. gtx excludes Gathering Tails,
+    // which empowers DAMAGE only.
     // Ember Ward blessing: shield on each red glyph
     if (g.color === 'red' && root.CG.Game.state.blessings.emberward) gainShield(2);
 
@@ -4047,7 +4095,7 @@
         break;
       case 'foxfire': {
         const t = targetRandom();
-        if (t[0]) { await boltP(fromPos, center(t[0].dom), R); addBurn(t[0], 2 + gtx); }
+        if (t[0]) { await boltP(fromPos, center(t[0].dom), R); addBurn(t[0], 1 + gtx); }
         await wait(160);
         break;
       }
@@ -4107,7 +4155,7 @@
         break;
       case 'smolder': {
         const t = targetFirst();
-        if (t[0]) { await boltP(fromPos, center(t[0].dom), R); addBurn(t[0], 2 + gtx); }
+        if (t[0]) { await boltP(fromPos, center(t[0].dom), R); addBurn(t[0], 1 + gtx); }
         await wait(150);
         break;
       }
@@ -4148,7 +4196,7 @@
         await wait(120);
         break;
       case 'foxfire_dance':
-        for (const en of alive()) { await boltAll(center(en.dom), R); addBurn(en, 2 + gtx); }
+        for (const en of alive()) { await boltAll(center(en.dom), R); addBurn(en, 1 + gtx); }
         await wait(120);
         break;
       case 'hoarders_flame': {
@@ -4187,7 +4235,7 @@
       case 'immolate': {
         const t = targetFirst();
         await hitTargets(t, 5 + gt + emberDmg(g), fromPos, R);
-        if (t[0] && t[0].alive) addBurn(t[0], 5);
+        if (t[0] && t[0].alive) addBurn(t[0], 3);
         break;
       }
       case 'will_o_wisp':
@@ -4291,12 +4339,13 @@
   }
 
   // apply Burn to one enemy with the standard themed float + flash
-  function addBurn(en, n) {
+  function addBurn(en, n, opts) {
+    opts = opts || {};
     if (!en || !en.alive || n <= 0) return;
-    // Burn scales with Strength, like damage — folded in at application via the
-    // active glyph's per-hit multiplier (unset outside a glyph → full Strength).
-    n = Math.ceil(n + effStrength() * (B._curStrMul != null ? B._curStrMul : 1));
-    if (hasPassive('conflagration')) n *= 2;   // Conflagration: every Burn you lay is doubled
+    if (hasPassive('conflagration')) n *= 2;   // double the application FIRST so Strength isn't doubled
+    // Burn scales with Strength only when a glyph applies it directly — NOT passive
+    // procs (Smoldering Tails / Cinderfall) or charges, and only inside a resolution.
+    if (!opts.proc && B._curStrMul != null) n = Math.ceil(n + effStrength() * B._curStrMul);
     en.burn = (en.burn || 0) + n;
     floatText(offset(center(en.dom), 0, -60), 'Burn ' + en.burn, 'status');
     burnApplyFx(en.dom);
@@ -4449,7 +4498,7 @@
     // Smoldering Tails: every genuine hit lays Burn equal to the current combo
     // (per hit — a multi-hit glyph at combo 3 lays 3 Burn each strike).
     if (en.alive && !opts.noFloat && (B.comboNow || 0) > 0 && hasPassive('smolderingTails')) {
-      addBurn(en, B.comboNow);
+      addBurn(en, B.comboNow, { proc: true });
     }
     // ---- Goblin engines: every genuine tick of YOUR damage feeds the bruiser ----
     // (the Charge Attack's own hits pass opts.charge, and thorns recoil passes
@@ -6210,7 +6259,8 @@
   function scaleBankEntry(entry) {
     const depth = B.depthScale || 0;
     const dz = B.descension;
-    let mul = 1 + depth * 0.04;
+    // mirror scaleEnemyDef's damage curve for the Starveling (a floorBoss → boss dmg tier)
+    let mul = progDmgMul(depth) * 1.5;
     if (dz) mul *= (dz.enemyDmgMul || 1) * (dz.eliteBossDmgMul || 1);
     if (mul === 1) return entry;
     const sub = a => (a && a.type === 'attack')
@@ -6365,22 +6415,37 @@
     if (B.playerScaredTurns > 0) { B.playerScaredTurns--; if (B.playerScaredTurns <= 0) B.playerScared = 0; }
   }
 
-  // Enemies grow a little tougher the deeper you climb — modest, incremental
-  // bumps to HP and to their attack / guard numbers. Bosses keep their tuned
-  // stats; everyone else (summons included) scales with node depth.
+  // ----- Progression scaling by floor + rows climbed (depth = (floor-1)*15 + row) -----
+  // HP follows a quadratic curve tuned so a reference normal enemy lands ~97 HP at the
+  // start of floor 2 (depth 15) and ~250 by mid floor 3 (depth 37). Elites are +50%
+  // tougher than that curve, bosses +100%. Damage rides the same curve but far gentler
+  // so hits stay damage-sized, not health-sized.
+  const SCALE_REF_HP = 40;        // a "typical" normal enemy's base HP (calibration anchor)
+  const DMG_PROPORTION = 0.45;    // how much of the HP growth carries into damage
+  function progHpMul(depth) { return 1 + 0.063 * depth + 0.00213 * depth * depth; }
+  function progDmgMul(depth) { return 1 + (progHpMul(depth) - 1) * DMG_PROPORTION; }
+  function tierHpMul(def) { return (def.boss || def.floorBoss) ? 2.0 : (def.elite ? 1.5 : 1.0); }
+  function tierDmgMul(def) { return (def.boss || def.floorBoss) ? 1.5 : (def.elite ? 1.25 : 1.0); }
+
   function scaleEnemyDef(def, depth) {
-    if (!depth || def.boss) return def;
-    const hpMul = 1 + depth * 0.05;
-    const atkBonus = Math.round(depth * 0.34);
-    const defBonus = Math.round(depth * 0.3);
+    if (!depth) return def;
+    const hpMul = progHpMul(depth);
+    const dmgMul = progDmgMul(depth) * tierDmgMul(def);
+    // Normals & summons scale off their OWN base (preserving the weak↔tanky spread);
+    // elites/bosses become a clean multiple of the normal reference curve instead, so
+    // their hand-tuned base HP doesn't compound the curve into the thousands.
+    const tier = tierHpMul(def);
+    const maxHp = (tier > 1 && !def.token)
+      ? Math.round(SCALE_REF_HP * hpMul * tier)
+      : Math.round(def.maxHp * hpMul);
     const scaleSub = it => {
       const o = Object.assign({}, it);
-      if (o.type === 'attack') o.value = it.value + atkBonus;
-      else if (o.type === 'defend') o.value = it.value + defBonus;
+      if (o.type === 'attack') o.value = Math.max(1, Math.round(it.value * dmgMul));
+      else if (o.type === 'defend') o.value = Math.max(1, Math.round(it.value * dmgMul));
       return o;
     };
     const intents = def.intents.map(entry => Array.isArray(entry) ? entry.map(scaleSub) : scaleSub(entry));
-    return Object.assign({}, def, { maxHp: Math.round(def.maxHp * hpMul), intents });
+    return Object.assign({}, def, { maxHp: maxHp, intents });
   }
 
   // Descension difficulty: applies the run's stacked modifiers on TOP of depth

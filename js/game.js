@@ -1084,8 +1084,9 @@
         enemies: enemies,
         isBoss: node.type === 'boss',
         shadow: isShadow,
-        // acts stack on top of node depth so floor 2/3 enemies hit and soak harder
-        depth: ((State.act || 1) - 1) * 10 + (node.floor || 0),
+        // progression scalar = (floor-1)*15 + rows climbed this floor. Each act adds a
+        // full floor's worth so floors don't overlap; rows count from the floor's start.
+        depth: ((State.act || 1) - 1) * 15 + (node.floor || 0),
         descension: descensionEffects(),   // null-safe: identity effects outside Descension
         onWin: () => onBattleWin(node),
         onLose: () => gameOver(false)

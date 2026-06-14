@@ -328,7 +328,7 @@
       id: 'foxfire', name: 'Foxfire', color: 'red', rune: '🜍',
       character: 'kitsune', letter: 'B', rarity: 'common',
       onUnplayed: { kind: 'block', value: 2 },
-      dyn: [{ kind: 'burn', base: 2 }],
+      dyn: [{ kind: 'burn', base: 1 }],
       desc: 'Apply Burn {0} to a random enemy.<br><i>If left in hand at end of turn, gain 2 block.</i>'
     },
     onslaught: {
@@ -352,7 +352,7 @@
     smolder: {
       id: 'smolder', name: 'Smolder', color: 'red', rune: '🜍',
       character: 'kitsune', letter: 'C', rarity: 'common',
-      dyn: [{ kind: 'burn', base: 2 }],
+      dyn: [{ kind: 'burn', base: 1 }],
       desc: 'Apply Burn {0} to the first enemy.'
     },
 
@@ -411,7 +411,7 @@
     foxfire_dance: {
       id: 'foxfire_dance', name: 'Foxfire Dance', color: 'red', rune: '🜍',
       character: 'kitsune', letter: 'B', rarity: 'uncommon',
-      dyn: [{ kind: 'burn', base: 2 }],
+      dyn: [{ kind: 'burn', base: 1 }],
       desc: 'Apply Burn {0} to <b>all</b> enemies.'
     },
     hoarders_flame: {
@@ -432,7 +432,7 @@
       id: 'immolate', name: 'Immolate', color: 'red', rune: '🜍',
       character: 'kitsune', letter: 'C', rarity: 'rare',
       dyn: [{ kind: 'dmg', base: 5 }],
-      desc: 'Deal {0} damage to the first enemy and apply <b>Burn 5</b>.'
+      desc: 'Deal {0} damage to the first enemy and apply <b>Burn 3</b>.'
     },
 
     /* -- unlockables (hidden until earned; not in the reward pool yet) -- */
@@ -606,8 +606,8 @@
     soul_inferno: {
       id: 'soul_inferno', name: 'Soul Inferno', color: 'white', rune: '♨',
       colorless: true, letter: 'C', rarity: 'rare', unlock: 'soulglyph_inferno',
-      fx: [{ op: 'burn', v: 5, t: 'all' }],
-      desc: 'Apply <b>5</b> Burn to ALL enemies.'
+      fx: [{ op: 'burn', v: 3, t: 'all' }],
+      desc: 'Apply <b>3</b> Burn to ALL enemies.'
     },
     soul_ascend: {
       id: 'soul_ascend', name: 'Soul Ascend', color: 'white', rune: '❇',
@@ -1264,32 +1264,32 @@
     const resilience = env.resilience || 0, frail = !!env.frail;
     const ember = (g.color === 'red') ? (Number(env.ember) || 0) : 0;
     const str = env.strength || 0;
-    // multi-hit / AoE glyphs add the combo NUMBER at a reduced rate (per hit), and
-    // lean on Strength less per strike than a single big hitter does
-    const cf = comboFactorOf(g);
+    // Flat bonuses (Gathering Tails, ember, empower/clone) are spread across the
+    // glyph's hit count; combo keeps its per-hit rate (reduced for multi-hit).
+    const hits = Math.max(1, env.hits || 1);
+    const cf = hits > 1 ? 0.33 : 1;
     const sMul = strMulOf(g, env.strUp || 0);
-    // combo + clone empower every effect kind; on DAMAGE the combo number is scaled
-    // by the multi-hit factor. Gathering Tails (gather) only feeds DAMAGE.
-    const gtAll = combo + clone;
-    const gtDmg = combo * cf + clone;
+    const comboPart = combo * cf;
+    const flatDmg = (clone + gather + ember) / hits;   // damage: includes Gathering Tails + ember
+    const flatAux = clone / hits;                      // burn / shield / heal: clone/empower only
     let out = g.desc;
     g.dyn.forEach((tok, i) => {
       const base = (typeof tok.base === 'function') ? tok.base(env) : tok.base;
       let v;
       if (tok.kind === 'dmg') {
-        v = base + gtDmg + gather + ember;
+        v = base + comboPart + flatDmg;
         if (weak) v = Math.max(1, Math.round(v * 0.6));
         v += str * sMul;            // Strength scales the per-hit base by the glyph's multiplier
         v = Math.ceil(v);           // damage rounds up
       } else if (tok.kind === 'burn') {     // Burn ignores Emberstorm/Pyreheart, but DOES scale with Strength
-        v = base + gtAll;
+        v = base + comboPart + flatAux;
         v += str * sMul;            // Strength scales Burn by the glyph's per-hit multiplier
         v = Math.ceil(v);
       } else if (tok.kind === 'shield') {   // Resilience boosts shield, Frail halves it
-        v = base + gtAll + resilience;
+        v = base + comboPart + flatAux + resilience;
         if (frail) v = Math.floor(v * 0.5);
       } else {                       // heal — no strength, no weak
-        v = base + gtAll;
+        v = base + comboPart + flatAux;
       }
       v = Math.max(0, Math.round(v));
       const cls = v > base ? ' class="dyn-up"' : (v < base ? ' class="dyn-down"' : '');
