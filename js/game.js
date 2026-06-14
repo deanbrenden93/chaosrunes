@@ -38,6 +38,9 @@
     return inst + run;
   }
   function comboUpOf(id) { return !!(State && State.comboUp && State.comboUp[id]); }
+  // forge-applied Power on a specific instance (the run-wide Everflame ramp is excluded).
+  // Power forging is capped at 1 per glyph.
+  function forgePowerOf(id) { return (State && State.empower && State.empower[id]) || 0; }
 
   // Mobile-only: kick into fullscreen when the run begins. Must be called from a
   // user gesture (the Begin click). We aren't designing for mobile, but this at
@@ -2255,10 +2258,14 @@
   let upgradeType = 'power';     // which temper the toggle is showing
 
   function applyUpgrade(index, type) {
+    const curId = State.pool[index];
+    // both upgrade tracks cap at 1: Combo Up is one-time, Power forging maxes at +1
+    if (type === 'combo' && comboUpOf(curId)) return;
+    if (type === 'power' && forgePowerOf(curId) >= 1) return;
     const inst = ensureInstance(index);   // peel ONE copy out as its own instance
     if (!inst) return;
     if (type === 'combo') State.comboUp[inst] = true;
-    else State.empower[inst] = (State.empower[inst] || 0) + 1;   // power, stacks
+    else State.empower[inst] = (State.empower[inst] || 0) + 1;   // power, capped at 1
     updateRunUI();
   }
 
@@ -2379,18 +2386,21 @@
     const g = gdef(id);
     const curEmp = empowerOf(id);
     const hasCombo = comboUpOf(id);
-    const comboAvail = !!g.letter && !hasCombo;
-    if (upgradeType === 'combo' && !comboAvail) upgradeType = 'power';
+    const powerAvail = forgePowerOf(id) < 1;      // Power forging is capped at 1 per glyph
+    const comboAvail = !!g.letter && !hasCombo;   // Combo Up is a one-time upgrade
+    if (upgradeType === 'power' && !powerAvail) upgradeType = comboAvail ? 'combo' : 'power';
+    if (upgradeType === 'combo' && !comboAvail) upgradeType = powerAvail ? 'power' : 'combo';
+    const maxedOut = !powerAvail && !comboAvail;
 
     pane.innerHTML =
       '<div class="ud-name">' + g.name + '</div>' +
       '<div class="ud-toggle">' +
-        '<button class="ud-tab' + (upgradeType === 'power' ? ' active' : '') + '" data-t="power">⬆ Power Up</button>' +
+        '<button class="ud-tab' + (upgradeType === 'power' ? ' active' : '') + (powerAvail ? '' : ' disabled') + '" data-t="power">⬆ Power Up</button>' +
         '<button class="ud-tab' + (upgradeType === 'combo' ? ' active' : '') + (comboAvail ? '' : ' disabled') + '" data-t="combo">▲▲ Combo Up</button>' +
       '</div>' +
       '<div class="ud-hint"></div>' +
       '<div class="ud-cmp"></div>' +
-      '<button class="btn btn-primary ud-forge">⚒ Forge ' + g.name + '</button>';
+      '<button class="btn btn-primary ud-forge"' + (maxedOut ? ' disabled' : '') + '>' + (maxedOut ? 'Fully Forged' : '⚒ Forge ' + g.name) + '</button>';
 
     // toggle wiring
     pane.querySelectorAll('.ud-tab').forEach(tab => {
@@ -2408,8 +2418,11 @@
     const hint = pane.querySelector('.ud-hint');
     const before = forgePreviewCard(g, { empower: curEmp, combo: hasCombo, after: false, comboNote: hasCombo });
     let after;
-    if (upgradeType === 'power') {
-      hint.innerHTML = 'Adds <b>+1</b> to this card\'s effect. Stacks with future forges.';
+    if (maxedOut) {
+      hint.innerHTML = 'This glyph is <b>fully forged</b> — Power and Combo are both maxed.';
+      after = forgePreviewCard(g, { empower: curEmp, combo: hasCombo, after: true, comboNote: hasCombo });
+    } else if (upgradeType === 'power') {
+      hint.innerHTML = 'Adds <b>+1</b> to this card\'s effect.';
       after = forgePreviewCard(g, { empower: curEmp + 1, combo: hasCombo, after: true, comboNote: hasCombo });
     } else {
       hint.innerHTML = 'This card advances your combo <b>twice</b> instead of once.';
@@ -2422,6 +2435,7 @@
     forgeBtn.addEventListener('mouseenter', () => SFX.hover());
     forgeBtn.addEventListener('click', () => {
       if (pane.classList.contains('forging')) return;   // already mid-strike
+      if (maxedOut) return;                              // nothing left to forge
       const afterEl = pane.querySelector('.forge-pv.is-after');
       const idx = upgradeIndex, type = upgradeType;
       forgeConfirmAnim(afterEl, () => confirmUpgrade(idx, type));

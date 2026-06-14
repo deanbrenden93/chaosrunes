@@ -775,7 +775,7 @@
           ]
         }
       },
-      deck: ['smash', 'smash', 'brace', 'brace', 'quake', 'bulwark_slam', 'hammer', 'steady']
+      deck: ['smash', 'smash', 'smash', 'brace', 'brace', 'brace', 'quake', 'quake', 'hammer', 'hammer', 'steady', 'steady']
     },
     ghoul: {
       id: 'ghoul', name: 'Ghoul', role: 'Feaster', emoji: '🧟',
@@ -825,7 +825,7 @@
           ]
         }
       },
-      deck: ['leech', 'leech', 'rake', 'rake', 'gnaw', 'vigor', 'blood_harden', 'mend_flesh']
+      deck: ['leech', 'leech', 'leech', 'rake', 'rake', 'rake', 'gnaw', 'gnaw', 'blood_harden', 'blood_harden', 'mend_flesh', 'mend_flesh']
     },
     kitsune: {
       id: 'kitsune', name: 'Kitsune', role: 'Glass Cannon', emoji: '🦊',
@@ -876,7 +876,7 @@
           ]
         }
       },
-      deck: ['flicker', 'flicker', 'foxfire', 'foxfire', 'onslaught', 'spark', 'smolder', 'mirror']
+      deck: ['flicker', 'flicker', 'flicker', 'foxfire', 'foxfire', 'foxfire', 'onslaught', 'onslaught', 'spark', 'spark', 'smolder', 'smolder']
     }
   };
 
@@ -1281,8 +1281,10 @@
         if (weak) v = Math.max(1, Math.round(v * 0.6));
         v += str * sMul;            // Strength scales the per-hit base by the glyph's multiplier
         v = Math.ceil(v);           // damage rounds up
-      } else if (tok.kind === 'burn') {     // Burn is not "damage" — Emberstorm/Pyreheart don't touch it
+      } else if (tok.kind === 'burn') {     // Burn ignores Emberstorm/Pyreheart, but DOES scale with Strength
         v = base + gtAll;
+        v += str * sMul;            // Strength scales Burn by the glyph's per-hit multiplier
+        v = Math.ceil(v);
       } else if (tok.kind === 'shield') {   // Resilience boosts shield, Frail halves it
         v = base + gtAll + resilience;
         if (frail) v = Math.floor(v * 0.5);

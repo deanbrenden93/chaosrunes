@@ -2603,7 +2603,17 @@
     const g = glyph(id);
     if (!g || !g.dyn || !g.dyn.some(t => t.kind === 'dmg')) return null;
     const baseG = glyph(baseOf(g.cloneOf || id));
-    return root.CG.DATA.strMulOf(baseG, empowerOf(id));
+    return root.CG.DATA.strMulOf(baseG, strUpgradesOf(id));
+  }
+  // upgrade count that feeds Strength scaling (the per-hit multiplier). Forge Power +
+  // this-battle Upgrade sockets count, but the run-wide ramp (Everflame's empower
+  // mechanic) is deliberately excluded so that ramp grows base damage, not Strength.
+  function strUpgradesOf(id) {
+    const st = root.CG.Game.state;
+    const key = glyph(id).cloneOf || id;
+    const inst = (st.empower && st.empower[key]) || 0;
+    const combat = (B && B.combatEmpower && B.combatEmpower[baseOf(key)]) || 0;
+    return inst + combat;
   }
   // permanent +N to a glyph's main effect, earned from events / the shop
   function empowerOf(id) {
@@ -2750,7 +2760,7 @@
     const order = placedOrder();
     if (order.length) e.comboBonus += empowerCountAt(order[order.length - 1]);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
-    e.strUp = empowerOf(id);
+    e.strUp = strUpgradesOf(id);   // run-wide ramp excluded from Strength scaling
     e.ramp = rampOf(id);
     e.linked = linked;
     return e;
@@ -2776,7 +2786,7 @@
     }
     e.comboBonus = cb + empowerBonusForSlot(slotIndex);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
-    e.strUp = empowerOf(id);
+    e.strUp = strUpgradesOf(id);   // run-wide ramp excluded from Strength scaling
     e.ramp = rampOf(id);
     return e;
   }
@@ -3015,6 +3025,7 @@
     function fcHeal(n) { if (n > 0) T.heal += n; }
     function fcBurn(t, n) {
       if (n <= 0) return;
+      n = Math.ceil(n + curStr() * (T._curStrMul != null ? T._curStrMul : 1));   // Burn scales with Strength
       if (hasPassive('conflagration')) n *= 2;   // Conflagration: Burn applications doubled
       if (stepCursed && !stepBurnMirrored) { stepBurnMirrored = true; T.playerBurn += n; }
       if (t === 'random') {
@@ -3071,7 +3082,7 @@
       const g = glyph(id);
       const baseG = glyph(baseOf(g.cloneOf || id));
       const cf = root.CG.DATA.comboFactorOf(baseG);   // multi-hit: combo number at reduced rate
-      T._curStrMul = root.CG.DATA.strMulOf(baseG, empowerOf(id));   // per-hit Strength multiplier
+      T._curStrMul = root.CG.DATA.strMulOf(baseG, strUpgradesOf(id));   // per-hit Strength multiplier
       const gatherN = (B.monster.passive === 'gatheringTails') ? ctx.chainPos : 0;
       const gt = gatherN + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) * cf + empowerOf(id);
       const gtx = gt - gatherN;
@@ -3727,7 +3738,7 @@
     // Strength is a per-hit bonus scaled by THIS glyph's multiplier (raised by its
     // upgrades); restore on exit so leftover-hand / passive hits keep full Strength.
     const prevStrMul = B._curStrMul;
-    B._curStrMul = root.CG.DATA.strMulOf(baseG, empowerOf(id));
+    B._curStrMul = root.CG.DATA.strMulOf(baseG, strUpgradesOf(id));
     try {
       await resolveGlyphInner(id, g, ctx, fromPos, R, gt);
     } finally {
@@ -4282,6 +4293,9 @@
   // apply Burn to one enemy with the standard themed float + flash
   function addBurn(en, n) {
     if (!en || !en.alive || n <= 0) return;
+    // Burn scales with Strength, like damage — folded in at application via the
+    // active glyph's per-hit multiplier (unset outside a glyph → full Strength).
+    n = Math.ceil(n + effStrength() * (B._curStrMul != null ? B._curStrMul : 1));
     if (hasPassive('conflagration')) n *= 2;   // Conflagration: every Burn you lay is doubled
     en.burn = (en.burn || 0) + n;
     floatText(offset(center(en.dom), 0, -60), 'Burn ' + en.burn, 'status');
