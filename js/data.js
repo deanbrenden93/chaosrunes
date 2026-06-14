@@ -1147,7 +1147,7 @@
       desc: 'A drowned titan of grave-silt. It walls itself in, seals your sockets, and falls on you like a collapsing tomb.'
     },
     cinderQueen: {
-      id: 'cinderQueen', name: 'The Cinder Queen', emoji: '👑', img: 'assets/Cinderling.png', maxHp: 240, boss: true, enrage: 2, ranged: true,
+      id: 'cinderQueen', name: 'The Cinder Queen', emoji: '👑', img: 'assets/Cinderling.png', maxHp: 240, boss: true, enrage: 1, ranged: true,
       // pure escalation: her court rallies, her fury ramps fast, and her
       // flurries multiply — race her or burn
       intents: [
@@ -1175,7 +1175,7 @@
 
     /* ---- Floor 3: the final boss of the Spire ---- */
     chaosIncarnate: {
-      id: 'chaosIncarnate', name: 'Chaos Incarnate', emoji: '🌌', img: 'assets/Chaos Idol.png', maxHp: 420, boss: true, enrage: 2, ranged: true,
+      id: 'chaosIncarnate', name: 'Chaos Incarnate', emoji: '🌌', img: 'assets/Chaos Idol.png', maxHp: 420, boss: true, enrage: 1, ranged: true,
       // the end of the climb: every trick in the Spire, stitched into one
       // escalating storm
       intents: [

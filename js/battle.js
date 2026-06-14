@@ -6218,7 +6218,7 @@
       onSpawn(en) { en.mind.phase = 1; en.mind.step = 0; },
       onTurnStart(en) {
         starvelingSync(en);
-        const gain = en.mind.phase === 3 ? 2 : (en.mind.phase === 2 ? 1 : 0);   // Hunger
+        const gain = en.mind.phase >= 2 ? 1 : 0;   // Hunger (softened: +1/turn in phases 2-3, not +2)
         if (gain > 0) {
           en.strength = (en.strength || 0) + gain; en.strengthTurns = 9999;
           floatText(offset(center(en.dom), 0, -52), 'Hunger +' + gain, 'status');
@@ -6259,8 +6259,8 @@
   function scaleBankEntry(entry) {
     const depth = B.depthScale || 0;
     const dz = B.descension;
-    // mirror scaleEnemyDef's damage curve for the Starveling (a floorBoss → boss dmg tier)
-    let mul = progDmgMul(depth) * 1.5;
+    // mirror scaleEnemyDef's damage curve for the Starveling (a floorBoss → boss dmg tier 1.0)
+    let mul = progDmgMul(depth);
     if (dz) mul *= (dz.enemyDmgMul || 1) * (dz.eliteBossDmgMul || 1);
     if (mul === 1) return entry;
     const sub = a => (a && a.type === 'attack')
@@ -6416,16 +6416,18 @@
   }
 
   // ----- Progression scaling by floor + rows climbed (depth = (floor-1)*15 + row) -----
-  // HP follows a quadratic curve tuned so a reference normal enemy lands ~97 HP at the
-  // start of floor 2 (depth 15) and ~250 by mid floor 3 (depth 37). Elites are +50%
-  // tougher than that curve, bosses +100%. Damage rides the same curve but far gentler
-  // so hits stay damage-sized, not health-sized.
+  // Tuned with the Monte-Carlo balance model (tools/balance/sim.js) toward the win-rate
+  // targets: HP stays tanky (reference normal ~93 HP at floor-2 start, ~225 by mid floor 3)
+  // but the high end is trimmed so deep boss ROOMS don't become unbeatable DPS walls.
+  // Damage scales LINEARLY (much gentler than HP) so big hits stay survivable/blockable
+  // rather than one-shotting — "in proportion, not at health-levels". Elite/boss tier
+  // multipliers are deliberately modest because their attacks already ride the curve and
+  // they snowball via enrage/Hunger.
   const SCALE_REF_HP = 40;        // a "typical" normal enemy's base HP (calibration anchor)
-  const DMG_PROPORTION = 0.45;    // how much of the HP growth carries into damage
-  function progHpMul(depth) { return 1 + 0.063 * depth + 0.00213 * depth * depth; }
-  function progDmgMul(depth) { return 1 + (progHpMul(depth) - 1) * DMG_PROPORTION; }
-  function tierHpMul(def) { return (def.boss || def.floorBoss) ? 2.0 : (def.elite ? 1.5 : 1.0); }
-  function tierDmgMul(def) { return (def.boss || def.floorBoss) ? 1.5 : (def.elite ? 1.25 : 1.0); }
+  function progHpMul(depth) { return 1 + 0.063 * depth + 0.0017 * depth * depth; }
+  function progDmgMul(depth) { return 1 + 0.024 * depth; }
+  function tierHpMul(def) { return (def.boss || def.floorBoss) ? 1.4 : (def.elite ? 1.35 : 1.0); }
+  function tierDmgMul(def) { return (def.boss || def.floorBoss) ? 1.0 : (def.elite ? 1.05 : 1.0); }
 
   function scaleEnemyDef(def, depth) {
     if (!depth) return def;

@@ -105,9 +105,9 @@
     hollowChoir: ['hexweaver'],
     mawMother: ['cinderling'],
     gravetideColossus: ['gravewarden'],
-    cinderQueen: ['cinderling', 'cinderling'],
+    cinderQueen: ['cinderling'],
     hollowShepherd: ['gravewarden'],
-    chaosIncarnate: ['maledict', 'hexweaver'],
+    chaosIncarnate: ['maledict'],
     starveling: [],   // the floor-1 boss fights alone — its three phases ARE the fight
     theUnmaking: []   // the Ultimate Form fights alone — only the Doom Clock matters
   };
@@ -3217,7 +3217,7 @@
     if (!def) return;
     root.CG.Battle.start({
       enemies: [def],
-      depth: ((State.act || 1) - 1) * 10 + (State.pos.floor || 0),
+      depth: ((State.act || 1) - 1) * 15 + (State.pos.floor || 0),
       onWin: () => onEventBattleWin(spec || {}),
       onLose: () => gameOver(false)
     });
@@ -6159,7 +6159,7 @@
       show('screen-map');
     };
     const node = State.pos || {};
-    const depth = ((State.act || 1) - 1) * 10 + (node.floor || 0);
+    const depth = ((State.act || 1) - 1) * 15 + (node.floor || 0);
     root.CG.Battle.start({
       enemies: enemies,
       isBoss: isBoss,
