@@ -2143,6 +2143,7 @@ html, body {
 .pv-float-tip b { color: var(--text); }
 .pv-float-tip .dyn-up { color: #8ef58a; text-shadow: 0 0 8px rgba(120,240,120,0.6); }
 .pv-float-tip .gt-up { color: #ffce7a; }
+.pv-float-tip .gt-str { color: #ff9d6b; }
 
 /* Lost Woods bestiary inspector — the combat-tip feature set, but DOCKED as a
    persistent panel to the right of the monster card. Hovering a chip studies it
@@ -3357,6 +3358,14 @@ html, body {
 .g-up-power { top: 6px; color: #1a120a; background: linear-gradient(180deg,#ffe39a,#f5c969); border: 1px solid #8a6a1e; box-shadow: 0 0 10px rgba(245,201,105,0.75); }
 .g-up-combo { top: 30px; color: #0d1a12; background: linear-gradient(180deg,#9be7b0,#4fd07a); border: 1px solid #1e6a3a; box-shadow: 0 0 10px rgba(79,208,122,0.75); }
 .g-tip .gt-up { display: inline-block; margin-top: 2px; color: #ffd36b; font-size: 13.5px; letter-spacing: .04em; }
+.g-tip .gt-str, .combat-tip .gt-str {
+  display: inline-block; margin-top: 2px; margin-left: 6px; color: #ff9d6b;
+  font-weight: 700; letter-spacing: .03em;
+  padding: 1px 7px; border-radius: 999px;
+  background: rgba(255,120,70,0.12); border: 1px solid rgba(255,140,90,0.35);
+}
+.g-tip .gt-str { font-size: 12.5px; }
+.combat-tip .gt-str { font-size: 16px; margin-left: 8px; padding: 2px 10px; }
 /* a forged stack glows faintly in the collection */
 .deck-glyph.forged { box-shadow: 0 0 0 1px rgba(245,201,105,0.4), 0 0 16px rgba(245,201,105,0.25); }
 
@@ -3966,7 +3975,9 @@ html, body {
 }
 .cs-body {
   height: 100%; min-height: 0;
-  display: grid; grid-template-columns: 560px 1fr; gap: 34px;
+  /* minmax(0,1fr): without the 0 minimum a packed glyph pool inflates the track's
+     min-content and shoves the inspect panel off the right edge */
+  display: grid; grid-template-columns: 560px minmax(0, 1fr); gap: 34px;
   animation: collection-rise .4s cubic-bezier(.2,.85,.3,1) both;
 }
 @keyframes collection-rise { from { opacity: 0; transform: translateY(20px); } }
@@ -4260,7 +4271,7 @@ html, body {
 }
 
 /* ---- RIGHT: glyph pool ---- */
-.cs-glyphs { display: flex; flex-direction: column; min-height: 0; position: relative; gap: 20px; }
+.cs-glyphs { display: flex; flex-direction: column; min-height: 0; min-width: 0; position: relative; gap: 20px; }
 /* each right-column section sits in the same "window" frame as the hero panel */
 .cs-panel {
   display: flex; flex-direction: column; min-height: 0;
@@ -4317,8 +4328,8 @@ html, body {
 .cs-panel .collection-sockets { margin-bottom: 0; }
 /* pool grid (scrolls vertically) on the left two-thirds, the always-on detail
    panel pinned to the right third */
-.cs-pool-row { display: flex; gap: 22px; flex: 1 1 auto; min-height: 0; }
-.cs-pool-row .cs-glyphs-scroll { flex: 1 1 auto; }
+.cs-pool-row { display: flex; gap: 22px; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.cs-pool-row .cs-glyphs-scroll { flex: 1 1 auto; min-width: 0; }
 .cs-glyphs-scroll { min-height: 0; overflow-y: auto; padding: 6px 8px 8px 2px; }
 .cs-glyphs-scroll::-webkit-scrollbar { width: 11px; }
 .cs-glyphs-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.32); border-radius: 999px; margin: 4px 0; }
@@ -6163,6 +6174,9 @@ html, body {
 .st-beast-name { font-family: 'Cinzel'; font-size: 19px; font-weight: 700; letter-spacing: .02em; }
 /* Wide evolution tree: a glowing branching limb spanning ~80% of the stage,
    with bare portrait nodes (no card containers) hung along it. */
+/* the roster + evolution tree are sized to fit the stage exactly, so the star
+   charts screen never needs to scroll (the roster keeps its own sideways scroll) */
+#screen-stonetable .lw-body { overflow: hidden; }
 .st-tree { display: flex; justify-content: center; padding: 10px 0 20px; }
 .st-stage { position: relative; width: 1700px; height: 820px; max-width: 100%; }
 .st-branches-svg {
@@ -6226,6 +6240,143 @@ html, body {
 .st-node-locked .st-node-name { color: #b6aed0; letter-spacing: .18em; }
 .st-node-locked .st-node-tag { color: color-mix(in srgb, var(--acc) 55%, #b6aed0); opacity: .8; }
 
+/* ============================================================
+   GLYPH CODEX — per-hero grimoire reached from the Star Charts
+   ============================================================ */
+.st-codex-btn {
+  min-width: 188px; height: 52px; box-sizing: border-box;
+  display: inline-flex; align-items: center; gap: 9px;
+  justify-content: center; padding: 0 22px;
+  /* clear the top-right corner options gear (right:44px, ~50px wide) */
+  margin-right: 64px;
+  font-family: 'Cinzel'; font-size: 18px; font-weight: 700; letter-spacing: .03em;
+  color: #f3ead4; cursor: pointer;
+  background: linear-gradient(180deg, rgba(58,46,94,0.88), rgba(26,19,46,0.88));
+  border: 1px solid rgba(200,170,255,0.4); border-radius: 13px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+  transition: transform .16s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.st-codex-btn:hover {
+  transform: translateY(-2px); border-color: rgba(230,200,255,0.78);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.5), 0 0 26px rgba(180,140,255,0.45);
+}
+.st-codex-btn:active { transform: translateY(0); }
+.st-codex-ico { font-size: 20px; filter: drop-shadow(0 0 8px rgba(200,160,255,0.85)); animation: gc-twinkle 2.6s ease-in-out infinite; }
+@keyframes gc-twinkle { 0%,100% { opacity: .75; } 50% { opacity: 1; } }
+
+/* hero banner */
+.gc-hero {
+  display: flex; align-items: center; gap: 26px; margin: 2px auto 26px;
+  max-width: 1100px; padding: 18px 30px; border-radius: 18px;
+  background: linear-gradient(180deg, rgba(28,22,44,0.7), rgba(14,10,24,0.55));
+  border: 1px solid color-mix(in srgb, var(--acc, var(--gold)) 36%, rgba(255,255,255,0.08));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 12px 30px rgba(0,0,0,0.4);
+  animation: gc-rise .45s cubic-bezier(.2,.8,.3,1) backwards;
+}
+.gc-hero-port { position: relative; width: 110px; height: 110px; flex: none; display: flex; align-items: center; justify-content: center; }
+.gc-hero-img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.6)); }
+.gc-hero-emoji { font-size: 76px; }
+.gc-hero-glow {
+  position: absolute; inset: -16%; border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, color-mix(in srgb, var(--acc, var(--gold)) 55%, transparent), transparent 70%);
+  filter: blur(8px); animation: gc-pulse 3.4s ease-in-out infinite;
+}
+@keyframes gc-pulse { 0%,100% { opacity: .5; transform: scale(.95); } 50% { opacity: .9; transform: scale(1.05); } }
+.gc-hero-name { font-family: 'Cinzel'; font-size: 34px; font-weight: 800; color: #f1e8d2; text-shadow: 0 0 18px color-mix(in srgb, var(--acc,var(--gold)) 50%, transparent); }
+.gc-hero-sub { font-size: 17px; color: var(--text-dim); font-style: italic; margin-top: 4px; }
+
+/* constellation section dividers */
+.gc-section { max-width: 1160px; margin: 0 auto 30px; }
+.gc-sec-head { display: flex; align-items: center; gap: 16px; margin: 0 6px 16px; }
+.gc-sec-line { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc,var(--gold)) 60%, transparent), transparent); }
+.gc-sec-title { margin: 0; font-family: 'Cinzel'; font-size: 24px; font-weight: 700; color: #e8ddc8; white-space: nowrap; text-shadow: 0 0 16px color-mix(in srgb, var(--acc,var(--gold)) 40%, transparent); }
+.gc-sec-count { font-family: 'Cinzel'; font-size: 15px; letter-spacing: .06em; color: color-mix(in srgb, var(--acc,var(--gold)) 80%, #fff); }
+
+/* glyph grid + cards */
+.gc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
+.gc-card {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 5px; padding: 16px 10px 12px; cursor: pointer; color: #ece6f5; font: inherit;
+  background: linear-gradient(180deg, rgba(26,21,38,0.94), rgba(13,10,20,0.97));
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+  transition: transform .15s, border-color .2s, box-shadow .2s;
+  animation: gc-rise .42s cubic-bezier(.2,.8,.3,1) backwards;
+  animation-delay: calc(var(--d,0) * 26ms);
+}
+.gc-card:hover {
+  transform: translateY(-5px); border-color: var(--g-color);
+  box-shadow: 0 16px 36px rgba(0,0,0,0.55), 0 0 26px color-mix(in srgb, var(--g-color) 55%, transparent);
+}
+@keyframes gc-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.gc-card .gc-art { width: 96px; height: 96px; margin: 4px 0 2px; display: flex; align-items: center; justify-content: center; position: relative; color: var(--g-color); }
+.gc-card .gc-art .g-hex { width: 84px; height: 84px; }
+.gc-card .gc-art .g-hex .g-rune { font-size: 46px; }
+.gc-card .gc-art .g-img, .gc-card .gc-art .g-stack { width: 100%; height: 100%; }
+.gc-card .letter-chip { top: 9px; left: 9px; width: 28px; height: 28px; }
+.gc-name { font-family: 'Cinzel'; font-size: 16px; font-weight: 700; text-align: center; line-height: 1.12; }
+.gc-kind { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-dim); }
+.gc-lock { position: absolute; top: 9px; right: 10px; font-size: 15px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.75)); }
+/* locked glyphs read as a true silhouette: the art is blacked out to its shape
+   and haloed in its element colour, so you see "something forbidden" not what. */
+.gc-locked .gc-art {
+  filter: brightness(0) saturate(0)
+          drop-shadow(0 0 7px color-mix(in srgb, var(--g-color) 70%, transparent))
+          drop-shadow(0 0 16px color-mix(in srgb, var(--g-color) 40%, transparent));
+}
+.gc-locked .gc-name { color: #8b8499; }
+.gc-locked:hover { border-color: rgba(180,150,255,0.55); box-shadow: 0 14px 30px rgba(0,0,0,0.5), 0 0 22px rgba(150,120,210,0.3); }
+
+/* detail modal card — supplies its own framed container, since the kind-stone
+   modal panel it lives in is intentionally transparent */
+.gc-detail {
+  width: 360px; max-width: 92vw; text-align: center; --acc: var(--gold);
+  padding: 30px 30px 26px; border-radius: 22px; overflow: hidden;
+  background:
+    radial-gradient(130% 78% at 50% -12%, color-mix(in srgb, var(--g-color) 26%, transparent), transparent 60%),
+    linear-gradient(180deg, rgba(30,24,44,0.99), rgba(15,11,24,0.99));
+  border: 1px solid color-mix(in srgb, var(--g-color) 52%, rgba(200,170,255,0.28));
+  box-shadow: 0 30px 80px rgba(0,0,0,0.75), 0 0 50px color-mix(in srgb, var(--g-color) 24%, transparent);
+  animation: lwmPop .44s cubic-bezier(.2,1.3,.4,1) both;
+}
+.gc-detail-tag { font-family: 'Cinzel'; font-size: 13px; letter-spacing: .07em; text-transform: uppercase; color: var(--g-color); margin-bottom: 6px; }
+.gc-detail-art { width: 150px; height: 150px; margin: 6px auto 8px; position: relative; display: flex; align-items: center; justify-content: center; color: var(--g-color); }
+.gc-detail-art .g-hex { width: 130px; height: 130px; }
+.gc-detail-art .g-img, .gc-detail-art .g-stack { width: 100%; height: 100%; }
+.gc-detail-art .g-img { object-fit: contain; }
+.gc-detail-art .letter-chip { top: 8px; left: 8px; }
+.gc-detail-name { font-family: 'Cinzel'; font-size: 28px; color: #f1ead6; }
+.gc-detail-slots { font-family: 'Cinzel'; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--g-color); margin: 4px 0; text-shadow: 0 0 8px var(--g-color); }
+.gc-detail-str {
+  display: inline-flex; align-items: baseline; gap: 4px; align-self: center;
+  font-family: 'Cinzel'; font-weight: 700; font-size: 15px; letter-spacing: .05em;
+  color: #ffb88a; margin: 2px 0 4px; padding: 5px 14px; border-radius: 999px;
+  background: rgba(255,120,70,0.12); border: 1px solid rgba(255,140,90,0.38);
+}
+.gc-detail-str .gcs-note { font-family: inherit; font-weight: 600; font-size: 12px; letter-spacing: .03em; text-transform: uppercase; color: rgba(255,200,170,0.7); }
+.gc-detail-desc { font-size: 18px; color: var(--text-dim); line-height: 1.42; margin: 8px 0 14px; }
+.gc-detail-state { font-size: 15px; border-radius: 10px; padding: 10px 12px; line-height: 1.35; }
+.gc-state-locked { color: #d8c6ff; background: rgba(90,60,150,0.22); border: 1px solid rgba(170,130,255,0.4); }
+.gc-state-open { color: #b6f0c4; background: rgba(50,130,80,0.18); border: 1px solid rgba(110,220,150,0.4); }
+
+/* locked detail — a true mystery: silhouette + redacted name, no info leaked */
+.gc-detail-sil { position: relative; }
+.gc-detail-sil .g-hex, .gc-detail-sil .g-img, .gc-detail-sil .g-stack {
+  filter: brightness(0) saturate(0)
+          drop-shadow(0 0 11px color-mix(in srgb, var(--g-color) 62%, transparent))
+          drop-shadow(0 0 26px color-mix(in srgb, var(--g-color) 34%, transparent));
+}
+.gc-sil-rune {
+  /* the '?' glyph carries no descender, so an em-box centre sits visibly high on
+     the hex — nudge it down to optically centre the mark within the silhouette */
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -42%);
+  font-family: 'Cinzel', serif; font-size: 96px; font-weight: 900; line-height: 1;
+  color: color-mix(in srgb, var(--g-color) 70%, #fff); opacity: .32;
+  text-shadow: 0 0 24px color-mix(in srgb, var(--g-color) 55%, transparent);
+  pointer-events: none;
+}
+.gc-detail-locked .gc-detail-name { letter-spacing: .32em; color: #cfc6e6; }
+.gc-detail-mystery { font-style: italic; }
+
 /* ---- MONSTER BOOK ---- */
 .mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; }
 .mb-card {
@@ -6273,6 +6424,12 @@ html, body {
 }
 .lw-modal-panel.lwm-pop { animation: lwmPop .44s cubic-bezier(.2,1.3,.4,1) both; }
 @keyframes lwmPop { 0% { transform: scale(.84); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+/* exit: the whole overlay fades while the card eases back down and away. Works
+   for every modal kind since the (transparent) panel carries its card child. */
+#lw-modal.lwm-closing { animation: lwmVeilOut .24s ease forwards; }
+#lw-modal.lwm-closing .lw-modal-panel { animation: lwmPopOut .24s cubic-bezier(.4,0,.7,1) forwards; }
+@keyframes lwmVeilOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes lwmPopOut { from { transform: scale(1); opacity: 1; } to { transform: scale(.9) translateY(10px); opacity: 0; } }
 .lw-modal-x {
   position: absolute; top: 14px; right: 16px; width: 38px; height: 38px; z-index: 5;
   border-radius: 50%; border: 1px solid rgba(255,255,255,0.18);
@@ -6292,11 +6449,27 @@ html, body {
 .lw-modal-panel.kind-stone .lw-modal-x,
 .lw-modal-panel.kind-book .lw-modal-x { top: 18px; right: 18px; }
 
-/* The overlay itself scrolls (and centres via margin:auto) so the card can grow
-   to its natural height. That keeps the corner brackets glued to the TRUE bottom
-   of the content instead of a clipped, mid-content scroll edge. */
-#lw-modal { align-items: flex-start; justify-content: center; overflow-y: auto; padding: 40px 0; }
-#lw-modal .lw-modal-panel { margin: auto; }
+/* The overlay centres the card and never scrolls itself — instead a too-tall card
+   scrolls INTERNALLY (see #lw-modal-body .lw-card below), so the frame, close
+   button and inspector stay put while only the card's contents move. */
+#lw-modal { align-items: center; justify-content: center; overflow: hidden; padding: 0; }
+#lw-modal .lw-modal-panel { margin: auto; max-height: 100%; }
+
+/* the card is its own scroll viewport when its contents overrun the stage, with a
+   slim accent-tinted scrollbar to match each modal */
+#lw-modal-body .lw-card {
+  max-height: 1004px; overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--acc, var(--gold)) 62%, transparent) transparent;
+}
+#lw-modal-body .lw-card::-webkit-scrollbar { width: 10px; }
+#lw-modal-body .lw-card::-webkit-scrollbar-track { background: rgba(0,0,0,0.26); border-radius: 999px; margin: 16px 6px; }
+#lw-modal-body .lw-card::-webkit-scrollbar-thumb {
+  border-radius: 999px; border: 2px solid transparent; background-clip: padding-box;
+  background-color: color-mix(in srgb, var(--acc, var(--gold)) 55%, transparent);
+}
+#lw-modal-body .lw-card::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--acc, var(--gold)) 85%, #fff 6%); }
 
 /* the detail card: a static twin of the evolution-selection card, scaled up
    to fill the empty screen real-estate the old square modal wasted. */
@@ -6571,14 +6744,16 @@ html, body {
   flex: 0 0 auto; height: 392px; position: relative;
   display: flex; align-items: center; justify-content: center; gap: 10px;
 }
+/* the flanks each take an equal half of the space LEFT of / RIGHT of the well
+   (which now sizes to its art), so the counter and buttons centre in their gap —
+   equidistant from the screen edge and from the well */
 .well-side {
-  flex: 0 0 268px; height: 100%;
+  flex: 1 1 0; min-width: 0; height: 100%;
   display: flex; align-items: center; justify-content: center;
 }
-.well-side-left { justify-content: flex-start; padding-left: 18px; }
-.well-side-right { justify-content: flex-end; padding-right: 18px; }
+.well-side-left, .well-side-right { padding: 0; }
 .well-stage {
-  position: relative; flex: 1 1 auto; min-width: 0; height: 100%;
+  position: relative; flex: 0 0 auto; height: 100%;
   display: flex; align-items: center; justify-content: center;
 }
 .well-aura {
@@ -6695,43 +6870,104 @@ html, body {
 @keyframes wellCastReady { 0%,100% { box-shadow: 0 10px 26px rgba(80,40,150,0.5), 0 0 0 rgba(190,140,255,0); } 50% { box-shadow: 0 10px 30px rgba(80,40,150,0.6), 0 0 26px rgba(190,140,255,0.6); } }
 
 /* ============================================================
-   THE SIX CIRCULAR STONE-METERS (reusing the combat disc look —
-   gear frame + rune ring + radial gauge, gauge filled with stones)
+   THE CIRCULAR STONE-METERS — split across two tabs that flank the
+   discs: Monsters on the LEFT, Trappings on the RIGHT.
    ============================================================ */
-/* the meters live in their own horizontal carousel, so each can be scaled up
-   big and legible without overlapping or running off the stage */
 .well-meters-wrap {
   flex: 1 1 auto; min-height: 0; position: relative;
-  display: flex; align-items: stretch;
+  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 0;
+  padding: 4px 8px;
+}
+
+/* ---- a tall portrait tab on each flank ----
+   each tab claims an equal share of the empty flank and centers itself in it, so
+   it floats midway between the screen edge and the nearest circle meter */
+.well-tab {
+  position: relative; flex: 1 1 0; min-width: 0; cursor: pointer;
+  border: none; background: none; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.well-tab-card {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  width: 164px; padding: 26px 16px; border-radius: 24px;
+  background: linear-gradient(180deg, rgba(24,16,40,0.82), rgba(12,8,22,0.88));
+  border: 1px solid rgba(150,110,210,0.26);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 12px 28px rgba(0,0,0,0.48);
+  transition: transform .32s cubic-bezier(.34,1.4,.4,1), border-color .26s ease, box-shadow .26s ease, background .26s ease;
+}
+.well-tab-ico {
+  width: 96px; height: 96px; object-fit: contain;
+  filter: saturate(.55) brightness(.62) drop-shadow(0 5px 9px rgba(0,0,0,0.55));
+  transition: filter .28s ease, transform .32s cubic-bezier(.34,1.4,.4,1);
+}
+.well-tab-label {
+  font-family: 'Cinzel'; font-weight: 800; font-size: 20px; letter-spacing: .05em;
+  color: #ab9bcf; transition: color .26s ease, text-shadow .26s ease; line-height: 1;
+}
+.well-tab:hover .well-tab-card { transform: translateY(-3px); border-color: rgba(180,140,240,0.5); }
+.well-tab:hover .well-tab-ico { filter: saturate(.8) brightness(.85) drop-shadow(0 5px 9px rgba(0,0,0,0.55)); }
+.well-tab:hover .well-tab-label { color: #ddccff; }
+.well-tab:active .well-tab-card { transform: scale(.97); }
+.well-tab.is-active .well-tab-card {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(150,96,228,0.32), transparent 70%),
+    linear-gradient(180deg, rgba(58,36,102,0.92), rgba(28,17,50,0.94));
+  border-color: rgba(206,166,255,0.72);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 0 34px rgba(150,96,228,0.5), 0 14px 32px rgba(0,0,0,0.5);
+  transform: scale(1.05);
+}
+.well-tab.is-active .well-tab-ico {
+  filter: saturate(1.08) brightness(1.12) drop-shadow(0 0 14px rgba(206,166,255,0.65));
+  transform: scale(1.06);
+}
+.well-tab.is-active .well-tab-label { color: #fff; text-shadow: 0 0 14px rgba(206,166,255,0.6); }
+/* a staged-stones badge so you know the other tab has an offering queued */
+.well-tab-dot {
+  position: absolute; top: -6px; right: -6px; z-index: 3;
+  min-width: 28px; height: 28px; padding: 0 8px; border-radius: 999px;
+  display: none; align-items: center; justify-content: center;
+  font-family: 'Cinzel'; font-weight: 900; font-size: 15px; color: #2a1800;
+  background: linear-gradient(180deg, #ffe7ad, #f5c34f);
+  box-shadow: 0 0 14px rgba(245,201,105,0.75); border: 1.5px solid rgba(255,240,200,0.75);
+  animation: wellTabDot .4s cubic-bezier(.34,1.5,.4,1) both;
+}
+.well-tab-dot.on { display: flex; }
+@keyframes wellTabDot { from { transform: scale(0); opacity: 0; } }
+
+/* ---- the central meter area (discs + behind-layer for off-tab stones) ---- */
+/* shrink-to-content so the discs sit right next to their flank tabs instead of
+   floating in the middle of a wide column */
+.well-meters-area {
+  position: relative; flex: 0 0 auto; min-width: 0; max-width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.well-phantom-layer {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible;
 }
 .well-meters-row {
-  flex: 1 1 auto; min-width: 0;
-  display: flex; gap: 30px; align-items: center; justify-content: safe center;
-  overflow-x: auto; overflow-y: hidden;
-  padding: 6px 60px 4px; overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  position: relative; z-index: 1;
+  width: auto; max-width: 100%; height: 100%;
+  display: flex; gap: 36px; align-items: center; justify-content: center;
+  overflow: visible;
+  padding: 0;
 }
-.well-meters-row::-webkit-scrollbar { display: none; }
+/* sweep the outgoing set away on tab change */
+.well-meters-row.tab-leaving { animation: wellTabLeave .15s ease forwards; }
+@keyframes wellTabLeave { to { opacity: 0; transform: translateY(14px) scale(.97); } }
 .well-meter-cell {
-  position: relative; flex: 0 0 auto; width: 300px;
+  position: relative; flex: 0 0 auto; width: 276px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
 }
 .well-meter-cell.done { opacity: .68; filter: saturate(.7); }
-
-/* meter scroll arrows */
-.well-mt-nav {
-  position: absolute; top: 50%; transform: translateY(-50%); z-index: 6;
-  width: 52px; height: 52px; border-radius: 50%; cursor: pointer;
-  font-family: 'Cinzel'; font-size: 32px; line-height: 1; color: #f0e6ff;
-  background: linear-gradient(180deg, rgba(48,32,76,0.96), rgba(20,12,36,0.96));
-  border: 1px solid rgba(196,156,255,0.55); box-shadow: 0 8px 22px rgba(0,0,0,0.55);
-  display: flex; align-items: center; justify-content: center;
-  transition: opacity .2s ease, transform .15s ease, background .15s ease;
+/* staggered entrance after a tab switch / first paint */
+.well-meters-row.tab-enter .well-meter-cell.cell-enter {
+  animation: wellCellIn .5s cubic-bezier(.2,.85,.3,1) backwards;
+  animation-delay: calc(var(--ci, 0) * 80ms);
 }
-.well-mt-nav:hover { background: linear-gradient(180deg, rgba(72,48,116,0.98), rgba(30,18,52,0.98)); transform: translateY(-50%) scale(1.08); }
-.well-mt-nav.prev { left: 2px; }
-.well-mt-nav.next { right: 2px; }
-.well-mt-nav.hide { opacity: 0; pointer-events: none; }
+@keyframes wellCellIn {
+  from { opacity: 0; transform: translateY(26px) scale(.86); filter: blur(3px); }
+  to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
 
 /* the disc itself — drawn at 160px and scaled up to fill the taller meter row */
 .wd-disc-wrap {

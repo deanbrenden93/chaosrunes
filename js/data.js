@@ -40,7 +40,7 @@
     },
     quake: {
       id: 'quake', name: 'Quake', color: 'red', rune: '🜊', img: 'assets/Pierce Rune.png',
-      character: 'troll', letter: 'C', rarity: 'common',
+      character: 'troll', letter: 'C', rarity: 'common', multiHit: true,
       dyn: [{ kind: 'dmg', base: 3 }],
       desc: 'Deal {0} damage to <b>all</b> enemies.'
     },
@@ -84,7 +84,7 @@
     },
     rockfall: {
       id: 'rockfall', name: 'Rockfall', color: 'red', rune: '🜊',
-      character: 'troll', letter: 'C', rarity: 'common',
+      character: 'troll', letter: 'C', rarity: 'common', multiHit: true,
       dyn: [{ kind: 'dmg', base: 2 }],
       desc: 'Deal {0} damage to <b>all</b> enemies. <b>+1</b> to all per other Rockfall played this turn.'
     },
@@ -130,7 +130,7 @@
     /* -- run-pool: rares -- */
     avalanche: {
       id: 'avalanche', name: 'Avalanche', color: 'red', rune: '🜊',
-      character: 'troll', letter: 'wild', rarity: 'rare',
+      character: 'troll', letter: 'wild', rarity: 'rare', multiHit: true,
       dyn: [{ kind: 'dmg', base: function (e) { return e.shield || 0; } }],
       desc: 'Deal {0} damage to <b>all</b> enemies, equal to your current shield.'
     },
@@ -156,7 +156,7 @@
     },
     reckoning: {
       id: 'reckoning', name: 'Reckoning', color: 'red', rune: '🜊',
-      character: 'troll', letter: 'C', rarity: 'rare', unlock: 'troll_floor3',
+      character: 'troll', letter: 'C', rarity: 'rare', unlock: 'troll_floor3', multiHit: true,
       dyn: [{ kind: 'flat', base: 0 }],
       desc: 'Deal damage to <b>all</b> enemies equal to <b>twice</b> your Strength, plus <b>{0}</b>.'
     },
@@ -168,7 +168,7 @@
     },
     aftershock: {
       id: 'aftershock', name: 'Aftershock', color: 'red', rune: '🜊',
-      character: 'troll', letter: 'C', rarity: 'rare', unlock: 'troll_block150',
+      character: 'troll', letter: 'C', rarity: 'rare', unlock: 'troll_block150', multiHit: true,
       dyn: [{ kind: 'dmg', base: 3 }],
       desc: 'Deal {0} damage to <b>all</b> enemies, repeated once per blue glyph played this turn.'
     },
@@ -188,7 +188,7 @@
     },
     rake: {
       id: 'rake', name: 'Rake', color: 'red', rune: '🜺',
-      character: 'ghoul', letter: 'B',
+      character: 'ghoul', letter: 'B', multiHit: true, hits: 2,
       dyn: [{ kind: 'dmg', base: 2 }],
       desc: 'Deal {0} to a random enemy <b>twice</b>. <b>+1</b> vs Leeched. If played last as your only red glyph, every enemy hit becomes <b>Leeched 3</b>.'
     },
@@ -220,7 +220,7 @@
     },
     grave_rot: {
       id: 'grave_rot', name: 'Grave Rot', color: 'red', rune: '🜺',
-      character: 'ghoul', letter: 'C', rarity: 'common',
+      character: 'ghoul', letter: 'C', rarity: 'common', multiHit: true,
       dyn: [{ kind: 'dmg', base: 3 }],
       desc: 'Deal {0} to <b>all</b> enemies. <b>Leeched</b> enemies take <b>2</b> more.'
     },
@@ -257,7 +257,7 @@
     },
     soul_harvest: {
       id: 'soul_harvest', name: 'Soul Harvest', color: 'red', rune: '🜺',
-      character: 'ghoul', letter: 'C', rarity: 'uncommon',
+      character: 'ghoul', letter: 'C', rarity: 'uncommon', multiHit: true,
       dyn: [{ kind: 'dmg', base: 3 }],
       desc: 'Deal {0} to <b>all</b> enemies and heal <b>1</b> per enemy hit.'
     },
@@ -285,7 +285,7 @@
     /* -- unlockables (hidden until earned; not in the reward pool yet) -- */
     mass_grave: {
       id: 'mass_grave', name: 'Mass Grave', color: 'red', rune: '🜺',
-      character: 'ghoul', letter: 'wild', rarity: 'uncommon', unlock: 'ghoul_floor1',
+      character: 'ghoul', letter: 'wild', rarity: 'uncommon', unlock: 'ghoul_floor1', multiHit: true,
       dyn: [{ kind: 'dmg', base: 2 }],
       desc: 'Summon <b>3 Husks</b>, then deal {0} to <b>all</b> enemies.'
     },
@@ -333,10 +333,9 @@
     },
     onslaught: {
       id: 'onslaught', name: 'Onslaught', color: 'red', rune: '🜔',
-      character: 'kitsune', letter: 'C', rarity: 'common',
-      onDraw: { kind: 'strength', value: 1 },
-      dyn: [{ kind: 'dmg', base: 2 }],
-      desc: 'Deal {0} damage to a random enemy for each glyph played before this one this turn.<br><i>When drawn to hand, gain 1 Strength this turn.</i>'
+      character: 'kitsune', letter: 'C', rarity: 'common', multiHit: true, strMul: 0.4,
+      dyn: [{ kind: 'dmg', base: 4 }],
+      desc: 'Deal {0} damage to a random enemy for <b>each glyph played before it</b> this turn.<br><i>Best played last in the chain.</i>'
     },
     mirror: {
       id: 'mirror', name: 'Mirror', color: 'red', rune: '🜟',
@@ -360,7 +359,7 @@
     /* -- run-pool: commons -- */
     wisp: {
       id: 'wisp', name: 'Wisp', color: 'red', rune: '🜅',
-      character: 'kitsune', letter: 'B', rarity: 'common',
+      character: 'kitsune', letter: 'B', rarity: 'common', multiHit: true,
       dyn: [{ kind: 'dmg', base: 2 }],
       desc: 'Deal {0} damage to <b>all</b> enemies.'
     },
@@ -378,7 +377,7 @@
     },
     emberlash: {
       id: 'emberlash', name: 'Emberlash', color: 'red', rune: '🜔',
-      character: 'kitsune', letter: 'B', rarity: 'common',
+      character: 'kitsune', letter: 'B', rarity: 'common', multiHit: true, hits: 3,
       dyn: [{ kind: 'dmg', base: 1 }],
       desc: 'Deal {0} damage to a random enemy <b>three</b> times (random each).'
     },
@@ -398,7 +397,7 @@
     },
     conflagration: {
       id: 'conflagration', name: 'Conflagration', color: 'red', rune: '🜍',
-      character: 'kitsune', letter: 'C', rarity: 'uncommon',
+      character: 'kitsune', letter: 'C', rarity: 'uncommon', multiHit: true,
       dyn: [{ kind: 'flat', base: 0 }],
       desc: 'Deal damage to <b>all</b> enemies equal to the <b>Burn</b> already on them, plus <b>{0}</b>.'
     },
@@ -417,7 +416,7 @@
     },
     hoarders_flame: {
       id: 'hoarders_flame', name: "Hoarder's Flame", color: 'red', rune: '🜔',
-      character: 'kitsune', letter: 'C', rarity: 'uncommon',
+      character: 'kitsune', letter: 'C', rarity: 'uncommon', multiHit: true, strMul: 0.4,
       dyn: [{ kind: 'dmg', base: 2 }],
       desc: 'Deal {0} damage to a random enemy <b>per glyph in your hand</b>.'
     },
@@ -425,9 +424,9 @@
     /* -- run-pool: rares -- */
     nine_tails: {
       id: 'nine_tails', name: 'Nine Tails', color: 'red', rune: '🜔',
-      character: 'kitsune', letter: 'A', rarity: 'rare',
-      dyn: [{ kind: 'dmg', base: function (e) { return 2 * (e.chainPos || 0); } }],
-      desc: 'Deal {0} damage to a random enemy — <b>2×</b> the glyphs played before it this turn.'
+      character: 'kitsune', slots: 2, letter: 'A', rarity: 'rare', multiHit: true, hits: 9, strMul: 0.3,
+      dyn: [{ kind: 'dmg', base: 3 }],
+      desc: 'Deal {0} damage <b>9 times</b> to random enemies. For each <b>unique</b> enemy struck, <b>steal 1 Strength</b> from it this combat.<br><i>Takes 2 sockets.</i>'
     },
     immolate: {
       id: 'immolate', name: 'Immolate', color: 'red', rune: '🜍',
@@ -488,74 +487,75 @@
 
     /* ---------------- COLORLESS — the white Soul-glyphs ----------------
        Beast-agnostic, premium cards earned ONLY at Soulstone nodes. They
-       play to no beast's traits, so they're strong on raw numbers and carry
-       the `wild` combo letter to slot into any chain. `colorless: true`
-       keeps them out of the normal reward pools. Resolution is data-driven
-       from `fx` (see battle.js resolveNeutral). 12 are available from the
-       start; 8 more (unlock-gated) are saved for a meta-progression pass. */
+       play to no beast's traits, so they're strong on raw numbers. Each carries
+       a real combo letter (A/B/C) so they must be chained like any glyph; only a
+       rare couple stay `wild`. `colorless: true` keeps them out of the normal
+       reward pools. Resolution is data-driven from `fx` (see battle.js
+       resolveNeutral). 12 are available from the start; 8 more (unlock-gated)
+       are saved for a meta-progression pass. */
     soul_strike: {
       id: 'soul_strike', name: 'Soul Strike', color: 'white', rune: '✶',
-      colorless: true, letter: 'wild', rarity: 'uncommon',
+      colorless: true, letter: 'A', rarity: 'uncommon',
       fx: [{ op: 'dmg', v: 8, t: 'first' }],
       desc: 'Deal <b>8</b> damage to the first enemy.'
     },
     soul_ward: {
       id: 'soul_ward', name: 'Soul Ward', color: 'white', rune: '❖',
-      colorless: true, letter: 'wild', rarity: 'uncommon',
+      colorless: true, letter: 'B', rarity: 'uncommon',
       fx: [{ op: 'shield', v: 8 }],
       desc: 'Gain <b>8</b> shield.'
     },
     soul_mend: {
       id: 'soul_mend', name: 'Soul Mend', color: 'white', rune: '✚',
-      colorless: true, letter: 'wild', rarity: 'uncommon',
+      colorless: true, letter: 'C', rarity: 'uncommon',
       fx: [{ op: 'heal', v: 8 }],
       desc: 'Heal <b>8</b> HP.'
     },
     soul_lash: {
       id: 'soul_lash', name: 'Soul Lash', color: 'white', rune: '✦',
-      colorless: true, letter: 'wild', rarity: 'uncommon',
+      colorless: true, letter: 'A', rarity: 'uncommon', multiHit: true,
       fx: [{ op: 'dmg', v: 4, t: 'all' }],
       desc: 'Deal <b>4</b> damage to ALL enemies.'
     },
     soul_spark: {
       id: 'soul_spark', name: 'Soul Spark', color: 'white', rune: '❂',
-      colorless: true, letter: 'wild', rarity: 'uncommon',
+      colorless: true, letter: 'B', rarity: 'uncommon', multiHit: true, hits: 2,
       fx: [{ op: 'dmg', v: 5, t: 'random', hits: 2 }],
       desc: 'Strike random enemies <b>twice</b> for <b>5</b> each.'
     },
     soul_might: {
       id: 'soul_might', name: 'Soul Might', color: 'white', rune: '⬢',
-      colorless: true, letter: 'wild', rarity: 'uncommon',
+      colorless: true, letter: 'C', rarity: 'uncommon',
       fx: [{ op: 'str', v: 2 }],
       desc: 'Gain <b>2</b> Strength for the battle.'
     },
     soul_bulwark: {
       id: 'soul_bulwark', name: 'Soul Bulwark', color: 'white', rune: '⬣',
-      colorless: true, letter: 'wild', rarity: 'uncommon',
+      colorless: true, letter: 'A', rarity: 'uncommon',
       fx: [{ op: 'res', v: 2 }],
       desc: 'Gain <b>2</b> Resilience for the battle.'
     },
     soul_pyre: {
       id: 'soul_pyre', name: 'Soul Pyre', color: 'white', rune: '✸',
-      colorless: true, letter: 'wild', rarity: 'uncommon',
+      colorless: true, letter: 'B', rarity: 'uncommon',
       fx: [{ op: 'burn', v: 4, t: 'first' }],
       desc: 'Apply <b>4</b> Burn to the first enemy.'
     },
     soul_drain: {
       id: 'soul_drain', name: 'Soul Drain', color: 'white', rune: '❉',
-      colorless: true, letter: 'wild', rarity: 'rare',
+      colorless: true, letter: 'C', rarity: 'rare',
       fx: [{ op: 'dmg', v: 6, t: 'first' }, { op: 'heal', v: 4 }],
       desc: 'Deal <b>6</b> damage to the first enemy and heal <b>4</b> HP.'
     },
     soul_crush: {
       id: 'soul_crush', name: 'Soul Crush', color: 'white', rune: '✹',
-      colorless: true, letter: 'wild', rarity: 'rare',
+      colorless: true, letter: 'A', rarity: 'rare',
       fx: [{ op: 'dmg', v: 10, t: 'lowest' }],
       desc: 'Deal <b>10</b> damage to the weakest enemy.'
     },
     soul_aegis: {
       id: 'soul_aegis', name: 'Soul Aegis', color: 'white', rune: '⛨',
-      colorless: true, letter: 'wild', rarity: 'rare',
+      colorless: true, letter: 'B', rarity: 'rare',
       fx: [{ op: 'shield', v: 5 }, { op: 'dmg', v: 5, t: 'first' }],
       desc: 'Gain <b>5</b> shield and deal <b>5</b> damage to the first enemy.'
     },
@@ -569,43 +569,43 @@
     /* -- unlockable soul-glyphs (gated; saved for meta progression) -- */
     soul_rend: {
       id: 'soul_rend', name: 'Soul Rend', color: 'white', rune: '✺',
-      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_rend',
+      colorless: true, letter: 'C', rarity: 'rare', unlock: 'soulglyph_rend', multiHit: true,
       fx: [{ op: 'dmg', v: 6, t: 'all' }],
       desc: 'Deal <b>6</b> damage to ALL enemies.'
     },
     soul_nova: {
       id: 'soul_nova', name: 'Soul Nova', color: 'white', rune: '✴',
-      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_nova',
+      colorless: true, letter: 'A', rarity: 'rare', unlock: 'soulglyph_nova',
       fx: [{ op: 'dmg', v: 12, t: 'first' }, { op: 'shield', v: 4 }],
       desc: 'Deal <b>12</b> damage to the first enemy and gain <b>4</b> shield.'
     },
     soul_phoenix: {
       id: 'soul_phoenix', name: 'Soul Phoenix', color: 'white', rune: '❤',
-      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_phoenix',
+      colorless: true, letter: 'B', rarity: 'rare', unlock: 'soulglyph_phoenix',
       fx: [{ op: 'heal', v: 12 }, { op: 'str', v: 1 }],
       desc: 'Heal <b>12</b> HP and gain <b>1</b> Strength.'
     },
     soul_tempest: {
       id: 'soul_tempest', name: 'Soul Tempest', color: 'white', rune: '❈',
-      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_tempest',
+      colorless: true, letter: 'C', rarity: 'rare', unlock: 'soulglyph_tempest', multiHit: true, hits: 2,
       fx: [{ op: 'dmg', v: 4, t: 'all', hits: 2 }],
       desc: 'Deal <b>4</b> damage to ALL enemies, <b>twice</b>.'
     },
     soul_fortress: {
       id: 'soul_fortress', name: 'Soul Fortress', color: 'white', rune: '🏰',
-      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_fortress',
+      colorless: true, letter: 'A', rarity: 'rare', unlock: 'soulglyph_fortress',
       fx: [{ op: 'shield', v: 14 }],
       desc: 'Gain <b>14</b> shield.'
     },
     soul_reaper: {
       id: 'soul_reaper', name: 'Soul Reaper', color: 'white', rune: '⚰',
-      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_reaper',
+      colorless: true, letter: 'B', rarity: 'rare', unlock: 'soulglyph_reaper',
       fx: [{ op: 'dmg', v: 9, t: 'highest' }, { op: 'scare', v: 2, t: 'highest' }],
       desc: 'Deal <b>9</b> damage and apply <b>2</b> Scare to the strongest enemy.'
     },
     soul_inferno: {
       id: 'soul_inferno', name: 'Soul Inferno', color: 'white', rune: '♨',
-      colorless: true, letter: 'wild', rarity: 'rare', unlock: 'soulglyph_inferno',
+      colorless: true, letter: 'C', rarity: 'rare', unlock: 'soulglyph_inferno',
       fx: [{ op: 'burn', v: 5, t: 'all' }],
       desc: 'Apply <b>5</b> Burn to ALL enemies.'
     },
@@ -1259,21 +1259,28 @@
     if (!g.dyn || !g.dyn.length) return g.desc;
     env = env || {};
     const gather = env.gather || 0, combo = env.comboBonus || 0;
-    const str = env.strength || 0, clone = env.cloneEmpower || 0;
+    const clone = env.cloneEmpower || 0;
     const weak = !!env.weak, shield = env.shield || 0;
     const resilience = env.resilience || 0, frail = !!env.frail;
     const ember = (g.color === 'red') ? (Number(env.ember) || 0) : 0;
-    // combo + clone empower every effect kind; the Gathering Tails passive
-    // (gather) only feeds DAMAGE.
+    const str = env.strength || 0;
+    // multi-hit / AoE glyphs add the combo NUMBER at a reduced rate (per hit), and
+    // lean on Strength less per strike than a single big hitter does
+    const cf = comboFactorOf(g);
+    const sMul = strMulOf(g, env.strUp || 0);
+    // combo + clone empower every effect kind; on DAMAGE the combo number is scaled
+    // by the multi-hit factor. Gathering Tails (gather) only feeds DAMAGE.
     const gtAll = combo + clone;
+    const gtDmg = combo * cf + clone;
     let out = g.desc;
     g.dyn.forEach((tok, i) => {
       const base = (typeof tok.base === 'function') ? tok.base(env) : tok.base;
       let v;
       if (tok.kind === 'dmg') {
-        v = base + gtAll + gather + ember;
+        v = base + gtDmg + gather + ember;
         if (weak) v = Math.max(1, Math.round(v * 0.6));
-        v += str;
+        v += str * sMul;            // Strength scales the per-hit base by the glyph's multiplier
+        v = Math.ceil(v);           // damage rounds up
       } else if (tok.kind === 'burn') {     // Burn is not "damage" — Emberstorm/Pyreheart don't touch it
         v = base + gtAll;
       } else if (tok.kind === 'shield') {   // Resilience boosts shield, Frail halves it
@@ -1287,6 +1294,29 @@
       out = out.split('{' + i + '}').join('<b' + cls + '>' + v + '</b>');
     });
     return out;
+  }
+  /* ----------------------------------------------------------
+     Attack-glyph scaling helpers.
+     - Multi-hit / AoE damage glyphs (flagged `multiHit: true`) add the combo
+       NUMBER at a reduced rate so high combos don't explode repeated strikes;
+       single hitters take the full combo number.
+     - Strength is a PER-HIT bonus scaled by each glyph's own multiplier: single
+       hitters carry it best (~0.9); the more a glyph splinters its damage the
+       less each strike leans on Strength. Override per glyph with `strMul`.
+     - Each upgrade (Power +N) nudges the multiplier up — single hitters more.
+     ---------------------------------------------------------- */
+  function glyphIsMulti(g) { return !!(g && g.multiHit); }
+  function comboFactorOf(g) { return glyphIsMulti(g) ? 0.33 : 1; }
+  function glyphHitCount(g) { return Math.max(1, (g && g.hits) || (glyphIsMulti(g) ? 3 : 1)); }
+  function strMulBase(g) {
+    if (g && typeof g.strMul === 'number') return g.strMul;
+    const h = glyphHitCount(g);
+    if (h <= 1) return 0.9;
+    return Math.max(0.2, Math.round((0.9 / Math.pow(h, 0.62)) * 20) / 20);   // rounded to .05
+  }
+  function strMulOf(g, upgrades) {
+    const step = glyphIsMulti(g) ? 0.04 : 0.1;
+    return Math.round((strMulBase(g) + step * (upgrades || 0)) * 100) / 100;
   }
 
   /* ----------------------------------------------------------
@@ -1422,6 +1452,7 @@
   root.CG = root.CG || {};
   root.CG.DATA = { COLOR, GLYPHS, BLESSINGS, POWER_BLESSINGS, SOUL_BLESSINGS, EVENT_BLESSINGS, MONSTERS, ENEMIES, ITEMS, formatDesc,
     FEAST_SETS, feastPoolFor, feastTrophyAdd, feastLabel,
+    glyphIsMulti, comboFactorOf, glyphHitCount, strMulBase, strMulOf,
     DESCENSION_MODS, descensionStack, descensionModsUpTo, MAX_DESCENSION: 13 };
 
 })(window);

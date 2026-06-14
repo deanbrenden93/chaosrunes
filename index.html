@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=20260613ab" />
+  <link rel="stylesheet" href="css/styles.css?v=20260613am" />
 </head>
 <body>
   <!-- ============ BOOT LOADING SCREEN (covers everything until assets are warm) ============ -->
@@ -529,12 +529,28 @@
           <header class="lw-screen-head">
             <button class="btn btn-back lw-sub-back" aria-label="Back">Back</button>
             <h2 class="lw-screen-title">The Star Charts</h2>
-            <span class="lw-head-spacer" aria-hidden="true"></span>
+            <button id="btn-glyph-codex" class="st-codex-btn" aria-label="Open the Glyph Codex">
+              <span class="st-codex-ico" aria-hidden="true">✦</span><span id="st-codex-label">Glyph Codex</span>
+            </button>
           </header>
           <div class="lw-body">
             <div id="stonetable-roster" class="st-roster"></div>
             <div id="stonetable-tree" class="st-tree"></div>
           </div>
+        </div>
+      </section>
+
+      <!-- ============ GLYPH CODEX (reached from the Star Charts) ============ -->
+      <section id="screen-glyphcodex" class="screen">
+        <div class="map-bg" aria-hidden="true"></div>
+        <div class="bg-runes" aria-hidden="true"></div>
+        <div class="lw-screen">
+          <header class="lw-screen-head">
+            <button class="btn btn-back gc-back" aria-label="Back to the Star Charts">Back</button>
+            <h2 class="lw-screen-title">Glyph Codex</h2>
+            <span id="gc-progress" class="mb-progress"></span>
+          </header>
+          <div id="glyphcodex-body" class="lw-body"></div>
         </div>
       </section>
 
@@ -586,10 +602,25 @@
                 </div>
               </div>
             </div>
-            <div class="well-meters-wrap">
-              <button class="well-mt-nav prev" aria-label="Scroll meters left">‹</button>
-              <div id="well-cats" class="well-meters-row"></div>
-              <button class="well-mt-nav next" aria-label="Scroll meters right">›</button>
+            <div id="well-tabs" class="well-meters-wrap" role="tablist" aria-label="Offering category">
+              <button class="well-tab well-tab-left is-active" data-tab="monsters" role="tab" aria-selected="true">
+                <span class="well-tab-card">
+                  <img class="well-tab-ico" src="assets/Monster Library.png" alt="" draggable="false">
+                  <span class="well-tab-label">Monsters</span>
+                </span>
+                <span class="well-tab-dot" aria-hidden="true"></span>
+              </button>
+              <div class="well-meters-area">
+                <div class="well-phantom-layer" aria-hidden="true"></div>
+                <div id="well-cats" class="well-meters-row" role="tabpanel"></div>
+              </div>
+              <button class="well-tab well-tab-right" data-tab="trappings" role="tab" aria-selected="false">
+                <span class="well-tab-card">
+                  <img class="well-tab-ico" src="assets/Soul Jar.png" alt="" draggable="false">
+                  <span class="well-tab-label">Trappings</span>
+                </span>
+                <span class="well-tab-dot" aria-hidden="true"></span>
+              </button>
             </div>
           </div>
         </div>
@@ -611,11 +642,11 @@
   <!-- floating layers rendered into stage by JS -->
   <div id="fx-layer" class="fx-layer"></div>
 
-  <script src="js/data.js?v=20260613ab"></script>
-  <script src="js/audio.js?v=20260613ab"></script>
-  <script src="js/scaling.js?v=20260613ab"></script>
-  <script src="js/game.js?v=20260613ab"></script>
-  <script src="js/battle.js?v=20260613ab"></script>
-  <script src="js/main.js?v=20260613ab"></script>
+  <script src="js/data.js?v=20260613am"></script>
+  <script src="js/audio.js?v=20260613am"></script>
+  <script src="js/scaling.js?v=20260613am"></script>
+  <script src="js/game.js?v=20260613am"></script>
+  <script src="js/battle.js?v=20260613am"></script>
+  <script src="js/main.js?v=20260613am"></script>
 </body>
 </html>

@@ -2592,7 +2592,18 @@
     const e = empowerOf(id);
     if (e > 0) parts.push('✦ Power +' + e);
     if (comboAdv(id) > 1) parts.push('▲▲ Combo Up');
-    return parts.length ? ' <span class="gt-up">' + parts.join(' · ') + '</span>' : '';
+    let out = parts.length ? ' <span class="gt-up">' + parts.join(' · ') + '</span>' : '';
+    const sm = glyphStrScale(id);
+    if (sm != null) out += ' <span class="gt-str" title="Each Strength adds this much to every hit of this glyph">⚔ Str ×' + sm + '</span>';
+    return out;
+  }
+  // an attack glyph's Strength multiplier (per hit), raised by its upgrades. null
+  // for non-damage glyphs (Strength does nothing for them).
+  function glyphStrScale(id) {
+    const g = glyph(id);
+    if (!g || !g.dyn || !g.dyn.some(t => t.kind === 'dmg')) return null;
+    const baseG = glyph(baseOf(g.cloneOf || id));
+    return root.CG.DATA.strMulOf(baseG, empowerOf(id));
   }
   // permanent +N to a glyph's main effect, earned from events / the shop
   function empowerOf(id) {
@@ -2739,6 +2750,7 @@
     const order = placedOrder();
     if (order.length) e.comboBonus += empowerCountAt(order[order.length - 1]);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
+    e.strUp = empowerOf(id);
     e.ramp = rampOf(id);
     e.linked = linked;
     return e;
@@ -2764,6 +2776,7 @@
     }
     e.comboBonus = cb + empowerBonusForSlot(slotIndex);
     e.cloneEmpower = (glyph(id).cloneEmpower || 0) + empowerOf(id);
+    e.strUp = empowerOf(id);
     e.ramp = rampOf(id);
     return e;
   }
@@ -2899,6 +2912,11 @@
     function curStr() {
       return T.strength + (hasPassive('ironwall') ? Math.floor((T.shield || 0) / 10) : 0);
     }
+    // mirror of applyDamage's per-hit Strength, scaled by the active glyph's multiplier
+    function fcStrBonus(opts) {
+      if (opts && opts.strength === false) return 0;
+      return curStr() * (T._curStrMul != null ? T._curStrMul : 1);
+    }
     // a genuine landed hit feeds the Goblin engines exactly as live applyDamage does
     function fcTickEngines(amt, opts) {
       if (amt <= 0 || opts.charge) return;
@@ -2916,7 +2934,7 @@
         // a lone survivor makes "random" a sure thing — resolve it exactly
         if (pool.length === 1) t = pool[0];
         else {
-          const amt = Math.max(0, Math.round(dmg + (opts.strength === false ? 0 : curStr())));
+          const amt = Math.max(0, Math.ceil(dmg + fcStrBonus(opts)));
           T.rndDmg += amt; T.rndSwings++; T.approx = true;
           // every foe alive right now is in this strike's pool
           pool.forEach(f => { f.pdmg += amt; });
@@ -2928,9 +2946,9 @@
       }
       if (!t || !t.alive) return 0;
       let amt = dmg;
-      if (opts.strength !== false) amt += curStr();
+      amt += fcStrBonus(opts);
       if (opts.scare !== false) amt += (t.scare || 0);
-      amt = Math.max(0, Math.round(amt));
+      amt = Math.max(0, Math.ceil(amt));
       const ward = fcWardOf(t);
       if (ward > 0 && amt > 0) amt = Math.max(1, amt - ward);
       const absorbed = Math.min(t.shield, amt);
@@ -3051,8 +3069,11 @@
     // per-glyph effect estimate — mirrors resolveGlyphInner case by case
     function fcResolve(id, ctx) {
       const g = glyph(id);
+      const baseG = glyph(baseOf(g.cloneOf || id));
+      const cf = root.CG.DATA.comboFactorOf(baseG);   // multi-hit: combo number at reduced rate
+      T._curStrMul = root.CG.DATA.strMulOf(baseG, empowerOf(id));   // per-hit Strength multiplier
       const gatherN = (B.monster.passive === 'gatheringTails') ? ctx.chainPos : 0;
-      const gt = gatherN + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) + empowerOf(id);
+      const gt = gatherN + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) * cf + empowerOf(id);
       const gtx = gt - gatherN;
       if (g.color === 'red' && root.CG.Game.state.blessings.emberward) fcShield(2);
       const E = emberDmg(g);
@@ -3184,7 +3205,7 @@
         /* -------- KITSUNE -------- */
         case 'flicker': fcVolley(['random'], 2 + gt + E); break;
         case 'foxfire': fcBurn('random', 2 + gtx); break;
-        case 'onslaught': { for (let h = 0; h < ctx.chainPos; h++) fcVolley(['random'], 2 + gt + E); break; }
+        case 'onslaught': { for (let h = 0; h < ctx.chainPos; h++) fcVolley(['random'], 4 + gt + E); break; }
         case 'wildfire': {
           const burnAmt = 1 + gtx;
           A().forEach(f => {
@@ -3217,7 +3238,12 @@
         case 'conflagration': A().forEach(f => { if (f.burn > 0) fcHit(f, f.burn + gt, { strength: false }); }); break;
         case 'foxfire_dance': A().forEach(f => fcBurn(f, 2 + gtx)); break;
         case 'hoarders_flame': { for (let h = 0; h < ctx.handLeft; h++) fcVolley(['random'], 2 + gt + E); break; }
-        case 'nine_tails': fcVolley(['random'], 2 * ctx.chainPos + gt + E); break;
+        case 'nine_tails': {
+          const foes0 = A().length;
+          for (let h = 0; h < 9; h++) { fcVolley(['random'], 3 + gt + E); if (!A().length) break; }
+          fcStr(Math.min(9, foes0));   // ~1 Strength per unique foe (you'll hit each across 9 swings)
+          break;
+        }
         case 'immolate': { const t = tFirst(); fcVolley([t], 5 + gt + E); if (t && t.alive) fcBurn(t, 5); break; }
         case 'will_o_wisp': fcVolley([tLowest()], 3 + gt + E); break;
         case 'ember_hoard': fcShield(2 * ctx.handLeft + gtx); break;
@@ -3265,8 +3291,9 @@
       const newHeight = comboLen >= 2 && comboLen > fcMax;
       if (comboLen > fcMax) fcMax = comboLen;
       T._comboNow = comboLen;
-      // catalysts sown by the previous glyph infuse this one
+      // catalysts sown by the previous glyph infuse this one (full Strength, as live)
       stepCursed = false;
+      T._curStrMul = null;
       for (const col of pendingCat) {
         if (col === 'red') fcVolley(tAll(), 3);
         else if (col === 'blue') fcShield(3);
@@ -3283,6 +3310,7 @@
         isFirst: chainPos === 0, isLast: k === lastGenuineIdx,
         blueCount, handLeft
       });
+      T._curStrMul = null;   // leftover-hand / post-chain effects use full Strength
       // Berserk Frenzy (Berserk Colossus): a multi-hit's extra ticks raise the
       // running combo for everything that follows (mirror of the live walk)
       if (hasPassive('berserkfrenzy') && T._hits > 1) {
@@ -3689,14 +3717,23 @@
     const prevOrigins = B.fireOrigins;
     B.fireOrigins = (ctx.originEls && ctx.originEls.length) ? ctx.originEls.map(center) : [fromPos];
     const R = 'var(--' + g.color + ')';
-    const gt = gather(ctx) + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) + empowerOf(id);   // Clone +1, Alphabet combo +N, permanent empower
+    const baseG = glyph(baseOf(g.cloneOf || id));
+    // multi-hit / AoE glyphs add the combo NUMBER at a reduced rate so high combos
+    // don't blow up repeated strikes; single hitters take the full combo number
+    const cf = root.CG.DATA.comboFactorOf(baseG);
+    const gt = gather(ctx) + (g.cloneEmpower || 0) + (ctx.comboBonus || 0) * cf + empowerOf(id);
     const prevRES = RES;
     RES = { cursed: !!ctx.cursed, caster: ctx.curseCaster || null };
+    // Strength is a per-hit bonus scaled by THIS glyph's multiplier (raised by its
+    // upgrades); restore on exit so leftover-hand / passive hits keep full Strength.
+    const prevStrMul = B._curStrMul;
+    B._curStrMul = root.CG.DATA.strMulOf(baseG, empowerOf(id));
     try {
       await resolveGlyphInner(id, g, ctx, fromPos, R, gt);
     } finally {
       RES = prevRES;
       B.fireOrigins = prevOrigins;
+      B._curStrMul = prevStrMul;
     }
   }
 
@@ -4008,7 +4045,7 @@
         if (hits <= 0) { floatText(playerPos(), 'no momentum', 'status'); await wait(140); break; }
         for (let h = 0; h < hits; h++) {
           const t = targetRandom();
-          if (t[0]) await hitTargets(t, 2 + gt + emberDmg(g), fromPos, R);
+          if (t[0]) await hitTargets(t, 4 + gt + emberDmg(g), fromPos, R);
         }
         break;
       }
@@ -4112,9 +4149,30 @@
         }
         break;
       }
-      case 'nine_tails':
-        await hitTargets(targetRandom(), 2 * ctx.chainPos + gt + emberDmg(g), fromPos, R);
+      case 'nine_tails': {
+        // 9 strikes split across random foes; every UNIQUE foe struck is robbed of
+        // 1 Strength (down to 0) which is added to YOUR Strength for the combat
+        const struck = new Set();
+        for (let h = 0; h < 9; h++) {
+          const t = targetRandom();
+          if (!t[0]) break;
+          await hitTargets(t, 3 + gt + emberDmg(g), fromPos, R);
+          if (t[0]) struck.add(t[0]);
+          if (alive().length === 0) break;
+        }
+        let stolen = 0;
+        struck.forEach(en => {
+          en.strength = Math.max(0, (en.strength || 0) - 1);
+          stolen++;
+        });
+        if (stolen > 0) {
+          B.strength += stolen;
+          floatText(offset(center(playerArt()), 0, -86), '⚔ Steal +' + stolen, 'status');
+          strengthFx(playerArt());
+          refreshAll();
+        }
         break;
+      }
       case 'immolate': {
         const t = targetFirst();
         await hitTargets(t, 5 + gt + emberDmg(g), fromPos, R);
@@ -4328,9 +4386,12 @@
     opts = opts || {};
     if (!en.alive) return 0;
     let amt = amount;
-    if (opts.strength !== false) amt += effStrength();
+    // Strength is a per-hit bonus scaled by the active glyph's multiplier (single
+    // hitters ~0.9, multi-hits less). Outside a glyph (foxlights, leftover hand)
+    // B._curStrMul is unset → full Strength, as before.
+    if (opts.strength !== false) amt += effStrength() * (B._curStrMul != null ? B._curStrMul : 1);
     if (opts.scare !== false) amt += (en.scare || 0);
-    amt = Math.max(0, Math.round(amt));
+    amt = Math.max(0, Math.ceil(amt));   // damage rounds up
     // WARD: a living Wardstone shaves damage off its protected kin (min 1)
     const ward = wardReductionFor(en);
     if (ward > 0 && amt > 0) amt = Math.max(1, amt - ward);

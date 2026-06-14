@@ -60,7 +60,7 @@
   // run-accurate env for a specific glyph id (folds in permanent empower)
   function metaEnv(id) {
     const e = neutralDescEnv();
-    if (id) e.cloneEmpower = empowerOf(id);
+    if (id) { e.cloneEmpower = empowerOf(id); e.strUp = empowerOf(id); }
     const m = (State && (State.monsters[firstAlive()] || activeMonster())) || null;
     e.devoured = (m && m.devoured) || 0;
     return e;
@@ -153,6 +153,7 @@
     'screen-lostwoods': 'node',
     'screen-gravemarker': 'node',
     'screen-stonetable': 'node',
+    'screen-glyphcodex': 'node',
     'screen-monsterbook': 'node',
     'screen-well': 'node'
   };
@@ -1163,7 +1164,7 @@
     const pool = eligibleColorless().slice();
     const out = [];
     while (out.length < n && pool.length) {
-      out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      out.push(pool.splice(weightedGlyphIndex(pool), 1)[0]);
     }
     return out;
   }
@@ -1317,11 +1318,25 @@
       row.appendChild(c);
     });
   }
+  // Wild-letter glyphs slot into ANY chain, so they're deliberately scarce: a wild
+  // is offered at 1/3 the weight of a lettered glyph (non-wild 3 · wild 1).
+  function glyphOfferWeight(g) { return (g && g.letter === 'wild') ? 1 : 3; }
+  // pull one index from `pool` weighted by glyphOfferWeight
+  function weightedGlyphIndex(pool) {
+    let total = 0;
+    for (const g of pool) total += glyphOfferWeight(g);
+    let r = Math.random() * total;
+    for (let i = 0; i < pool.length; i++) {
+      r -= glyphOfferWeight(pool[i]);
+      if (r < 0) return i;
+    }
+    return pool.length - 1;
+  }
   function offerGlyphs(n) {
     const pool = eligibleGlyphs().slice();
     const out = [];
     while (out.length < n) {
-      if (pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      if (pool.length) out.push(pool.splice(weightedGlyphIndex(pool), 1)[0]);
       else out.push(rng(eligibleGlyphs()));   // fall back to repeats if the set is tiny
     }
     return out;
@@ -3173,8 +3188,13 @@
   }
   // grant one of the event-only blessings
   function grantEventBlessing(id) {
+    if (State.blessings[id]) { updateRunUI(); return; }
     State.blessings[id] = true;
-    updateRunUI();
+    // use the SAME flourish as every other reward: bloom mid-screen, then streak
+    // up into its top-bar chip (no static "here's a card" panel)
+    const b = EVENT_BLESSINGS[id] || allBlessMap()[id];
+    if (b) flyBlessingToTopbar(b);
+    else updateRunUI();
   }
   // hand an event off to a one-off fight; spec describes the spoils on victory
   function startEventBattle(enemyId, spec) {
@@ -3232,12 +3252,8 @@
           resolve: () => {
             const lost = loseRandomItem();
             grantEventBlessing('fearbraid');
-            return {
-              text: (lost ? 'You surrender your <b>' + lost + '</b>. ' : 'You carry nothing he wants, so he settles for a pact. ') +
-                'He braids a charm of dread into your mane — <b>Fear Braid</b>.',
-              reveal: { title: 'A Dark Pact', sub: 'He braids a charm of dread into your mane…',
-                cards: [ blessRevealCard(EVENT_BLESSINGS.fearbraid) ] }
-            };
+            return (lost ? 'You surrender your <b>' + lost + '</b>. ' : 'You carry nothing he wants, so he settles for a pact. ') +
+              'He braids a charm of dread into your mane — <b>Fear Braid</b>.';
           }
         }
       ]
@@ -3254,11 +3270,7 @@
         resolve: () => {
           const dmg = harmActivePct(0.20);
           grantEventBlessing('shimmer');
-          return {
-            text: 'They peel something luminous from your soul and seal it in a glass orb. It costs you <b>' + dmg + ' HP</b> — but the orb is yours.',
-            reveal: { title: 'The Shimmering Orb', sub: 'They seal something luminous from your soul in glass…',
-              cards: [ blessRevealCard(EVENT_BLESSINGS.shimmer) ] }
-          };
+          return 'They peel something luminous from your soul and seal it in a glass orb. It costs you <b>' + dmg + ' HP</b> — but the orb is yours.';
         }
       }]
     });
@@ -3274,9 +3286,7 @@
           desc: 'A permanent <b>+3 Resilience</b> at the start of every battle.',
           resolve: () => {
             grantEventBlessing('blackfeather');
-            return { text: 'You take the black feather. It sinks into your hide — you feel far harder to break.',
-              reveal: { title: 'Black Feather', sub: 'It sinks into your hide…',
-                cards: [ blessRevealCard(EVENT_BLESSINGS.blackfeather) ] } };
+            return 'You take the black feather. It sinks into your hide — you feel far harder to break.';
           }
         },
         {
@@ -3284,9 +3294,7 @@
           desc: 'A permanent <b>+3 Strength</b> at the start of every battle.',
           resolve: () => {
             grantEventBlessing('rawmuscle');
-            return { text: 'You swallow the raw fiber. Strength coils hot through your limbs.',
-              reveal: { title: 'Raw Muscle Fiber', sub: 'Strength coils hot through your limbs…',
-                cards: [ blessRevealCard(EVENT_BLESSINGS.rawmuscle) ] } };
+            return 'You swallow the raw fiber. Strength coils hot through your limbs.';
           }
         },
         {
@@ -4122,13 +4130,14 @@
   // ============================================================
   const WELL_PER_UNLOCK = 5;   // wishing stones to fill one unlock meter
   const WELL_CATS = [
-    { id: 'glyph_kitsune', label: 'Kitsune Glyphs', kind: 'glyph', accent: 'var(--red)',    icon: (MONSTERS.kitsune || {}).img, match: g => g.character === 'kitsune' },
-    { id: 'blessing',      label: 'Blessings',      kind: 'blessing', accent: 'var(--blue)', icon: '✦' },
-    { id: 'glyph_ghoul',   label: 'Ghoul Glyphs',   kind: 'glyph', accent: 'var(--purple)', icon: (MONSTERS.ghoul || {}).img,   match: g => g.character === 'ghoul' },
-    { id: 'glyph_soul',    label: 'Soul Glyphs',    kind: 'glyph', accent: '#cdd6ff',       icon: 'assets/Soulstone Stone.png', match: g => g.colorless },
-    { id: 'glyph_troll',   label: 'Goblin Glyphs',  kind: 'glyph', accent: 'var(--green)',  icon: (MONSTERS.troll || {}).img,   match: g => g.character === 'troll' },
-    { id: 'item',          label: 'Relics & Items', kind: 'item',  accent: 'var(--gold)',   icon: 'assets/Soul Jar.png' }
+    { id: 'glyph_kitsune', group: 'monsters',  label: 'Kitsune Glyphs', kind: 'glyph', accent: 'var(--red)',    icon: (MONSTERS.kitsune || {}).img, match: g => g.character === 'kitsune' },
+    { id: 'glyph_ghoul',   group: 'monsters',  label: 'Ghoul Glyphs',   kind: 'glyph', accent: 'var(--purple)', icon: (MONSTERS.ghoul || {}).img,   match: g => g.character === 'ghoul' },
+    { id: 'glyph_troll',   group: 'monsters',  label: 'Goblin Glyphs',  kind: 'glyph', accent: 'var(--green)',  icon: (MONSTERS.troll || {}).img,   match: g => g.character === 'troll' },
+    { id: 'blessing',      group: 'trappings', label: 'Blessings',      kind: 'blessing', accent: 'var(--blue)', icon: '✦' },
+    { id: 'glyph_soul',    group: 'trappings', label: 'Soul Glyphs',    kind: 'glyph', accent: '#cdd6ff',       icon: 'assets/Soulstone Stone.png', match: g => g.colorless },
+    { id: 'item',          group: 'trappings', label: 'Relics & Items', kind: 'item',  accent: 'var(--gold)',   icon: 'assets/Soul Jar.png' }
   ];
+  const WELL_GROUPS = ['monsters', 'trappings'];
   // colorize the glyph plate to its element so locked-glyph reveals read like the
   // real reward cards instead of a flat grey hex
   function wellEntryFromGlyph(g) { return { key: g.unlock, name: g.name, kind: 'glyph', art: '<div class="well-ent-art" style="--g-color:var(--' + g.color + ')">' + glyphArtHTML(g) + '</div>', desc: DATA.formatDesc(g) }; }
@@ -4181,6 +4190,8 @@
   // ---- WELL UI ----
   let wellStage = {};   // transient per-category staged stones (pre-cast)
   let wellArcOffsets = {};   // last-rendered dashoffset per meter, so the ring animates from where it was rather than snapping
+  let wellTab = 'monsters';   // which meter group is currently in view
+  let wellAnimateIn = false;  // one-shot: stagger the cells in after a tab switch
   function wellStaged() { return Object.keys(wellStage).reduce((s, k) => s + (wellStage[k] || 0), 0); }
   function wellAvailable() { return Math.max(0, (META.wishingStones || 0) - wellStaged()); }
   function wellCatIcon(cat) {
@@ -4190,6 +4201,8 @@
   function buildWell() {
     wellStage = {};
     wellArcOffsets = {};   // entering the screen, let each ring fill in from empty
+    wellTab = 'monsters';
+    wellAnimateIn = true;
     const stones = $('well-stone-count');
     if (stones) stones.textContent = META.wishingStones || 0;
     const cats = wellCatalog();
@@ -4198,7 +4211,7 @@
       host.dataset.wired = '1';
       host.addEventListener('click', onWellCatClick);
     }
-    wireWellMeters();
+    wireWellTabs();
     renderWell();
     const castBtn = $('well-cast-btn');
     if (castBtn && !castBtn.dataset.wired) {
@@ -4212,43 +4225,48 @@
     }
     return cats;
   }
-  // the meter row is its own horizontal carousel (the discs are large now), so it
-  // gets the same smooth wheel/arrow scrolling as the reward carousel
-  function wireWellMeters() {
-    const row = $('well-cats');
-    const wrap = row && row.closest('.well-meters-wrap');
-    if (!row || !wrap || row.dataset.scrollWired) return;
-    row.dataset.scrollWired = '1';
-    const prev = wrap.querySelector('.well-mt-nav.prev');
-    const next = wrap.querySelector('.well-mt-nav.next');
-    const cellW = () => {
-      const c = row.querySelector('.well-meter-cell');
-      const w = c ? c.getBoundingClientRect().width : 300;
-      const gap = parseFloat(getComputedStyle(row).columnGap || getComputedStyle(row).gap) || 30;
-      return w + gap;
-    };
-    const sync = () => {
-      const maxScroll = row.scrollWidth - row.clientWidth - 2;
-      const atStart = row.scrollLeft <= 2;
-      const atEnd = row.scrollLeft >= maxScroll;
-      if (prev) prev.classList.toggle('hide', atStart);
-      if (next) next.classList.toggle('hide', atEnd || maxScroll <= 0);
-    };
-    if (prev) prev.addEventListener('click', () => { SFX.click(); row.scrollBy({ left: -cellW() * 2, behavior: 'smooth' }); });
-    if (next) next.addEventListener('click', () => { SFX.click(); row.scrollBy({ left: cellW() * 2, behavior: 'smooth' }); });
-    row.addEventListener('scroll', sync, { passive: true });
-    // vertical wheel / trackpad drives the row sideways 1:1 (matches the reward carousel)
-    row.addEventListener('wheel', (e) => {
-      const maxScroll = row.scrollWidth - row.clientWidth;
-      if (maxScroll <= 1) return;
-      let d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (!d) return;
-      if (e.deltaMode === 1) d *= 16; else if (e.deltaMode === 2) d *= row.clientWidth;
-      const before = row.scrollLeft;
-      row.scrollLeft = Math.max(0, Math.min(maxScroll, before + d));
-      if (row.scrollLeft !== before) e.preventDefault();
-    }, { passive: false });
-    row._syncMeters = sync;
+  // the meters are now split across two tabs (Monsters / Trappings); wire the
+  // segmented control once and let each tab swap the visible discs
+  function wireWellTabs() {
+    const tabs = $('well-tabs');
+    if (!tabs || tabs.dataset.wired) return;
+    tabs.dataset.wired = '1';
+    tabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.well-tab');
+      if (!btn) return;
+      switchWellTab(btn.dataset.tab);
+    });
+  }
+  function switchWellTab(group) {
+    if (!group || group === wellTab || WELL_GROUPS.indexOf(group) < 0) return;
+    wellTab = group;
+    wellAnimateIn = true;
+    SFX.click();
+    const host = $('well-cats');
+    updateWellTabUI();
+    if (host) {
+      // sweep the outgoing discs away, rebuild, then stagger the new set in
+      host.classList.add('tab-leaving');
+      setTimeout(() => {
+        host.classList.remove('tab-leaving');
+        renderWell();
+      }, 150);
+    } else renderWell();
+  }
+  // light the active flank tab and reflect aria + the staged-stones badge
+  function updateWellTabUI() {
+    const tabs = $('well-tabs');
+    if (!tabs) return;
+    const stagedByGroup = {};
+    WELL_CATS.forEach(c => { if ((wellStage[c.id] || 0) > 0) stagedByGroup[c.group] = (stagedByGroup[c.group] || 0) + (wellStage[c.id] || 0); });
+    tabs.querySelectorAll('.well-tab').forEach(btn => {
+      const on = btn.dataset.tab === wellTab;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      const dot = btn.querySelector('.well-tab-dot');
+      const cnt = stagedByGroup[btn.dataset.tab] || 0;
+      if (dot) { dot.classList.toggle('on', cnt > 0); dot.textContent = cnt > 0 ? cnt : ''; }
+    });
   }
   function wellCatPending(cat) {
     const st = wellCatState(cat);
@@ -4261,11 +4279,14 @@
   function renderWell() {
     const host = $('well-cats');
     if (!host) return;
-    const cats = wellCatalog();
+    const allCats = wellCatalog();
+    const cats = allCats.filter(c => c.group === wellTab);   // only the active tab's meters
     const C = 2 * Math.PI * 66;   // circumference of the radial meter ring
     const prevArc = wellArcOffsets;   // where each ring sat on the last render
     const nextArc = {};
-    host.innerHTML = cats.map(cat => {
+    const enter = wellAnimateIn; wellAnimateIn = false;
+    host.classList.toggle('tab-enter', enter);
+    host.innerHTML = cats.map((cat, ci) => {
       const p = wellCatPending(cat);
       const done = p.st.lockedRemaining === 0;
       // the ring fills toward the next unlock; a completed cycle reads as a full ring
@@ -4277,7 +4298,8 @@
       const startOff = (cat.id in prevArc) ? prevArc[cat.id] : C;
       const xbadge = '<span class="wd-x' + (p.cycles > 0 ? ' on' : '') + '">+' + (p.cycles > 0 ? p.cycles : '') + '</span>';
       return '<div class="well-meter-cell' + (done ? ' done' : '') + (p.cycles > 0 ? ' charged' : '') +
-            (p.staged > 0 ? ' staged' : '') + '" data-cat="' + cat.id + '" style="--acc:' + cat.accent + '">' +
+            (p.staged > 0 ? ' staged' : '') + (enter ? ' cell-enter' : '') + '" data-cat="' + cat.id +
+            '" style="--acc:' + cat.accent + ';--ci:' + ci + '">' +
         '<div class="wd-disc-wrap">' +
           '<div class="wd-disc">' +
             '<svg class="wd-ring" viewBox="0 0 160 160" aria-hidden="true">' +
@@ -4312,13 +4334,13 @@
         if (t != null) a.style.strokeDashoffset = t;
       });
     });
-    // refresh the meter-carousel arrow state for the new content width
-    if (host._syncMeters) requestAnimationFrame(host._syncMeters);
-    // balance + pending summary
+    // keep the tab indicator + per-tab staged dots in sync with the new state
+    requestAnimationFrame(updateWellTabUI);
+    // balance + pending summary (counts staged stones across BOTH tabs)
     const avail = wellAvailable();
     const staged = wellStaged();
     let unlocks = 0;
-    cats.forEach(cat => { unlocks += wellCatPending(cat).cycles; });
+    allCats.forEach(cat => { unlocks += wellCatPending(cat).cycles; });
     const stones = $('well-stone-count'); if (stones) stones.textContent = avail;
     const pend = $('well-pending');
     if (pend) {
@@ -4390,22 +4412,36 @@
     const pr = pool.getBoundingClientRect();
     const target = Scale.toStage(pr.left + pr.width / 2, pr.top + pr.height / 2);
     const tx = target.x, ty = target.y;
+    // a layer behind the visible discs: stones cast from off-tab meters rise from
+    // here so they read as emerging from behind the meters currently in view
+    const phantom = screen.querySelector('.well-phantom-layer');
+    let phantomOrigin = null;
+    if (phantom) { const lr = phantom.getBoundingClientRect(); phantomOrigin = Scale.toStage(lr.left, lr.top); }
+    const row = $('well-cats');
+    let rowCenter = null;
+    if (row) { const rr = row.getBoundingClientRect(); rowCenter = Scale.toStage(rr.left + rr.width / 2, rr.top + rr.height / 2); }
     // gather a flight plan: one source disc per staged category (capped for perf)
     const flights = [];
     Object.keys(staged || {}).forEach(catId => {
       const want = staged[catId] || 0;
       if (want <= 0) return;
       const cell = screen.querySelector('.well-meter-cell[data-cat="' + catId + '"]');
-      const disc = cell && (cell.querySelector('.wd-portrait') || cell.querySelector('.wd-disc'));
-      if (!disc) return;
-      const dr = disc.getBoundingClientRect();
-      const sp = Scale.toStage(dr.left + dr.width / 2, dr.top + dr.height / 2);
       const cat = WELL_CATS.find(c => c.id === catId);
       const color = resolveColor(cat ? cat.accent : '#c9a6ff');
       const per = Math.max(1, Math.min(want, 8));
-      cell.classList.add('pouring');
+      let sx, sy, behind = false;
+      const disc = cell && (cell.querySelector('.wd-portrait') || cell.querySelector('.wd-disc'));
+      if (disc) {
+        const dr = disc.getBoundingClientRect();
+        const sp = Scale.toStage(dr.left + dr.width / 2, dr.top + dr.height / 2);
+        sx = sp.x; sy = sp.y;
+        cell.classList.add('pouring');
+      } else if (rowCenter) {
+        // this meter lives on the other tab — launch from behind the visible discs
+        sx = rowCenter.x; sy = rowCenter.y; behind = true;
+      } else return;
       for (let i = 0; i < per; i++) {
-        flights.push({ sx: sp.x, sy: sp.y, color, cell });
+        flights.push({ sx, sy, color, cell, behind });
       }
     });
     if (!flights.length) { if (done) done(); return; }
@@ -4426,13 +4462,19 @@
     flights.forEach((f, i) => {
       const dx = tx - f.sx, dy = ty - f.sy;
       const s = document.createElement('div');
-      s.className = 'well-fly-stone';
+      s.className = 'well-fly-stone' + (f.behind ? ' behind' : '');
       s.textContent = '✦';
-      s.style.left = f.sx + 'px';
-      s.style.top = f.sy + 'px';
       s.style.color = f.color;
       s.style.textShadow = '0 0 12px ' + f.color + ', 0 0 26px ' + f.color;
-      stageEl.appendChild(s);
+      // off-tab stones nest in the behind-layer (so the discs occlude them); the
+      // flight deltas are identical stage-local px, only the base origin re-bases
+      let host = stageEl, baseX = f.sx, baseY = f.sy;
+      if (f.behind && phantom && phantomOrigin) {
+        host = phantom; baseX = f.sx - phantomOrigin.x; baseY = f.sy - phantomOrigin.y;
+      }
+      s.style.left = baseX + 'px';
+      s.style.top = baseY + 'px';
+      host.appendChild(s);
       const arcX = dx * 0.5 + (Math.random() * 70 - 35);
       const arcY = dy * 0.5 - (120 + Math.random() * 80);   // lob upward first
       const dur = 560 + Math.random() * 200;
@@ -4598,7 +4640,8 @@
       eln.addEventListener('mouseenter', () => setLwSide(eln));
       eln.addEventListener('mouseleave', hideLwSide);
     });
-    m.classList.remove('hidden');
+    if (lwCloseTimer) { clearTimeout(lwCloseTimer); lwCloseTimer = null; }
+    m.classList.remove('hidden', 'lwm-closing');
   }
   // populate + animate the inspector in for the hovered chip
   function setLwSide(eln) {
@@ -4620,7 +4663,21 @@
     }
     return c;
   }
-  function closeLwModal() { hideLwSide(); const m = $('lw-modal'); if (m) m.classList.add('hidden'); }
+  let lwCloseTimer = null;
+  // play a brief bloom-out (mirror of the lwmPop entrance) before hiding, so the
+  // detail card eases away instead of snapping out of existence
+  function closeLwModal() {
+    hideLwSide();
+    const m = $('lw-modal');
+    if (!m || m.classList.contains('hidden') || m.classList.contains('lwm-closing')) return;
+    m.classList.add('lwm-closing');
+    if (lwCloseTimer) clearTimeout(lwCloseTimer);
+    lwCloseTimer = setTimeout(() => {
+      m.classList.add('hidden');
+      m.classList.remove('lwm-closing');
+      lwCloseTimer = null;
+    }, 240);
+  }
 
   // ---- HUB ----
   // POIs are scattered across the clearing by percent coordinates (the stage is
@@ -5017,6 +5074,7 @@
       '<stop offset="1" stop-color="' + to + '"/>' +
     '</linearGradient>';
   }
+  let stSelectedBeast = null;   // which hero the Star Charts (and Glyph Codex) is focused on
   function buildStoneTable() {
     const roster = $('stonetable-roster');
     if (roster) {
@@ -5040,6 +5098,10 @@
     if (first) stoneTableSelect(first.id);
   }
   function stoneTableSelect(beastId) {
+    stSelectedBeast = beastId;
+    const lab = $('st-codex-label');
+    const bn = (MONSTERS[beastId] || {}).name;
+    if (lab) lab.textContent = bn ? bn + "'s Glyphs" : 'Glyph Codex';
     const tree = $('stonetable-tree');
     const beast = MONSTERS[beastId];
     if (!tree || !beast || !beast.evolution) { if (tree) tree.innerHTML = ''; return; }
@@ -5136,6 +5198,133 @@
       '</div>' +
     '</div>';
   }
+  // ============================================================
+  // GLYPH CODEX — every glyph a chosen hero can meet across a run:
+  // its signature glyphs, the shared neutral pool, and the soul-glyphs.
+  // Well-gated entries show as "locked" until inscribed at the Well.
+  // ============================================================
+  function codexLocked(g) { return !!(g.unlock && !(META.unlocks && META.unlocks[g.unlock])); }
+  function codexGroupsFor(heroId) {
+    const sig = [], neutral = [], soul = [];
+    Object.values(GLYPHS).forEach(g => {
+      if (!g || g.junk || g.token) return;
+      if (g.colorless) soul.push(g);
+      else if (!g.character) neutral.push(g);
+      else if (g.character === heroId) sig.push(g);
+    });
+    const rank = { common: 0, uncommon: 1, rare: 2 };
+    // unlocked first, then by rarity, then alphabetical — a readable wall
+    const cmp = (a, b) => {
+      const la = codexLocked(a) ? 1 : 0, lb = codexLocked(b) ? 1 : 0;
+      if (la !== lb) return la - lb;
+      const ra = rank[a.rarity] || 0, rb = rank[b.rarity] || 0;
+      if (ra !== rb) return ra - rb;
+      return a.name.localeCompare(b.name);
+    };
+    sig.sort(cmp); neutral.sort(cmp); soul.sort(cmp);
+    return [
+      { id: 'sig', label: 'Signature Glyphs', accent: (MONSTERS[heroId] || {}).color || 'var(--gold)', list: sig },
+      { id: 'neutral', label: 'Neutral Glyphs', accent: 'var(--gold)', list: neutral },
+      { id: 'soul', label: 'Soul Glyphs', accent: 'var(--white)', list: soul }
+    ];
+  }
+  function codexCard(g, i) {
+    const style = ' style="--g-color:var(--' + (g.color || 'gold') + ');--d:' + (i % 14) + '"';
+    // locked = a total mystery: blacked-out shape, redacted name, no type leak
+    if (codexLocked(g)) {
+      return '<button class="gc-card gc-locked" data-glyph="' + g.id + '"' + style + '>' +
+        '<span class="gc-lock" aria-hidden="true">🔒</span>' +
+        '<span class="gc-art">' + glyphArtHTML(g) + '</span>' +
+        '<span class="gc-name">? ? ?</span>' +
+        '<span class="gc-kind">Undiscovered</span>' +
+      '</button>';
+    }
+    const slots = g.slots || 1;
+    const kind = GLYPH_KIND[g.color] || 'Glyph';
+    return '<button class="gc-card" data-glyph="' + g.id + '"' + style + '>' +
+      letterChipHTML(g) +
+      '<span class="gc-art">' + glyphArtHTML(g) + '</span>' +
+      '<span class="gc-name">' + g.name + '</span>' +
+      '<span class="gc-kind">' + kind + (slots > 1 ? ' · ⬡' + slots : '') + '</span>' +
+    '</button>';
+  }
+  function buildGlyphCodex(heroId) {
+    const body = $('glyphcodex-body');
+    const beast = MONSTERS[heroId] || Object.values(MONSTERS)[0];
+    if (!body || !beast) return;
+    const groups = codexGroupsFor(beast.id);
+    let total = 0, unlocked = 0;
+    groups.forEach(grp => grp.list.forEach(g => { total++; if (!codexLocked(g)) unlocked++; }));
+    const prog = $('gc-progress');
+    if (prog) prog.textContent = unlocked + ' / ' + total + ' unlocked';
+    const portrait = beast.img
+      ? '<img class="gc-hero-img" src="' + beast.img + '" alt="" draggable="false">'
+      : '<span class="gc-hero-emoji">' + (beast.emoji || '✦') + '</span>';
+    let html = '<div class="gc-hero" style="--acc:' + (beast.color || 'var(--gold)') + '">' +
+      '<div class="gc-hero-port">' + portrait + '<span class="gc-hero-glow"></span></div>' +
+      '<div class="gc-hero-meta">' +
+        '<div class="gc-hero-name">' + beast.name + '</div>' +
+        '<div class="gc-hero-sub">Every glyph that can surface in ' + beast.name + '\u2019s runs.</div>' +
+      '</div>' +
+    '</div>';
+    groups.forEach(grp => {
+      if (!grp.list.length) return;
+      const u = grp.list.filter(g => !codexLocked(g)).length;
+      html += '<section class="gc-section" style="--acc:' + grp.accent + '">' +
+        '<header class="gc-sec-head">' +
+          '<span class="gc-sec-line"></span>' +
+          '<h3 class="gc-sec-title">' + grp.label + '</h3>' +
+          '<span class="gc-sec-count">' + u + ' / ' + grp.list.length + '</span>' +
+          '<span class="gc-sec-line"></span>' +
+        '</header>' +
+        '<div class="gc-grid">' + grp.list.map(codexCard).join('') + '</div>' +
+      '</section>';
+    });
+    body.innerHTML = html;
+    body.scrollTop = 0;
+    body.querySelectorAll('.gc-card').forEach(card => {
+      card.addEventListener('mouseenter', () => { if (SFX.hover) SFX.hover(); });
+      card.addEventListener('click', () => {
+        SFX.click();
+        const g = GLYPHS[card.dataset.glyph];
+        if (g) openLwModal(codexDetailHTML(g), 'var(--' + (g.color || 'gold') + ')', 'stone');
+      });
+    });
+  }
+  function codexDetailHTML(g) {
+    const acc = 'var(--' + (g.color || 'gold') + ')';
+    // locked: reveal nothing — a haloed silhouette, redacted name, no stats or text
+    if (codexLocked(g)) {
+      return '<div class="lw-card gc-detail gc-detail-locked" style="--acc:' + acc + ';--g-color:' + acc + '">' +
+        '<div class="gc-detail-tag">Undiscovered</div>' +
+        '<div class="gc-detail-art gc-detail-sil">' + glyphArtHTML(g) +
+          '<span class="gc-sil-rune" aria-hidden="true">?</span></div>' +
+        '<div class="gc-detail-name">? ? ?</div>' +
+        '<div class="gc-detail-desc gc-detail-mystery">A glyph not yet inscribed upon your path. Its shape flickers in the dark, its power hidden until the stars align.</div>' +
+        '<div class="gc-detail-state gc-state-locked">🔒 Locked — widen fate at the <b>Enchanted Well</b> to reveal and unlock this glyph.</div>' +
+      '</div>';
+    }
+    const slots = g.slots || 1;
+    const kind = GLYPH_KIND[g.color] || 'Glyph';
+    // the dedicated ⬡ chip already states the socket cost, so strip the redundant
+    // "Takes N sockets" note from the tail of the description
+    let desc = DATA.formatDesc(g, metaEnv(g.id));
+    if (slots > 1) {
+      desc = desc.replace(/Takes\s*\d+\s*sockets\.?\s*/i, '')
+                 .replace(/<i>\s*<\/i>/i, '')
+                 .replace(/(<br>\s*)+$/i, '');
+    }
+    const isAtk = g.dyn && g.dyn.some(t => t.kind === 'dmg');
+    return '<div class="lw-card gc-detail" style="--acc:' + acc + ';--g-color:' + acc + '">' +
+      '<div class="gc-detail-tag">' + glyphOwner(g) + ' · ' + kind + ' · ' + (g.rarity || 'common') + '</div>' +
+      '<div class="gc-detail-art">' + letterChipHTML(g) + glyphArtHTML(g) + '</div>' +
+      '<div class="gc-detail-name">' + g.name + '</div>' +
+      (slots > 1 ? '<div class="gc-detail-slots">⬡ Takes ' + slots + ' sockets</div>' : '') +
+      (isAtk ? '<div class="gc-detail-str">⚔ Strength ×' + DATA.strMulOf(g, 0) + '<span class="gcs-note"> added to each hit</span></div>' : '') +
+      '<div class="gc-detail-desc">' + desc + '</div>' +
+      '<div class="gc-detail-state gc-state-open">✦ Unlocked — this glyph can appear on your path.</div>' +
+    '</div>';
+  }
   const MB_TIER_ACCENT = { common: '#c9b8a8', elite: '#ffce5e', boss: '#ff7a6a', shadow: '#b98cff' };
 
   // ---- MONSTER BOOK ----
@@ -5157,8 +5346,8 @@
     switch (it.type) {
       case 'attack': return '⚔ ' + it.value + (it.hits > 1 ? ' ×' + it.hits : '') + (it.big ? ' (big)' : '');
       case 'defend': return '🛡 ' + it.value;
-      case 'curse': return 'Curse ' + it.value;
-      case 'sunder': return 'Seal ' + it.value;
+      case 'curse': return 'Curse' + (it.count > 1 ? ' ×' + it.count : (it.maliceCount ? ' ×Malice' : ''));
+      case 'sunder': return 'Seal ' + (it.value || 2);
       case 'debuff': return (it.stat || 'debuff') + ' ' + it.value;
       case 'buff': return 'Empower ' + it.value;
       case 'siphon': return 'Siphon ' + (it.stat || '');
@@ -5195,8 +5384,8 @@
         ? 'Strikes for ' + n + ' damage ' + it.hits + ' times (' + (n * it.hits) + ' total).'
         : (it.big ? 'Winds up a single heavy blow for ' + n + ' damage.' : 'Attacks for ' + n + ' damage.');
       case 'defend': return 'Raises ' + n + ' Block to absorb your hits.';
-      case 'curse': return 'Curses a glyph socket for ' + n + ' — playing it backfires on you.';
-      case 'sunder': return 'Seals ' + n + ' of your glyph sockets for the turn.';
+      case 'curse': return 'Curses a glyph socket — its effect still lands, but is mirrored: your shields & heals also feed the caster, its damage & burns recoil onto you. Lifts only when this foe dies.';
+      case 'sunder': return 'Seals ' + (n || 2) + ' of your glyph sockets for the turn.';
       case 'debuff': return 'Afflicts you with ' + (it.stat || 'a debuff') + ' ' + n + '.';
       case 'buff': return 'Empowers itself with +' + n + ' Strength.';
       case 'siphon': return 'Siphons your ' + (it.stat || 'stats') + ', stealing it for itself.';
@@ -5684,6 +5873,17 @@
     $('btn-lostwoods-back').addEventListener('click', () => { SFX.click(); show('screen-home'); });
     document.querySelectorAll('.lw-sub-back').forEach(b => {
       b.addEventListener('click', () => { SFX.click(); show('screen-lostwoods'); });
+    });
+    // Glyph Codex: opens from the Star Charts for the currently-focused hero,
+    // and its Back returns to the charts (not all the way out to the woods).
+    const codexBtn = $('btn-glyph-codex');
+    if (codexBtn) codexBtn.addEventListener('click', () => {
+      SFX.click();
+      buildGlyphCodex(stSelectedBeast || (Object.values(MONSTERS)[0] || {}).id);
+      show('screen-glyphcodex');
+    });
+    document.querySelectorAll('.gc-back').forEach(b => {
+      b.addEventListener('click', () => { SFX.click(); show('screen-stonetable'); });
     });
     $('btn-lw-modal-close').addEventListener('click', () => { SFX.click(); closeLwModal(); });
     $('lw-modal').addEventListener('click', (e) => { if (e.target.id === 'lw-modal') closeLwModal(); });
